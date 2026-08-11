@@ -1,0 +1,13 @@
+.vs/
+.idea/
+.vscode/
+bin/
+obj/
+TestResults/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.log

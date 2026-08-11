@@ -1,0 +1,336 @@
+using System.IO;
+using System.Windows;
+using ICSharpCode.AvalonEdit.Document;
+using Microsoft.Win32;
+using WhoIsMarkdown.App.Services;
+using WhoIsMarkdown.App.ViewModels;
+using WhoIsMarkdown.Core.Documents;
+using WhoIsMarkdown.Core.Markdown;
+
+namespace WhoIsMarkdown.App;
+
+/// <summary>
+/// Hosts the editor shell and coordinates dialogs and document lifecycle events.
+/// Persistence, Markdown conversion, settings, and WebView security remain in
+/// focused services so the shell can evolve without absorbing core behavior.
+/// </summary>
+public partial class MainWindow : Window
+{
+    private const int PreviewDebounceMilliseconds = 100;
+
+    private readonly IDocumentFileService fileService = new DocumentFileService();
+    private readonly IMarkdownRenderer markdownRenderer = new MarkdownRenderer();
+    private readonly IPreviewDocumentBuilder previewDocumentBuilder = new PreviewDocumentBuilder();
+    private readonly DocumentEditorViewModel document = new();
+
+    private PreviewWebViewService? previewService;
+    private CancellationTokenSource? previewCancellation;
+    private string previewStyleSheet = string.Empty;
+    private int untitledCounter = 1;
+    private long previewVersion;
+    private bool applyingDocumentText;
+    private bool closeApproved;
+    private bool closeWorkflowRunning;
+    private bool windowClosed;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        InitializeAppearanceController();
+        DataContext = document;
+        document.StartNew(untitledCounter);
+        Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
+    }
+
+    private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
+    {
+        LoadApplicationSettings();
+
+        try
+        {
+            previewStyleSheet = ReadPreviewStyleSheet();
+            previewService = new PreviewWebViewService(Preview);
+            previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
+            previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
+            await previewService.InitializeAsync();
+
+            if (!windowClosed)
+            {
+                SchedulePreview();
+                UpdateStatus("准备就绪");
+                Editor.Focus();
+            }
+        }
+        catch (ObjectDisposedException) when (windowClosed)
+        {
+            // Closing during WebView initialization is an expected lifecycle race.
+        }
+        catch (Exception exception)
+        {
+            UpdateStatus($"预览初始化失败：{exception.Message}");
+        }
+    }
+
+    private async void New_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (!await ConfirmDiscardOrSaveAsync())
+        {
+            return;
+        }
+
+        document.StartNew(++untitledCounter);
+        ApplyDocumentToEditor();
+        UpdateStatus("已新建文档");
+    }
+
+    private async void Open_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (!await ConfirmDiscardOrSaveAsync())
+        {
+            return;
+        }
+
+        OpenFileDialog dialog = new()
+        {
+            Title = "打开 Markdown 文档",
+            Filter = "Markdown 文档 (*.md;*.markdown)|*.md;*.markdown|所有文件 (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            await OpenDocumentAsync(dialog.FileName);
+        }
+    }
+
+    private async void Save_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        await SaveCurrentDocumentAsync(forceSaveAs: false);
+    }
+
+    private async void SaveAs_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        await SaveCurrentDocumentAsync(forceSaveAs: true);
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        Close();
+    }
+
+    private void Editor_TextChanged(object sender, EventArgs eventArgs)
+    {
+        if (applyingDocumentText)
+        {
+            return;
+        }
+
+        document.Text = Editor.Text;
+        SchedulePreview();
+        UpdateStatus();
+    }
+
+    private void EditorCaret_PositionChanged(object? sender, EventArgs eventArgs)
+    {
+        CaretText.Text = $"行 {Editor.TextArea.Caret.Line}，列 {Editor.TextArea.Caret.Column}";
+    }
+
+    private async Task OpenDocumentAsync(string path)
+    {
+        try
+        {
+            LoadedDocument loadedDocument = await fileService.ReadAsync(path);
+            document.Load(loadedDocument);
+            ApplyDocumentToEditor();
+            RecordRecentFile(loadedDocument.Path);
+            UpdateStatus("文档已打开");
+        }
+        catch (DocumentFileException exception)
+        {
+            ShowFileError("无法打开文档", exception);
+        }
+    }
+
+    private async Task<bool> SaveCurrentDocumentAsync(bool forceSaveAs)
+    {
+        string? targetPath = forceSaveAs || document.FilePath is null
+            ? SelectSavePath()
+            : document.FilePath;
+
+        if (targetPath is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            DocumentFileStamp stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
+            document.MarkSaved(targetPath, stamp);
+            RecordRecentFile(targetPath);
+            UpdateStatus("文档已保存");
+            return true;
+        }
+        catch (DocumentFileException exception)
+        {
+            ShowFileError("无法保存文档", exception);
+            return false;
+        }
+    }
+
+    private async Task<bool> ConfirmDiscardOrSaveAsync()
+    {
+        if (!document.IsDirty)
+        {
+            return true;
+        }
+
+        MessageBoxResult result = MessageBox.Show(
+            this,
+            $"“{document.DisplayName}”包含尚未保存的修改。是否保存？",
+            "保存修改",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning,
+            MessageBoxResult.Yes);
+
+        return result switch
+        {
+            MessageBoxResult.Yes => await SaveCurrentDocumentAsync(forceSaveAs: false),
+            MessageBoxResult.No => true,
+            _ => false,
+        };
+    }
+
+    private string? SelectSavePath()
+    {
+        SaveFileDialog dialog = new()
+        {
+            Title = "保存 Markdown 文档",
+            Filter = "Markdown 文档 (*.md)|*.md|Markdown 文档 (*.markdown)|*.markdown",
+            DefaultExt = ".md",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = document.DisplayName,
+        };
+
+        return dialog.ShowDialog(this) == true ? dialog.FileName : null;
+    }
+
+    private void ApplyDocumentToEditor()
+    {
+        applyingDocumentText = true;
+        try
+        {
+            Editor.Document = new TextDocument(document.Text);
+            Editor.Document.UndoStack.ClearAll();
+            Editor.CaretOffset = 0;
+        }
+        finally
+        {
+            applyingDocumentText = false;
+        }
+
+        SchedulePreview();
+        UpdateStatus();
+        Editor.Focus();
+    }
+
+    private void SchedulePreview()
+    {
+        if (previewService is null || windowClosed)
+        {
+            return;
+        }
+
+        previewCancellation?.Cancel();
+        previewCancellation?.Dispose();
+        previewCancellation = new CancellationTokenSource();
+        long version = ++previewVersion;
+        _ = RefreshPreviewAsync(document.Text, version, previewCancellation.Token);
+    }
+
+    /// <summary>
+    /// Bug fix: the old preview path could leave a featureless white pane for an
+    /// empty document and did not expose WebView navigation failures. Rendering now
+    /// includes an explicit empty state while the service reports navigation errors.
+    /// </summary>
+    private async Task RefreshPreviewAsync(
+        string markdown,
+        long version,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
+            string body = await Task.Run(
+                () => markdownRenderer.RenderBody(markdown),
+                cancellationToken);
+            string page = previewDocumentBuilder.Build(body, previewStyleSheet);
+
+            if (!cancellationToken.IsCancellationRequested && version == previewVersion)
+            {
+                previewService?.Show(page);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer editor snapshot superseded this render request.
+        }
+        catch (Exception exception)
+        {
+            UpdateStatus($"预览失败：{exception.Message}");
+        }
+    }
+
+    private void CancelPreviewWork()
+    {
+        previewCancellation?.Cancel();
+        previewCancellation?.Dispose();
+        previewCancellation = null;
+    }
+
+    private static string ReadPreviewStyleSheet()
+    {
+        Uri resourceUri = new("Resources/preview.css", UriKind.Relative);
+        StreamResourceInfo? resource = Application.GetResourceStream(resourceUri);
+        if (resource is null)
+        {
+            throw new InvalidOperationException("找不到预览样式资源。");
+        }
+
+        using StreamReader reader = new(resource.Stream);
+        return reader.ReadToEnd();
+    }
+
+    private void PreviewService_ExternalNavigationFailed(object? sender, string message)
+    {
+        UpdateStatus(message);
+    }
+
+    private void PreviewService_PreviewNavigationFailed(object? sender, string message)
+    {
+        UpdateStatus(message);
+    }
+
+    private void ShowFileError(string title, DocumentFileException exception)
+    {
+        UpdateStatus(exception.Message);
+        MessageBox.Show(
+            this,
+            exception.Message,
+            title,
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+    }
+
+    private void UpdateStatus(string? message = null)
+    {
+        if (message is not null)
+        {
+            StatusText.Text = message;
+        }
+
+        PathText.Text = document.FilePath ?? "未保存";
+        CaretText.Text = $"行 {Editor.TextArea.Caret.Line}，列 {Editor.TextArea.Caret.Column}";
+    }
+}
