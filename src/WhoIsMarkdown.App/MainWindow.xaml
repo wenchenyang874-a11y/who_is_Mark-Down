@@ -40,27 +40,61 @@
                     <Style TargetType="{x:Type MenuItem}">
                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
                     </Style>
-                    <!-- The .NET Fluent theme can resolve a top-level menu header to
-                         transparent text on some Windows configurations. An explicit
-                         AccessText data template fixes the foreground while preserving
-                         WPF's complete native menu template and input behavior. -->
+                    <!-- Bug fix: the .NET Fluent theme can suppress the complete
+                         top-level MenuItem header presenter. This narrow template owns
+                         only the top-level header and popup; submenu items keep the
+                         native theme template and command behavior. -->
+                    <ControlTemplate x:Key="TopLevelMenuItemTemplate"
+                                     TargetType="{x:Type MenuItem}">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border x:Name="MenuHeaderBorder"
+                                    Padding="{TemplateBinding Padding}"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  ContentSource="Header"
+                                                  RecognizesAccessKey="True"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Fade">
+                                <Border Margin="0,2,0,0"
+                                        Padding="3"
+                                        Background="#FFFFFFFF"
+                                        BorderBrush="#FFD7DCE8"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"
+                                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="MenuHeaderBorder" Property="Background" Value="#12000000" />
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="MenuHeaderBorder" Property="Background" Value="#18000000" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
                     <Style x:Key="TopLevelMenuItemStyle" TargetType="{x:Type MenuItem}">
                         <Setter Property="Height" Value="30" />
                         <Setter Property="Padding" Value="12,0" />
                         <Setter Property="Foreground" Value="#182033" />
                         <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="HeaderTemplate">
-                            <Setter.Value>
-                                <DataTemplate>
-                                    <AccessText VerticalAlignment="Center"
-                                                Foreground="#182033"
-                                                Text="{Binding}" />
-                                </DataTemplate>
-                            </Setter.Value>
-                        </Setter>
+                        <Setter Property="Template" Value="{StaticResource TopLevelMenuItemTemplate}" />
                     </Style>
                 </Menu.Resources>
-                <MenuItem Header="文件(_F)" Style="{StaticResource TopLevelMenuItemStyle}">
+                <MenuItem Header="文件(_F)" AutomationProperties.Name="文件" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem x:Name="NewDocumentMenuItem" Header="新建(_N)" InputGestureText="Ctrl+N" Click="New_Click" />
                     <MenuItem x:Name="OpenDocumentMenuItem" Header="打开(_O)..." InputGestureText="Ctrl+O" Click="Open_Click" />
                     <Separator />
@@ -69,7 +103,7 @@
                     <Separator />
                     <MenuItem Header="退出(_X)" Click="Exit_Click" />
                 </MenuItem>
-                <MenuItem Header="编辑(_E)" Style="{StaticResource TopLevelMenuItemStyle}" SubmenuOpened="EditMenu_SubmenuOpened">
+                <MenuItem Header="编辑(_E)" AutomationProperties.Name="编辑" Style="{StaticResource TopLevelMenuItemStyle}" SubmenuOpened="EditMenu_SubmenuOpened">
                     <MenuItem x:Name="UndoMenuItem" Header="撤销(_U)" InputGestureText="Ctrl+Z" Click="Undo_Click" />
                     <MenuItem x:Name="RedoMenuItem" Header="重做(_R)" InputGestureText="Ctrl+Y" Click="Redo_Click" />
                     <Separator />
@@ -94,7 +128,7 @@
                         <MenuItem Header="任务列表" InputGestureText="Ctrl+Shift+L" Tag="task-list" Click="MarkdownFormat_Click" />
                     </MenuItem>
                 </MenuItem>
-                <MenuItem Header="视图(_V)" Style="{StaticResource TopLevelMenuItemStyle}">
+                <MenuItem Header="视图(_V)" AutomationProperties.Name="视图" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem x:Name="CycleViewModeMenuItem" Header="循环切换视图" InputGestureText="F9" Click="CycleViewMode_Click" />
                     <Separator />
                     <MenuItem x:Name="PreviewOnlyModeMenuItem" Header="仅预览" IsCheckable="True" Click="PreviewOnlyMode_Click" />
@@ -104,10 +138,10 @@
                     <MenuItem x:Name="RecentPaneMenuItem" Header="显示最近文件" IsCheckable="True" Click="RecentPaneToggle_Click" />
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
-                <MenuItem Header="快捷键(_K)" Style="{StaticResource TopLevelMenuItemStyle}">
+                <MenuItem Header="快捷键(_K)" AutomationProperties.Name="快捷键" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="快捷键设置..." Click="Shortcuts_Click" />
                 </MenuItem>
-                <MenuItem Header="帮助(_H)" Style="{StaticResource TopLevelMenuItemStyle}">
+                <MenuItem Header="帮助(_H)" AutomationProperties.Name="帮助" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="关于 WIMD" Click="About_Click" />
                 </MenuItem>
             </Menu>

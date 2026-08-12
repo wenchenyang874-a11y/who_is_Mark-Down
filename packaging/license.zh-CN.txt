@@ -1,0 +1,9 @@
+WIMD 软件许可说明
+
+WIMD 依据 Apache License 2.0 开源许可证发布。
+
+安装和使用本软件即表示你同意遵守 Apache License 2.0 的条款。完整、具有法律效力的英文许可证将作为 LICENSE.txt 安装到 WIMD 程序目录中，也可以在项目仓库中查看：
+
+https://github.com/wenchenyang874-a11y/who_is_Mark-Down/blob/main/LICENSE
+
+本中文说明仅用于帮助理解；如与英文许可证存在差异，以英文许可证为准。
