@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Input;
-using WhoIsMarkdown.App.ViewModels;
 
 namespace WhoIsMarkdown.App;
 
@@ -44,49 +43,79 @@ public partial class MainWindow
         Key.S,
         ModifierKeys.Control | ModifierKeys.Shift);
 
-    private static readonly RoutedUICommand PreviewOnlyShortcutCommand = CreateCommand(
-        "仅预览",
-        nameof(PreviewOnlyShortcutCommand),
-        Key.D1,
+    private static readonly RoutedUICommand BoldShortcutCommand = CreateCommand(
+        "粗体",
+        nameof(BoldShortcutCommand),
+        Key.B,
         ModifierKeys.Control);
 
-    private static readonly RoutedUICommand SplitViewShortcutCommand = CreateCommand(
-        "编辑和预览",
-        nameof(SplitViewShortcutCommand),
-        Key.D2,
+    private static readonly RoutedUICommand ItalicShortcutCommand = CreateCommand(
+        "斜体",
+        nameof(ItalicShortcutCommand),
+        Key.I,
         ModifierKeys.Control);
 
-    private static readonly RoutedUICommand EditorOnlyShortcutCommand = CreateCommand(
-        "仅编辑",
-        nameof(EditorOnlyShortcutCommand),
-        Key.D3,
-        ModifierKeys.Control);
+    private static readonly RoutedUICommand CycleViewShortcutCommand = CreateCommand(
+        "循环切换视图",
+        nameof(CycleViewShortcutCommand),
+        Key.F9,
+        ModifierKeys.None);
+
+    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs eventArgs)
+    {
+        ModifierKeys modifiers = Keyboard.Modifiers;
+        if (eventArgs.Key == Key.F9 && modifiers == ModifierKeys.None)
+        {
+            CycleWorkspaceViewMode();
+            eventArgs.Handled = true;
+            return;
+        }
+
+        if (modifiers != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        if (eventArgs.Key is >= Key.D1 and <= Key.D6)
+        {
+            int level = eventArgs.Key - Key.D0;
+            ApplyMarkdownFormat($"h{level}");
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key == Key.B)
+        {
+            ApplyMarkdownFormat("bold");
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key == Key.I)
+        {
+            ApplyMarkdownFormat("italic");
+            eventArgs.Handled = true;
+        }
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
 
-        CommandBindings.Add(new CommandBinding(
-            NewDocumentShortcutCommand,
-            (_, _) => New_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(
-            OpenDocumentShortcutCommand,
-            (_, _) => Open_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(
-            SaveDocumentShortcutCommand,
-            (_, _) => Save_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(
-            SaveDocumentAsShortcutCommand,
-            (_, _) => SaveAs_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(
-            PreviewOnlyShortcutCommand,
-            (_, _) => SetWorkspaceViewMode(WorkspaceViewMode.PreviewOnly)));
-        CommandBindings.Add(new CommandBinding(
-            SplitViewShortcutCommand,
-            (_, _) => SetWorkspaceViewMode(WorkspaceViewMode.EditorAndPreview)));
-        CommandBindings.Add(new CommandBinding(
-            EditorOnlyShortcutCommand,
-            (_, _) => SetWorkspaceViewMode(WorkspaceViewMode.EditorOnly)));
+        CommandBindings.Add(new CommandBinding(NewDocumentShortcutCommand, (_, _) => New_Click(this, new RoutedEventArgs())));
+        CommandBindings.Add(new CommandBinding(OpenDocumentShortcutCommand, (_, _) => Open_Click(this, new RoutedEventArgs())));
+        CommandBindings.Add(new CommandBinding(SaveDocumentShortcutCommand, (_, _) => Save_Click(this, new RoutedEventArgs())));
+        CommandBindings.Add(new CommandBinding(SaveDocumentAsShortcutCommand, (_, _) => SaveAs_Click(this, new RoutedEventArgs())));
+        CommandBindings.Add(new CommandBinding(CycleViewShortcutCommand, (_, _) => CycleWorkspaceViewMode()));
+        CommandBindings.Add(new CommandBinding(BoldShortcutCommand, (_, _) => ApplyMarkdownFormat("bold")));
+        CommandBindings.Add(new CommandBinding(ItalicShortcutCommand, (_, _) => ApplyMarkdownFormat("italic")));
+
+        for (int level = 1; level <= 6; level++)
+        {
+            int capturedLevel = level;
+            RoutedUICommand headingCommand = CreateCommand(
+                $"{level} 级标题",
+                $"Heading{level}ShortcutCommand",
+                Key.D0 + level,
+                ModifierKeys.Control);
+            CommandBindings.Add(new CommandBinding(headingCommand, (_, _) => ApplyMarkdownFormat($"h{capturedLevel}")));
+        }
     }
 
     /// <summary>
@@ -135,11 +164,14 @@ public partial class MainWindow
         windowClosed = true;
         CancelPreviewWork();
         DisposeAppearanceController();
+        DisposeScrollSynchronization();
 
         if (previewService is not null)
         {
             previewService.ExternalNavigationFailed -= PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed -= PreviewService_PreviewNavigationFailed;
+            previewService.ScrollRatioChanged -= PreviewService_ScrollRatioChanged;
+            previewService.PreviewReady -= PreviewService_PreviewReady;
             previewService.Dispose();
             previewService = null;
         }
@@ -148,11 +180,7 @@ public partial class MainWindow
         base.OnClosed(e);
     }
 
-    private static RoutedUICommand CreateCommand(
-        string text,
-        string name,
-        Key key,
-        ModifierKeys modifiers)
+    private static RoutedUICommand CreateCommand(string text, string name, Key key, ModifierKeys modifiers)
     {
         InputGestureCollection gestures = [new KeyGesture(key, modifiers)];
         return new RoutedUICommand(text, name, typeof(MainWindow), gestures);

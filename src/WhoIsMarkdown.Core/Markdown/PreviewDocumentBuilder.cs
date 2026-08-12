@@ -5,8 +5,8 @@ namespace WhoIsMarkdown.Core.Markdown;
 
 /// <summary>
 /// Wraps a trusted renderer fragment in a complete, offline-first preview page.
-/// The content security policy blocks scripts, frames, plugins, and remote assets;
-/// network access must be enabled deliberately by a later permission-aware layer.
+/// The content security policy allows only app-mapped document images and blocks
+/// remote assets, page scripts, frames, forms, and plugins.
 /// </summary>
 public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
 {
@@ -17,7 +17,7 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         "frame-src 'none'; " +
         "object-src 'none'; " +
         "script-src 'none'; " +
-        "img-src data: file:; " +
+        "img-src data: https://wimd-document.invalid; " +
         "style-src 'unsafe-inline'; " +
         "font-src data:;";
 
@@ -41,10 +41,10 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         html.AppendLine("<!doctype html>");
         html.AppendLine("<html lang=\"zh-CN\">");
         html.AppendLine("<head>");
-        html.AppendLine("  <meta charset=\"utf-8\">");
         html.Append("  <meta http-equiv=\"Content-Security-Policy\" content=\"")
             .Append(WebUtility.HtmlEncode(ContentSecurityPolicy))
             .AppendLine("\">");
+        html.AppendLine("  <meta charset=\"utf-8\">");
         html.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         html.AppendLine("  <style>");
         html.AppendLine(styleSheet);

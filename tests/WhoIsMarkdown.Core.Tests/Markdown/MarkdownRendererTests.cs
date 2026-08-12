@@ -27,7 +27,7 @@ public sealed class MarkdownRendererTests
 
         Assert.Contains("<h1", html, StringComparison.Ordinal);
         Assert.Contains("type=\"checkbox\"", html, StringComparison.Ordinal);
-        Assert.Contains("<table>", html, StringComparison.Ordinal);
+        Assert.Contains("<table", html, StringComparison.Ordinal);
         Assert.Contains("language-csharp", html, StringComparison.Ordinal);
     }
 
@@ -40,5 +40,27 @@ public sealed class MarkdownRendererTests
 
         Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("<iframe", html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RenderBody_WhenDocumentHasBlocks_AddsSourceLineAnchors()
+    {
+        string html = renderer.RenderBody("# 标题\n\n正文");
+
+        Assert.Contains("pragma-line-0", html, StringComparison.Ordinal);
+        Assert.Contains("pragma-line-2", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderBody_WhenImageIsRelative_ResolvesAgainstDocumentDirectory()
+    {
+        string documentPath = Path.Combine(Path.GetTempPath(), "文档", "指南.md");
+
+        string html = renderer.RenderBody("![图](pic/example.png)", documentPath);
+
+        Assert.Contains(
+            $"https://{LocalImageUrlResolver.VirtualHostName}/pic/example.png",
+            html,
+            StringComparison.Ordinal);
     }
 }

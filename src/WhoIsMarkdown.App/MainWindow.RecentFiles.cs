@@ -81,7 +81,10 @@ public partial class MainWindow
 
     private void RecentPaneToggle_Click(object sender, RoutedEventArgs eventArgs)
     {
-        SetRecentPaneExpanded(!applicationSettings.IsRecentPaneExpanded, persist: true);
+        bool requestedState = sender is MenuItem menuItem
+            ? menuItem.IsChecked
+            : !applicationSettings.IsRecentPaneExpanded;
+        SetRecentPaneExpanded(requestedState, persist: true);
     }
 
     private void CollapseRecentPane_Click(object sender, RoutedEventArgs eventArgs)
@@ -93,7 +96,7 @@ public partial class MainWindow
     {
         RecentPaneColumn.Width = expanded ? new GridLength(252) : new GridLength(0);
         RecentPane.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        RecentPaneToggleButton.IsChecked = expanded;
+        RecentPaneMenuItem.IsChecked = expanded;
         applicationSettings = applicationSettings with { IsRecentPaneExpanded = expanded };
 
         if (persist)
@@ -127,14 +130,33 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>
+    /// Brand migration: WIMD reads the old WhoIsMarkdown settings once when the new
+    /// file is absent, then writes all future changes to the WIMD directory.
+    /// </summary>
     private static IApplicationSettingsStore CreateSettingsStore()
     {
-        string localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData);
-        string settingsPath = System.IO.Path.Combine(
-            localApplicationData,
-            "WhoIsMarkdown",
-            "settings.json");
-        return new JsonApplicationSettingsStore(settingsPath);
+        string localApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string newSettingsPath = Path.Combine(localApplicationData, "WIMD", "settings.json");
+        string oldSettingsPath = Path.Combine(localApplicationData, "WhoIsMarkdown", "settings.json");
+
+        if (!File.Exists(newSettingsPath) && File.Exists(oldSettingsPath))
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(newSettingsPath)!);
+                File.Copy(oldSettingsPath, newSettingsPath, overwrite: false);
+            }
+            catch (IOException)
+            {
+                // Another WIMD instance may have completed the one-time copy.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Loading defaults is safer than preventing application startup.
+            }
+        }
+
+        return new JsonApplicationSettingsStore(newSettingsPath);
     }
 }

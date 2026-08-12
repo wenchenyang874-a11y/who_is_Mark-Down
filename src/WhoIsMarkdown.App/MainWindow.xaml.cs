@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Input;
 using ICSharpCode.AvalonEdit.Document;
 using Microsoft.Win32;
 using WhoIsMarkdown.App.Services;
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeAppearanceController();
+        InitializeScrollSynchronization();
         DataContext = document;
         document.StartNew(untitledCounter);
         Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
@@ -45,6 +47,11 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
         LoadApplicationSettings();
+        string? startupDocumentPath = GetStartupDocumentPath();
+        if (startupDocumentPath is not null)
+        {
+            await OpenDocumentAsync(startupDocumentPath);
+        }
 
         try
         {
@@ -52,6 +59,8 @@ public partial class MainWindow : Window
             previewService = new PreviewWebViewService(Preview);
             previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
+            previewService.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
+            previewService.PreviewReady += PreviewService_PreviewReady;
             await previewService.InitializeAsync();
 
             if (!windowClosed)
@@ -134,6 +143,13 @@ public partial class MainWindow : Window
     private void EditorCaret_PositionChanged(object? sender, EventArgs eventArgs)
     {
         CaretText.Text = $"行 {Editor.TextArea.Caret.Line}，列 {Editor.TextArea.Caret.Column}";
+        _ = SynchronizePreviewToCaretAsync();
+    }
+
+    private void Preview_PreviewMouseWheel(object sender, MouseWheelEventArgs eventArgs)
+    {
+        // WebView2 owns its native scroll handling. Scroll events are reported by a
+        // host-injected script; this handler intentionally does not mark the event.
     }
 
     private async Task OpenDocumentAsync(string path)
@@ -168,6 +184,7 @@ public partial class MainWindow : Window
             DocumentFileStamp stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
             document.MarkSaved(targetPath, stamp);
             RecordRecentFile(targetPath);
+            SchedulePreview();
             UpdateStatus("文档已保存");
             return true;
         }
@@ -246,16 +263,16 @@ public partial class MainWindow : Window
         previewCancellation?.Dispose();
         previewCancellation = new CancellationTokenSource();
         long version = ++previewVersion;
-        _ = RefreshPreviewAsync(document.Text, version, previewCancellation.Token);
+        _ = RefreshPreviewAsync(document.Text, document.FilePath, version, previewCancellation.Token);
     }
 
     /// <summary>
-    /// Bug fix: the old preview path could leave a featureless white pane for an
-    /// empty document and did not expose WebView navigation failures. Rendering now
-    /// includes an explicit empty state while the service reports navigation errors.
+    /// Bug fix: preview rendering now carries the document path so relative images
+    /// can be mapped safely, while stale asynchronous renders remain cancellable.
     /// </summary>
     private async Task RefreshPreviewAsync(
         string markdown,
+        string? documentPath,
         long version,
         CancellationToken cancellationToken)
     {
@@ -263,13 +280,13 @@ public partial class MainWindow : Window
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
             string body = await Task.Run(
-                () => markdownRenderer.RenderBody(markdown),
+                () => markdownRenderer.RenderBody(markdown, documentPath),
                 cancellationToken);
             string page = previewDocumentBuilder.Build(body, previewStyleSheet);
 
             if (!cancellationToken.IsCancellationRequested && version == previewVersion)
             {
-                previewService?.Show(page);
+                previewService?.Show(page, documentPath);
             }
         }
         catch (OperationCanceledException)
@@ -312,15 +329,33 @@ public partial class MainWindow : Window
         UpdateStatus(message);
     }
 
+    private void About_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        MessageBox.Show(
+            this,
+            "WIMD v1.0.0\n\n本地、离线优先的 Markdown 实时预览编辑器。",
+            "关于 WIMD",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private static string? GetStartupDocumentPath()
+    {
+        // Windows shell commands quote paths before passing them to WIMD. The CLR
+        // performs argument splitting, so the application treats each value only as
+        // a path and never evaluates it as a command.
+        return Environment.GetCommandLineArgs()
+            .Skip(1)
+            .FirstOrDefault(path =>
+                File.Exists(path)
+                && (Path.GetExtension(path).Equals(".md", StringComparison.OrdinalIgnoreCase)
+                    || Path.GetExtension(path).Equals(".markdown", StringComparison.OrdinalIgnoreCase)));
+    }
+
     private void ShowFileError(string title, DocumentFileException exception)
     {
         UpdateStatus(exception.Message);
-        MessageBox.Show(
-            this,
-            exception.Message,
-            title,
-            MessageBoxButton.OK,
-            MessageBoxImage.Error);
+        MessageBox.Show(this, exception.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
     }
 
     private void UpdateStatus(string? message = null)

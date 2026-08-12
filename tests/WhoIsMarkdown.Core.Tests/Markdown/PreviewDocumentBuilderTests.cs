@@ -13,8 +13,11 @@ public sealed class PreviewDocumentBuilderTests
 
         Assert.Contains("default-src &#39;none&#39;", page, StringComparison.Ordinal);
         Assert.Contains("script-src &#39;none&#39;", page, StringComparison.Ordinal);
-        Assert.Contains("img-src data: file:", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("https:", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "img-src data: https://wimd-document.invalid",
+            page,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("file:", page, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

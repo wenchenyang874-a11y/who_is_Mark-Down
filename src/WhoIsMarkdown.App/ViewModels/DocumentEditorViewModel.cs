@@ -41,33 +41,21 @@ public sealed class DocumentEditorViewModel : ObservableObject
 
     public bool IsDirty => !string.Equals(text, savedText, StringComparison.Ordinal);
 
-    public string DisplayName => filePath is null
-        ? untitledName
-        : System.IO.Path.GetFileName(filePath);
+    public string DisplayName => filePath is null ? untitledName : System.IO.Path.GetFileName(filePath);
 
-    public string WindowTitle => $"{(IsDirty ? "*" : string.Empty)}{DisplayName} - Who Is Mark-Down";
+    public string WindowTitle => $"{(IsDirty ? "*" : string.Empty)}{DisplayName} - WIMD";
 
     public void StartNew(int number)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(number);
         untitledName = $"未命名-{number}";
-        ApplyDocument(
-            newText: string.Empty,
-            newFilePath: null,
-            emitUtf8Bom: false,
-            newLineEnding: DocumentLineEnding.None,
-            newStamp: null);
+        ApplyDocument(string.Empty, null, false, DocumentLineEnding.None, null);
     }
 
     public void Load(LoadedDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        ApplyDocument(
-            document.Text,
-            document.Path,
-            document.HasUtf8Bom,
-            document.LineEnding,
-            document.Stamp);
+        ApplyDocument(document.Text, document.Path, document.HasUtf8Bom, document.LineEnding, document.Stamp);
     }
 
     public DocumentWriteRequest CreateWriteRequest(string path)
@@ -88,12 +76,7 @@ public sealed class DocumentEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(WindowTitle));
     }
 
-    private void ApplyDocument(
-        string newText,
-        string? newFilePath,
-        bool emitUtf8Bom,
-        DocumentLineEnding newLineEnding,
-        DocumentFileStamp? newStamp)
+    private void ApplyDocument(string newText, string? newFilePath, bool emitUtf8Bom, DocumentLineEnding newLineEnding, DocumentFileStamp? newStamp)
     {
         text = newText;
         savedText = newText;
