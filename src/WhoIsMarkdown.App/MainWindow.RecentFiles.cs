@@ -1,19 +1,24 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.App.ViewModels;
 using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
 
 /// <summary>
-/// Coordinates the recent-file projection shown by the shell. Removing an item
-/// only updates local settings and never deletes or modifies the referenced file.
+/// Coordinates the recent-file projection and its non-destructive context actions.
+/// Removing an item updates only local settings; shell and clipboard actions never
+/// modify, rename, move, or delete the referenced file.
 /// </summary>
 public partial class MainWindow
 {
     private readonly IApplicationSettingsStore settingsStore = CreateSettingsStore();
+    private readonly IFileExplorerService fileExplorerService = new WindowsFileExplorerService();
+    private readonly IClipboardTextService clipboardTextService = new WindowsClipboardTextService();
     private ApplicationSettings applicationSettings = new();
 
     public ObservableCollection<RecentFileItemViewModel> RecentFiles { get; } = [];
@@ -45,19 +50,17 @@ public partial class MainWindow
 
     private async void OpenRecentFile_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (sender is not Button { Tag: string path })
+        if (TryGetTaggedValue(sender, out string path))
         {
-            return;
+            await OpenRecentFileAsync(path);
         }
+    }
 
+    private async Task OpenRecentFileAsync(string path)
+    {
         if (!File.Exists(path))
         {
-            MessageBox.Show(
-                this,
-                $"文件已移动或不存在：\n{path}\n\n可以点击右侧的移除按钮将它移出最近列表。",
-                "找不到文件",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            ShowRecentFileMissing(path);
             return;
         }
 
@@ -67,9 +70,83 @@ public partial class MainWindow
         }
     }
 
+    private void RevealRecentFile_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (!TryGetTaggedValue(sender, out string path))
+        {
+            return;
+        }
+
+        try
+        {
+            fileExplorerService.RevealFile(path);
+            UpdateStatus("已在文件资源管理器中定位文件");
+        }
+        catch (FileNotFoundException)
+        {
+            ShowRecentFileMissing(path);
+        }
+        catch (Exception exception) when (exception is ArgumentException
+            or NotSupportedException
+            or PathTooLongException
+            or InvalidOperationException
+            or Win32Exception)
+        {
+            UpdateStatus($"无法打开文件资源管理器：{exception.Message}");
+            MessageBox.Show(
+                this,
+                $"无法在文件资源管理器中定位该文件：\n{path}\n\n{exception.Message}",
+                "打开文件资源管理器失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private async void CopyRecentFilePath_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (TryGetTaggedValue(sender, out string path))
+        {
+            await CopyRecentValueAsync(path, "文件路径");
+        }
+    }
+
+    private async void CopyRecentDirectoryPath_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (TryGetTaggedValue(sender, out string path))
+        {
+            await CopyRecentValueAsync(path, "所在文件夹路径");
+        }
+    }
+
+    private async void CopyRecentFileName_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (TryGetTaggedValue(sender, out string fileName))
+        {
+            await CopyRecentValueAsync(fileName, "文件名");
+        }
+    }
+
+    private async Task CopyRecentValueAsync(string value, string label)
+    {
+        bool copied = await clipboardTextService.TrySetTextAsync(value);
+        if (copied)
+        {
+            UpdateStatus($"已复制{label}");
+            return;
+        }
+
+        UpdateStatus($"无法复制{label}：剪贴板正被其他程序占用");
+        MessageBox.Show(
+            this,
+            "Windows 剪贴板正被其他程序占用，请稍后重试。",
+            "复制失败",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
     private void RemoveRecentFile_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (sender is not Button { Tag: string path })
+        if (!TryGetTaggedValue(sender, out string path))
         {
             return;
         }
@@ -131,6 +208,24 @@ public partial class MainWindow
             UpdateStatus(exception.Message);
             return false;
         }
+    }
+
+    private void ShowRecentFileMissing(string path)
+    {
+        MessageBox.Show(
+            this,
+            $"文件已移动或不存在：\n{path}\n\n可右键选择“移出最近记录”，该操作不会删除原文件。",
+            "找不到文件",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private static bool TryGetTaggedValue(object sender, out string value)
+    {
+        value = sender is FrameworkElement { Tag: string taggedValue }
+            ? taggedValue
+            : string.Empty;
+        return !string.IsNullOrWhiteSpace(value);
     }
 
     /// <summary>

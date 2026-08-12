@@ -179,11 +179,24 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Grid Margin="0,2">
+
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <Button Grid.Column="0" Tag="{Binding Path}" ToolTip="{Binding Path}" Style="{StaticResource RecentOpenButtonStyle}" Click="OpenRecentFile_Click">
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                                            <MenuItem Header="打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFile_Click" />
+                                                            <MenuItem Header="在文件资源管理器中显示" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="RevealRecentFile_Click" />
+                                                            <Separator />
+                                                            <MenuItem Header="复制文件路径" Tag="{Binding Path}" Click="CopyRecentFilePath_Click" />
+                                                            <MenuItem Header="复制所在文件夹路径" Tag="{Binding DirectoryPath}" Click="CopyRecentDirectoryPath_Click" />
+                                                            <MenuItem Header="复制文件名" Tag="{Binding DisplayName}" Click="CopyRecentFileName_Click" />
+                                                            <Separator />
+                                                            <MenuItem Header="移出最近记录（不删除文件）" Tag="{Binding Path}" Click="RemoveRecentFile_Click" />
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
                                                     <StackPanel HorizontalAlignment="Stretch">
                                                         <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                                         <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis" />

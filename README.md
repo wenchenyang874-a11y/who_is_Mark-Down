@@ -11,7 +11,7 @@ WIMD 是面向 Windows 10/11 的本地 Markdown 实时预览编辑器，强调�
 - 菜单栏提供“快捷键”设置入口，可查看、自定义并恢复默认组合
 - 编辑区与预览区双向滚动联动；光标对应内容已处于预览可视区 25%～75% 时保持预览不动
 - 安全显示当前文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片
-- 可折叠最近文件侧栏；移出记录不会删除原文件
+- 可折叠最近文件侧栏；右键可打开、在资源管理器中定位、复制路径或移出记录，且不会删除原文件
 - UTF-8、BOM、CRLF/LF 检测及同目录安全替换保存
 - 本地自定义背景与透明度调节
 - Markdown 原始 HTML 禁用、CSP 隔离、宿主滚动脚本和危险链接拦截
@@ -44,7 +44,7 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.3.0
+./packaging/build-release.ps1 -Version 1.4.0
 ```
 
-发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.3.0-win-x64.exe`。安装向导使用简体中文；检测到已有 WIMD 时会显示版本和原安装位置，确认后原位覆盖，取消则退出。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。
+发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.4.0-win-x64.exe`。安装向导使用简体中文；检测到已有 WIMD 时会显示版本和原安装位置，确认后原位覆盖，取消则退出。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。
