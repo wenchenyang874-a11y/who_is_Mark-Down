@@ -88,10 +88,10 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Bug fix: moving the caret scrolls only the preview. WebView2 reports every
-    /// scroll, including host-requested ones; without this short echo guard that
-    /// report was applied back to AvalonEdit and a simple mouse click moved the
-    /// editor viewport unexpectedly.
+    /// Bug fix: moving the caret scrolls only the preview, and only when its source
+    /// anchor is outside the preview's 25%-75% comfort zone. WebView2 reports
+    /// host-requested scrolling too, so the echo guard prevents that report from
+    /// moving AvalonEdit after a simple mouse click.
     /// </summary>
     private async Task SynchronizePreviewToCaretAsync()
     {
@@ -103,7 +103,7 @@ public partial class MainWindow
         SuppressPreviewScrollEcho();
         try
         {
-            await previewService.ScrollToSourceLineAsync(Editor.TextArea.Caret.Line - 1);
+            await previewService.EnsureSourceLineInComfortZoneAsync(Editor.TextArea.Caret.Line - 1);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
         {

@@ -40,81 +40,32 @@
                     <Style TargetType="{x:Type MenuItem}">
                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
                     </Style>
-                    <!-- The .NET Fluent MenuItem template can render top-level headers
-                         transparent on some Windows themes. This local template owns the
-                         header chrome while retaining MenuItem's native submenu behavior. -->
+                    <!-- The .NET Fluent theme can resolve a top-level menu header to
+                         transparent text on some Windows configurations. An explicit
+                         AccessText data template fixes the foreground while preserving
+                         WPF's complete native menu template and input behavior. -->
                     <Style x:Key="TopLevelMenuItemStyle" TargetType="{x:Type MenuItem}">
                         <Setter Property="Height" Value="30" />
                         <Setter Property="Padding" Value="12,0" />
                         <Setter Property="Foreground" Value="#182033" />
                         <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="Template">
+                        <Setter Property="HeaderTemplate">
                             <Setter.Value>
-                                <ControlTemplate TargetType="{x:Type MenuItem}">
-                                    <Border x:Name="HeaderChrome"
-                                            Background="{TemplateBinding Background}">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="*" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <ContentPresenter x:Name="HeaderPresenter"
-                                                              Margin="{TemplateBinding Padding}"
-                                                              VerticalAlignment="Center"
-                                                              ContentSource="Header"
-                                                              RecognizesAccessKey="True"
-                                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
-                                                              TextElement.Foreground="{TemplateBinding Foreground}" />
-                                            <Popup x:Name="PART_Popup"
-                                                   Grid.Row="1"
-                                                   AllowsTransparency="True"
-                                                   Focusable="False"
-                                                   IsOpen="{TemplateBinding IsSubmenuOpen}"
-                                                   Placement="Bottom"
-                                                   PlacementTarget="{Binding ElementName=HeaderChrome}"
-                                                   PopupAnimation="Fade"
-                                                   VerticalOffset="1">
-                                                <Border Padding="0,3"
-                                                        Background="White"
-                                                        BorderBrush="{StaticResource BorderBrush}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="6"
-                                                        SnapsToDevicePixels="True">
-                                                    <ScrollViewer CanContentScroll="True">
-                                                        <Grid>
-                                                            <ItemsPresenter x:Name="ItemsPresenter"
-                                                                            KeyboardNavigation.DirectionalNavigation="Cycle"
-                                                                            KeyboardNavigation.TabNavigation="Cycle"
-                                                                            Grid.IsSharedSizeScope="True"
-                                                                            SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
-                                                        </Grid>
-                                                    </ScrollViewer>
-                                                </Border>
-                                            </Popup>
-                                        </Grid>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsHighlighted" Value="True">
-                                            <Setter TargetName="HeaderChrome" Property="Background" Value="#E9EBF9" />
-                                        </Trigger>
-                                        <Trigger Property="IsSubmenuOpen" Value="True">
-                                            <Setter TargetName="HeaderChrome" Property="Background" Value="#DADDF3" />
-                                        </Trigger>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter Property="Opacity" Value="0.42" />
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
+                                <DataTemplate>
+                                    <AccessText VerticalAlignment="Center"
+                                                Foreground="#182033"
+                                                Text="{Binding}" />
+                                </DataTemplate>
                             </Setter.Value>
                         </Setter>
                     </Style>
                 </Menu.Resources>
                 <MenuItem Header="文件(_F)" Style="{StaticResource TopLevelMenuItemStyle}">
-                    <MenuItem Header="新建(_N)" InputGestureText="Ctrl+N" Click="New_Click" />
-                    <MenuItem Header="打开(_O)..." InputGestureText="Ctrl+O" Click="Open_Click" />
+                    <MenuItem x:Name="NewDocumentMenuItem" Header="新建(_N)" InputGestureText="Ctrl+N" Click="New_Click" />
+                    <MenuItem x:Name="OpenDocumentMenuItem" Header="打开(_O)..." InputGestureText="Ctrl+O" Click="Open_Click" />
                     <Separator />
-                    <MenuItem Header="保存(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
-                    <MenuItem Header="另存为(_A)..." InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
+                    <MenuItem x:Name="SaveDocumentMenuItem" Header="保存(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
+                    <MenuItem x:Name="SaveAsDocumentMenuItem" Header="另存为(_A)..." InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
                     <Separator />
                     <MenuItem Header="退出(_X)" Click="Exit_Click" />
                 </MenuItem>
@@ -127,10 +78,10 @@
                     <MenuItem x:Name="PasteMenuItem" Header="粘贴(_P)" InputGestureText="Ctrl+V" Click="Paste_Click" />
                     <MenuItem Header="全选(_A)" InputGestureText="Ctrl+A" Click="SelectAll_Click" />
                     <Separator />
-                    <MenuItem Header="Markdown 格式">
+                    <MenuItem x:Name="MarkdownFormatMenuItem" Header="Markdown 格式">
                         <MenuItem Header="粗体" InputGestureText="Ctrl+B" Tag="bold" Click="MarkdownFormat_Click" />
                         <MenuItem Header="斜体" InputGestureText="Ctrl+I" Tag="italic" Click="MarkdownFormat_Click" />
-                        <MenuItem Header="删除线" InputGestureText="Ctrl+`" Tag="strike" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="删除线" InputGestureText="Ctrl+Shift+X" Tag="strike" Click="MarkdownFormat_Click" />
                         <MenuItem Header="行内代码" InputGestureText="Ctrl+E" Tag="inline-code" Click="MarkdownFormat_Click" />
                         <MenuItem Header="代码块" InputGestureText="Ctrl+Shift+K" Tag="code-block" Click="MarkdownFormat_Click" />
                         <Separator />
@@ -144,7 +95,7 @@
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="视图(_V)" Style="{StaticResource TopLevelMenuItemStyle}">
-                    <MenuItem Header="循环切换视图" InputGestureText="F9" Click="CycleViewMode_Click" />
+                    <MenuItem x:Name="CycleViewModeMenuItem" Header="循环切换视图" InputGestureText="F9" Click="CycleViewMode_Click" />
                     <Separator />
                     <MenuItem x:Name="PreviewOnlyModeMenuItem" Header="仅预览" IsCheckable="True" Click="PreviewOnlyMode_Click" />
                     <MenuItem x:Name="SplitModeMenuItem" Header="编辑 + 预览" IsCheckable="True" IsChecked="True" Click="SplitMode_Click" />
@@ -152,6 +103,9 @@
                     <Separator />
                     <MenuItem x:Name="RecentPaneMenuItem" Header="显示最近文件" IsCheckable="True" Click="RecentPaneToggle_Click" />
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
+                </MenuItem>
+                <MenuItem Header="快捷键(_K)" Style="{StaticResource TopLevelMenuItemStyle}">
+                    <MenuItem Header="快捷键设置..." Click="Shortcuts_Click" />
                 </MenuItem>
                 <MenuItem Header="帮助(_H)" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="关于 WIMD" Click="About_Click" />
@@ -227,7 +181,7 @@
 
                     <Border Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Style="{StaticResource SurfaceCardStyle}">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                            <StackPanel Orientation="Horizontal">
+                            <StackPanel x:Name="MarkdownToolbar" Orientation="Horizontal">
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H1" ToolTip="一级标题 (Ctrl+1)" Tag="1" Click="Heading_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H2" ToolTip="二级标题 (Ctrl+2)" Tag="2" Click="Heading_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H3" ToolTip="三级标题 (Ctrl+3)" Tag="3" Click="Heading_Click" />
@@ -237,7 +191,7 @@
                                 <Separator Margin="5,4" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" FontWeight="Bold" Content="B" ToolTip="粗体 (Ctrl+B，可再次执行取消)" Tag="bold" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" FontStyle="Italic" Content="I" ToolTip="斜体 (Ctrl+I，可再次执行取消)" Tag="italic" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="S̶" ToolTip="删除线 (Ctrl+`，可再次执行取消)" Tag="strike" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="S̶" ToolTip="删除线 (Ctrl+Shift+X，可再次执行取消)" Tag="strike" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="❝" ToolTip="引用 (Ctrl+Shift+9)" Tag="quote" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="&lt;/&gt;" ToolTip="行内代码 (Ctrl+E)" Tag="inline-code" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="代码块" ToolTip="代码块 (Ctrl+Shift+K)" Tag="code-block" Click="MarkdownFormat_Click" />

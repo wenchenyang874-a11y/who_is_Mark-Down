@@ -1,13 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
-using System.Windows;
-using System.Windows.Input;
 
 namespace WhoIsMarkdown.App;
 
 /// <summary>
-/// Registers application-level shortcuts and owns terminal window cleanup.
-/// Routed commands keep working while the editor has keyboard focus.
+/// Owns the terminal window cleanup and releases application-level resources.
 /// </summary>
 [SuppressMessage(
     "Design",
@@ -19,117 +16,6 @@ namespace WhoIsMarkdown.App;
     Justification = "Core service interfaces are deliberate extension and test seams at the desktop composition boundary.")]
 public partial class MainWindow
 {
-    private static readonly RoutedUICommand NewDocumentShortcutCommand = CreateCommand(
-        "新建文档",
-        nameof(NewDocumentShortcutCommand),
-        Key.N,
-        ModifierKeys.Control);
-
-    private static readonly RoutedUICommand OpenDocumentShortcutCommand = CreateCommand(
-        "打开文档",
-        nameof(OpenDocumentShortcutCommand),
-        Key.O,
-        ModifierKeys.Control);
-
-    private static readonly RoutedUICommand SaveDocumentShortcutCommand = CreateCommand(
-        "保存文档",
-        nameof(SaveDocumentShortcutCommand),
-        Key.S,
-        ModifierKeys.Control);
-
-    private static readonly RoutedUICommand SaveDocumentAsShortcutCommand = CreateCommand(
-        "另存为",
-        nameof(SaveDocumentAsShortcutCommand),
-        Key.S,
-        ModifierKeys.Control | ModifierKeys.Shift);
-
-    private static readonly RoutedUICommand BoldShortcutCommand = CreateCommand(
-        "粗体",
-        nameof(BoldShortcutCommand),
-        Key.B,
-        ModifierKeys.Control);
-
-    private static readonly RoutedUICommand ItalicShortcutCommand = CreateCommand(
-        "斜体",
-        nameof(ItalicShortcutCommand),
-        Key.I,
-        ModifierKeys.Control);
-
-    private static readonly RoutedUICommand CycleViewShortcutCommand = CreateCommand(
-        "循环切换视图",
-        nameof(CycleViewShortcutCommand),
-        Key.F9,
-        ModifierKeys.None);
-
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs eventArgs)
-    {
-        ModifierKeys modifiers = Keyboard.Modifiers;
-        if (eventArgs.Key == Key.F9 && modifiers == ModifierKeys.None)
-        {
-            CycleWorkspaceViewMode();
-            eventArgs.Handled = true;
-            return;
-        }
-
-        if (modifiers == ModifierKeys.Control
-            && eventArgs.Key is >= Key.D1 and <= Key.D6)
-        {
-            int level = eventArgs.Key - Key.D0;
-            ApplyMarkdownFormat($"h{level}");
-            eventArgs.Handled = true;
-            return;
-        }
-
-        string? format = GetMarkdownFormatForShortcut(eventArgs.Key, modifiers);
-        if (format is not null)
-        {
-            ApplyMarkdownFormat(format);
-            eventArgs.Handled = true;
-        }
-    }
-
-    private static string? GetMarkdownFormatForShortcut(Key key, ModifierKeys modifiers) =>
-        (key, modifiers) switch
-        {
-            (Key.B, ModifierKeys.Control) => "bold",
-            (Key.I, ModifierKeys.Control) => "italic",
-            // OemTilde/Oem3 is the physical backtick key below Esc; Shift is intentionally not accepted.
-            (Key.OemTilde, ModifierKeys.Control) => "strike",
-            (Key.E, ModifierKeys.Control) => "inline-code",
-            (Key.K, ModifierKeys.Control) => "link",
-            (Key.K, ModifierKeys.Control | ModifierKeys.Shift) => "code-block",
-            (Key.I, ModifierKeys.Control | ModifierKeys.Shift) => "image",
-            (Key.D7, ModifierKeys.Control | ModifierKeys.Shift) => "ordered-list",
-            (Key.D8, ModifierKeys.Control | ModifierKeys.Shift) => "unordered-list",
-            (Key.D9, ModifierKeys.Control | ModifierKeys.Shift) => "quote",
-            (Key.L, ModifierKeys.Control | ModifierKeys.Shift) => "task-list",
-            _ => null,
-        };
-
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
-
-        CommandBindings.Add(new CommandBinding(NewDocumentShortcutCommand, (_, _) => New_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(OpenDocumentShortcutCommand, (_, _) => Open_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(SaveDocumentShortcutCommand, (_, _) => Save_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(SaveDocumentAsShortcutCommand, (_, _) => SaveAs_Click(this, new RoutedEventArgs())));
-        CommandBindings.Add(new CommandBinding(CycleViewShortcutCommand, (_, _) => CycleWorkspaceViewMode()));
-        CommandBindings.Add(new CommandBinding(BoldShortcutCommand, (_, _) => ApplyMarkdownFormat("bold")));
-        CommandBindings.Add(new CommandBinding(ItalicShortcutCommand, (_, _) => ApplyMarkdownFormat("italic")));
-
-        for (int level = 1; level <= 6; level++)
-        {
-            int capturedLevel = level;
-            RoutedUICommand headingCommand = CreateCommand(
-                $"{level} 级标题",
-                $"Heading{level}ShortcutCommand",
-                Key.D0 + level,
-                ModifierKeys.Control);
-            CommandBindings.Add(new CommandBinding(headingCommand, (_, _) => ApplyMarkdownFormat($"h{capturedLevel}")));
-        }
-    }
-
     /// <summary>
     /// Bug fix: the previous Closing handler cancelled every close request, even for
     /// clean documents, and immediately re-entered Close. Clean windows now close in
@@ -190,11 +76,5 @@ public partial class MainWindow
 
         Editor.TextArea.Caret.PositionChanged -= EditorCaret_PositionChanged;
         base.OnClosed(e);
-    }
-
-    private static RoutedUICommand CreateCommand(string text, string name, Key key, ModifierKeys modifiers)
-    {
-        InputGestureCollection gestures = [new KeyGesture(key, modifiers)];
-        return new RoutedUICommand(text, name, typeof(MainWindow), gestures);
     }
 }

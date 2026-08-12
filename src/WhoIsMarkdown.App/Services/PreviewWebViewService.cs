@@ -128,7 +128,12 @@ public sealed class PreviewWebViewService : IDisposable
             $"window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - window.innerHeight) * {invariantRatio});");
     }
 
-    public Task ScrollToSourceLineAsync(int zeroBasedLine)
+    /// <summary>
+    /// Keeps the source anchor inside the middle 25%-75% of the visible preview.
+    /// A caret move already inside that comfort zone is a no-op; an anchor outside
+    /// it is moved only to the nearest boundary, avoiding the old jump-to-top effect.
+    /// </summary>
+    public Task EnsureSourceLineInComfortZoneAsync(int zeroBasedLine)
     {
         int safeLine = Math.Max(0, zeroBasedLine);
         return ExecuteHostScriptAsync($$"""
@@ -143,8 +148,16 @@ public sealed class PreviewWebViewService : IDisposable
                 if (candidate.line > line) break;
                 target = candidate;
               }
-              const top = target.element.getBoundingClientRect().top + window.scrollY - 24;
-              window.scrollTo(0, Math.max(0, top));
+
+              const viewportHeight = Math.max(1, window.innerHeight);
+              const anchorTop = target.element.getBoundingClientRect().top;
+              const comfortTop = viewportHeight * 0.25;
+              const comfortBottom = viewportHeight * 0.75;
+              if (anchorTop >= comfortTop && anchorTop <= comfortBottom) return;
+
+              const nearestBoundary = anchorTop < comfortTop ? comfortTop : comfortBottom;
+              const absoluteTop = anchorTop + window.scrollY;
+              window.scrollTo(0, Math.max(0, absoluteTop - nearestBoundary));
             })();
             """);
     }

@@ -33,6 +33,7 @@ public partial class MainWindow
         RefreshRecentFilesView();
         SetRecentPaneExpanded(applicationSettings.IsRecentPaneExpanded, persist: false);
         ApplyAppearanceSettings();
+        ApplyShortcutSettings();
     }
 
     private void RecordRecentFile(string path)
@@ -118,15 +119,17 @@ public partial class MainWindow
             : Visibility.Collapsed;
     }
 
-    private void TrySaveApplicationSettings()
+    private bool TrySaveApplicationSettings()
     {
         try
         {
             settingsStore.Save(applicationSettings);
+            return true;
         }
         catch (ApplicationSettingsStoreException exception)
         {
             UpdateStatus(exception.Message);
+            return false;
         }
     }
 

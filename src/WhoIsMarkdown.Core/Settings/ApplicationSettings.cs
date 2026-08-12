@@ -17,6 +17,9 @@ public sealed record ApplicationSettings
 
     public bool IsRecentPaneExpanded { get; init; } = true;
 
+    public IReadOnlyDictionary<string, ShortcutGesture> ShortcutOverrides { get; init; }
+        = new Dictionary<string, ShortcutGesture>(StringComparer.Ordinal);
+
     public ApplicationSettings Normalize()
     {
         List<RecentFileEntry> recentFiles = [];
@@ -38,11 +41,25 @@ public sealed record ApplicationSettings
             .Take(MaximumRecentFiles)
             .ToArray();
 
+        Dictionary<string, ShortcutGesture> normalizedShortcuts = new(StringComparer.Ordinal);
+        foreach ((string commandId, ShortcutGesture gesture) in ShortcutOverrides ??
+                 new Dictionary<string, ShortcutGesture>())
+        {
+            ShortcutGesture normalizedGesture = gesture?.Normalize()
+                ?? new ShortcutGesture { Key = string.Empty };
+            if (!string.IsNullOrWhiteSpace(commandId)
+                && !string.IsNullOrWhiteSpace(normalizedGesture.Key))
+            {
+                normalizedShortcuts[commandId.Trim()] = normalizedGesture;
+            }
+        }
+
         return this with
         {
             RecentFiles = normalizedRecentFiles,
             BackgroundImagePath = TryNormalizePath(BackgroundImagePath),
             BackgroundOpacity = Math.Clamp(BackgroundOpacity, 0, 1),
+            ShortcutOverrides = normalizedShortcuts,
         };
     }
 

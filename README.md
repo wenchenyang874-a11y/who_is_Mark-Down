@@ -8,14 +8,15 @@ WIMD 是面向 Windows 10/11 的本地 Markdown 实时预览编辑器，强调�
 - `F9` 在仅预览、编辑 + 预览、仅编辑三种模式间循环
 - 紧凑菜单栏和 Markdown 快捷工具条；`Ctrl+1`～`Ctrl+6` 设置标题
 - 粗体、斜体、删除线支持重复快捷键切换；常用格式快捷键见编辑菜单
-- 编辑区与预览区双向滚动联动，光标按 Markdown 源行定位预览
+- 菜单栏提供“快捷键”设置入口，可查看、自定义并恢复默认组合
+- 编辑区与预览区双向滚动联动；光标对应内容已处于预览可视区 25%～75% 时保持预览不动
 - 安全显示当前文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片
 - 可折叠最近文件侧栏；移出记录不会删除原文件
 - UTF-8、BOM、CRLF/LF 检测及同目录安全替换保存
 - 本地自定义背景与透明度调节
 - Markdown 原始 HTML 禁用、CSP 隔离、宿主滚动脚本和危险链接拦截
 
-文件操作使用 `Ctrl+N`、`Ctrl+O`、`Ctrl+S`、`Ctrl+Shift+S`。格式快捷键包括 `Ctrl+B` 粗体、`Ctrl+I` 斜体、`Ctrl` + 反引号键（Esc 下方）删除线、`Ctrl+E` 行内代码、`Ctrl+K` 链接，以及 `Ctrl+Shift+7/8/9` 有序列表、无序列表和引用；完整组合可在编辑菜单查看。应用无需账号，不包含遥测或文档上传；远程图片默认不会加载。
+文件操作使用 `Ctrl+N`、`Ctrl+O`、`Ctrl+S`、`Ctrl+Shift+S`。格式快捷键包括 `Ctrl+B` 粗体、`Ctrl+I` 斜体、`Ctrl+Shift+X` 删除线、`Ctrl+E` 行内代码、`Ctrl+K` 链接，以及 `Ctrl+Shift+7/8/9` 有序列表、无序列表和引用；完整组合可在“快捷键”菜单查看和自定义；自定义结果仅保存在本机。应用无需账号，不包含遥测或文档上传；远程图片默认不会加载。
 
 ## 技术栈与结构
 
@@ -43,7 +44,7 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.1.0
+./packaging/build-release.ps1 -Version 1.2.0
 ```
 
-发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.1.0-win-x64.exe`。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。
+发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.2.0-win-x64.exe`。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。
