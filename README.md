@@ -44,7 +44,7 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.2.1
+./packaging/build-release.ps1 -Version 1.3.0
 ```
 
-发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.2.1-win-x64.exe`。安装向导使用简体中文；检测到已有 WIMD 时会显示版本和原安装位置，确认后原位覆盖，取消则退出。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。
+发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.3.0-win-x64.exe`。安装向导使用简体中文；检测到已有 WIMD 时会显示版本和原安装位置，确认后原位覆盖，取消则退出。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。

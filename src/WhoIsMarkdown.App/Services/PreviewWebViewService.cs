@@ -40,6 +40,10 @@ public sealed class PreviewWebViewService : IDisposable
     private readonly PreviewNavigationGate navigationGate = new();
     private CoreWebView2? core;
     private string? mappedDocumentDirectory;
+    private PreviewSnapshot? pendingPreview;
+    private bool processingPreview;
+    private bool navigationInProgress;
+    private bool previewPageReady;
     private bool initialized;
     private bool disposed;
 
@@ -78,8 +82,8 @@ public sealed class PreviewWebViewService : IDisposable
         core = webView.CoreWebView2;
         // Bug fix: WebView2 does not execute AddScriptToExecuteOnDocumentCreated
         // registrations while this flag is false, which broke preview-to-editor
-        // scroll reporting. Page-authored scripts remain blocked independently:
-        // Markdown disables raw HTML and the generated page uses script-src 'none'.
+        // scroll reporting. Page-authored scripts remain blocked independently by
+        // the HTML allowlist and the generated page's script-src 'none' policy.
         core.Settings.IsScriptEnabled = true;
         core.Settings.AreDefaultScriptDialogsEnabled = false;
         core.Settings.AreDevToolsEnabled = false;
@@ -93,9 +97,15 @@ public sealed class PreviewWebViewService : IDisposable
         initialized = true;
     }
 
-    public void Show(string html, string? documentPath)
+    /// <summary>
+    /// Updates the existing preview DOM after the first navigation. Reusing the
+    /// loaded page avoids WebView2's white unload/repaint frame on every keystroke.
+    /// Requests arriving during initial navigation are coalesced to the newest body.
+    /// </summary>
+    public Task ShowAsync(string fullHtml, string bodyHtml, string? documentPath)
     {
-        ArgumentNullException.ThrowIfNull(html);
+        ArgumentNullException.ThrowIfNull(fullHtml);
+        ArgumentNullException.ThrowIfNull(bodyHtml);
         ThrowIfDisposed();
 
         if (!initialized || core is null)
@@ -103,21 +113,8 @@ public sealed class PreviewWebViewService : IDisposable
             throw new InvalidOperationException("预览组件尚未初始化。");
         }
 
-        ConfigureDocumentResourceMapping(documentPath);
-
-        // Bug fix: WebView2 represents NavigateToString as a data:text/html
-        // navigation. A single-use gate admits only this host-initiated document,
-        // while user navigation to arbitrary data URLs remains blocked.
-        navigationGate.BeginGeneratedNavigation();
-        try
-        {
-            core.NavigateToString(html);
-        }
-        catch
-        {
-            navigationGate.CancelGeneratedNavigation();
-            throw;
-        }
+        pendingPreview = new PreviewSnapshot(fullHtml, bodyHtml, documentPath);
+        return ProcessPreviewQueueAsync();
     }
 
     public Task ScrollToRatioAsync(double ratio)
@@ -170,6 +167,9 @@ public sealed class PreviewWebViewService : IDisposable
         }
 
         disposed = true;
+        pendingPreview = null;
+        previewPageReady = false;
+        navigationInProgress = false;
         navigationGate.CancelGeneratedNavigation();
         if (core is not null)
         {
@@ -183,6 +183,89 @@ public sealed class PreviewWebViewService : IDisposable
 
         webView.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Serializes preview mutations on the UI thread and collapses bursts to the
+    /// newest snapshot. A full navigation is used only while no preview page exists.
+    /// </summary>
+    private async Task ProcessPreviewQueueAsync()
+    {
+        if (processingPreview || disposed)
+        {
+            return;
+        }
+
+        processingPreview = true;
+        try
+        {
+            while (pendingPreview is not null)
+            {
+                PreviewSnapshot snapshot = pendingPreview;
+                pendingPreview = null;
+                ConfigureDocumentResourceMapping(snapshot.DocumentPath);
+
+                if (!previewPageReady)
+                {
+                    NavigateToPreview(snapshot.FullHtml);
+                    return;
+                }
+
+                bool updated = await TryUpdateBodyAsync(snapshot.BodyHtml).ConfigureAwait(true);
+                if (!updated)
+                {
+                    previewPageReady = false;
+                    NavigateToPreview(snapshot.FullHtml);
+                    return;
+                }
+            }
+
+            PreviewReady?.Invoke(this, EventArgs.Empty);
+        }
+        finally
+        {
+            // Navigation completion resumes the queue. Keeping this flag set while
+            // navigating prevents concurrent calls from starting duplicate pages.
+            if (!navigationInProgress)
+            {
+                processingPreview = false;
+            }
+        }
+    }
+
+    private void NavigateToPreview(string html)
+    {
+        if (core is null)
+        {
+            throw new InvalidOperationException("预览组件尚未初始化。");
+        }
+
+        // NavigateToString appears as data:text/html. The one-shot navigation gate
+        // admits only this host-generated document and keeps user data URLs blocked.
+        navigationGate.BeginGeneratedNavigation();
+        navigationInProgress = true;
+        try
+        {
+            core.NavigateToString(html);
+        }
+        catch
+        {
+            navigationInProgress = false;
+            navigationGate.CancelGeneratedNavigation();
+            throw;
+        }
+    }
+
+    private async Task<bool> TryUpdateBodyAsync(string bodyHtml)
+    {
+        if (core is null)
+        {
+            return false;
+        }
+
+        string result = await core.ExecuteScriptAsync(PreviewUpdateScriptBuilder.Build(bodyHtml))
+            .ConfigureAwait(true);
+        return string.Equals(result, "true", StringComparison.Ordinal);
     }
 
     private async Task ExecuteHostScriptAsync(string script)
@@ -241,17 +324,58 @@ public sealed class PreviewWebViewService : IDisposable
         TryOpenExternalUri(eventArgs.Uri);
     }
 
-    private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs eventArgs)
+    private async void OnNavigationCompleted(
+        object? sender,
+        CoreWebView2NavigationCompletedEventArgs eventArgs)
     {
-        if (!eventArgs.IsSuccess && eventArgs.WebErrorStatus is not CoreWebView2WebErrorStatus.OperationCanceled)
+        // Canceled external navigations are unrelated to the host preview document.
+        if (!navigationInProgress)
         {
-            PreviewNavigationFailed?.Invoke(this, $"预览页面加载失败：{eventArgs.WebErrorStatus}");
             return;
         }
 
-        if (eventArgs.IsSuccess)
+        navigationInProgress = false;
+        processingPreview = false;
+        previewPageReady = eventArgs.IsSuccess;
+
+        if (!eventArgs.IsSuccess)
         {
-            PreviewReady?.Invoke(this, EventArgs.Empty);
+            if (eventArgs.WebErrorStatus is not CoreWebView2WebErrorStatus.OperationCanceled)
+            {
+                PreviewNavigationFailed?.Invoke(
+                    this,
+                    $"预览页面加载失败：{eventArgs.WebErrorStatus}");
+            }
+
+            if (pendingPreview is not null)
+            {
+                try
+                {
+                    await ProcessPreviewQueueAsync().ConfigureAwait(true);
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or System.Runtime.InteropServices.COMException)
+                {
+                    PreviewNavigationFailed?.Invoke(this, $"预览更新失败：{exception.Message}");
+                }
+            }
+
+            return;
+        }
+
+        try
+        {
+            if (pendingPreview is not null)
+            {
+                await ProcessPreviewQueueAsync().ConfigureAwait(true);
+            }
+            else
+            {
+                PreviewReady?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or System.Runtime.InteropServices.COMException)
+        {
+            PreviewNavigationFailed?.Invoke(this, $"预览更新失败：{exception.Message}");
         }
     }
 
@@ -312,6 +436,11 @@ public sealed class PreviewWebViewService : IDisposable
             ? value
             : string.Concat(value.AsSpan(0, maximumDisplayLength), "…");
     }
+
+    private sealed record PreviewSnapshot(
+        string FullHtml,
+        string BodyHtml,
+        string? DocumentPath);
 
     private static bool IsAllowedExternalScheme(string scheme)
     {

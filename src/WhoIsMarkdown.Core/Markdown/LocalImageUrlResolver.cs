@@ -26,6 +26,15 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
         ".webp",
     };
 
+    private static readonly string[] SupportedDataImagePrefixes =
+    [
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/gif;base64,",
+        "data:image/bmp;base64,",
+        "data:image/webp;base64,",
+    ];
+
     public string RewriteGeneratedHtml(string bodyHtml, string? documentPath)
     {
         ArgumentNullException.ThrowIfNull(bodyHtml);
@@ -46,7 +55,10 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
     private static string RewriteSource(string encodedSource, string? documentDirectory)
     {
         string source = WebUtility.HtmlDecode(encodedSource);
-        if (source.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+        // Bug fix: a broad data:image/* exception also admitted SVG, whose nested
+        // resources conflict with WIMD's offline boundary. Keep only raster formats.
+        if (SupportedDataImagePrefixes.Any(
+            prefix => source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
         {
             return encodedSource;
         }

@@ -21,6 +21,17 @@ public sealed class PreviewDocumentBuilderTests
     }
 
     [Fact]
+    public void GetVisibleBody_WhenBodyIsNotEmpty_ReturnsSameFragmentForIncrementalUpdate()
+    {
+        PreviewDocumentBuilder builder = new();
+        const string body = "<h1>Title</h1>";
+
+        string visibleBody = builder.GetVisibleBody(body);
+
+        Assert.Equal(body, visibleBody);
+    }
+
+    [Fact]
     public void Build_WhenBodyIsEmpty_AddsVisibleGettingStartedState()
     {
         PreviewDocumentBuilder builder = new();

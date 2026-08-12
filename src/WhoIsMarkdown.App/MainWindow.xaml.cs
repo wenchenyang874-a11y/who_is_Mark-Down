@@ -282,11 +282,18 @@ public partial class MainWindow : Window
             string body = await Task.Run(
                 () => markdownRenderer.RenderBody(markdown, documentPath),
                 cancellationToken);
+            string visibleBody = previewDocumentBuilder.GetVisibleBody(body);
             string page = previewDocumentBuilder.Build(body, previewStyleSheet);
 
-            if (!cancellationToken.IsCancellationRequested && version == previewVersion)
+            PreviewWebViewService? service = previewService;
+            if (!cancellationToken.IsCancellationRequested
+                && version == previewVersion
+                && service is not null)
             {
-                previewService?.Show(page, documentPath);
+                // Replacing content can clamp WebView's scroll range. Suppress that
+                // host-generated report so an edit never scrolls AvalonEdit.
+                SuppressPreviewScrollEcho();
+                await service.ShowAsync(page, visibleBody, documentPath);
             }
         }
         catch (OperationCanceledException)
@@ -333,7 +340,7 @@ public partial class MainWindow : Window
     {
         MessageBox.Show(
             this,
-            "WIMD v1.2.1\n\n本地、离线优先的 Markdown 实时预览编辑器。",
+            "WIMD v1.3.0\n\n本地、离线优先的 Markdown 实时预览编辑器。",
             "关于 WIMD",
             MessageBoxButton.OK,
             MessageBoxImage.Information);

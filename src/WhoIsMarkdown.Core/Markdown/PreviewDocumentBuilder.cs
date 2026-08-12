@@ -33,9 +33,7 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
     {
         ArgumentNullException.ThrowIfNull(bodyHtml);
         ArgumentNullException.ThrowIfNull(styleSheet);
-        string visibleBody = string.IsNullOrWhiteSpace(bodyHtml)
-            ? EmptyDocumentMarkup
-            : bodyHtml;
+        string visibleBody = GetVisibleBody(bodyHtml);
 
         StringBuilder html = new(capacity: visibleBody.Length + styleSheet.Length + 640);
         html.AppendLine("<!doctype html>");
@@ -57,5 +55,11 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         html.AppendLine("</body>");
         html.AppendLine("</html>");
         return html.ToString();
+    }
+
+    public string GetVisibleBody(string bodyHtml)
+    {
+        ArgumentNullException.ThrowIfNull(bodyHtml);
+        return string.IsNullOrWhiteSpace(bodyHtml) ? EmptyDocumentMarkup : bodyHtml;
     }
 }

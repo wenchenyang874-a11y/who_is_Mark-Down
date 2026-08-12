@@ -26,6 +26,7 @@ public sealed class LocalImageUrlResolverTests : IDisposable
     [InlineData("https://example.com/tracker.png")]
     [InlineData("../outside.png")]
     [InlineData("script.svg")]
+    [InlineData("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")]
     public void RewriteGeneratedHtml_UnsafeOrUnsupportedImage_BecomesInert(string source)
     {
         string documentPath = Path.Combine(temporaryDirectory.Path, "指南.md");

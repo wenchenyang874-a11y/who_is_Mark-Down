@@ -7,4 +7,6 @@ namespace WhoIsMarkdown.Core.Markdown;
 public interface IPreviewDocumentBuilder
 {
     public string Build(string bodyHtml, string styleSheet);
+
+    public string GetVisibleBody(string bodyHtml);
 }
