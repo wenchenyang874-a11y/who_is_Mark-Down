@@ -13,8 +13,8 @@ public sealed class MarkdownFormattingBoundaryTests
     [InlineData("quote", "> 内容")]
     [InlineData("unordered-list", "- 内容")]
     [InlineData("ordered-list", "1. 内容")]
-    [InlineData("table", "| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |")]
-    [InlineData("separator", "---")]
+    [InlineData("table", "| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")]
+    [InlineData("separator", "---\n")]
     public void Apply_SupportedToolbarFormat_ProducesExpectedMarkdown(
         string format,
         string expected)

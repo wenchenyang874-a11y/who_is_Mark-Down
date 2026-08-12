@@ -10,6 +10,8 @@ namespace WhoIsMarkdown.App;
 /// </summary>
 public partial class MainWindow
 {
+    private const int ProgrammaticPreviewScrollSuppressionMilliseconds = 250;
+
     private readonly DispatcherTimer editorScrollSyncTimer = new()
     {
         Interval = TimeSpan.FromMilliseconds(35),
@@ -17,6 +19,7 @@ public partial class MainWindow
 
     private bool applyingPreviewScrollToEditor;
     private bool applyingEditorScrollToPreview;
+    private long suppressPreviewScrollUntilTick;
 
     private void InitializeScrollSynchronization()
     {
@@ -46,6 +49,7 @@ public partial class MainWindow
         double maximum = Math.Max(0, Editor.ExtentHeight - Editor.ViewportHeight);
         double ratio = maximum <= 0 ? 0 : Math.Clamp(Editor.VerticalOffset / maximum, 0, 1);
         applyingEditorScrollToPreview = true;
+        SuppressPreviewScrollEcho();
         try
         {
             await previewService.ScrollToRatioAsync(ratio);
@@ -64,7 +68,9 @@ public partial class MainWindow
         object? sender,
         PreviewScrollChangedEventArgs eventArgs)
     {
-        if (applyingEditorScrollToPreview || workspaceViewMode is not ViewModels.WorkspaceViewMode.EditorAndPreview)
+        if (applyingEditorScrollToPreview
+            || IsPreviewScrollEchoSuppressed()
+            || workspaceViewMode is not ViewModels.WorkspaceViewMode.EditorAndPreview)
         {
             return;
         }
@@ -81,6 +87,12 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>
+    /// Bug fix: moving the caret scrolls only the preview. WebView2 reports every
+    /// scroll, including host-requested ones; without this short echo guard that
+    /// report was applied back to AvalonEdit and a simple mouse click moved the
+    /// editor viewport unexpectedly.
+    /// </summary>
     private async Task SynchronizePreviewToCaretAsync()
     {
         if (previewService is null || workspaceViewMode is ViewModels.WorkspaceViewMode.EditorOnly)
@@ -88,6 +100,7 @@ public partial class MainWindow
             return;
         }
 
+        SuppressPreviewScrollEcho();
         try
         {
             await previewService.ScrollToSourceLineAsync(Editor.TextArea.Caret.Line - 1);
@@ -102,6 +115,15 @@ public partial class MainWindow
     {
         _ = SynchronizePreviewToCaretAsync();
     }
+
+    private void SuppressPreviewScrollEcho()
+    {
+        suppressPreviewScrollUntilTick = Environment.TickCount64
+            + ProgrammaticPreviewScrollSuppressionMilliseconds;
+    }
+
+    private bool IsPreviewScrollEchoSuppressed() =>
+        Environment.TickCount64 <= suppressPreviewScrollUntilTick;
 
     private void DisposeScrollSynchronization()
     {

@@ -1,6 +1,6 @@
 #define MyAppName "WIMD"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 #define MyAppPublisher "wenchenyang874-a11y"
 #define MyAppURL "https://github.com/wenchenyang874-a11y/who_is_Mark-Down"
@@ -31,7 +31,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 CloseApplications=yes
 RestartApplications=no
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=WIMD Windows Installer
 VersionInfoProductName=WIMD

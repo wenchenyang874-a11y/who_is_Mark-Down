@@ -29,8 +29,87 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Menu Grid.Row="0" Padding="8,0" Height="30" Background="#F8FFFFFF">
-                <MenuItem Header="文件(_F)">
+            <Menu Grid.Row="0"
+                  Height="30"
+                  Padding="8,0"
+                  Foreground="{StaticResource TextPrimaryBrush}"
+                  Background="#F8FFFFFF">
+                <Menu.Resources>
+                    <!-- Bug fix: the Windows light theme can otherwise resolve the
+                         top-level MenuItem foreground as transparent. -->
+                    <Style TargetType="{x:Type MenuItem}">
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                    </Style>
+                    <!-- The .NET Fluent MenuItem template can render top-level headers
+                         transparent on some Windows themes. This local template owns the
+                         header chrome while retaining MenuItem's native submenu behavior. -->
+                    <Style x:Key="TopLevelMenuItemStyle" TargetType="{x:Type MenuItem}">
+                        <Setter Property="Height" Value="30" />
+                        <Setter Property="Padding" Value="12,0" />
+                        <Setter Property="Foreground" Value="#182033" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="{x:Type MenuItem}">
+                                    <Border x:Name="HeaderChrome"
+                                            Background="{TemplateBinding Background}">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <ContentPresenter x:Name="HeaderPresenter"
+                                                              Margin="{TemplateBinding Padding}"
+                                                              VerticalAlignment="Center"
+                                                              ContentSource="Header"
+                                                              RecognizesAccessKey="True"
+                                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                                            <Popup x:Name="PART_Popup"
+                                                   Grid.Row="1"
+                                                   AllowsTransparency="True"
+                                                   Focusable="False"
+                                                   IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                                   Placement="Bottom"
+                                                   PlacementTarget="{Binding ElementName=HeaderChrome}"
+                                                   PopupAnimation="Fade"
+                                                   VerticalOffset="1">
+                                                <Border Padding="0,3"
+                                                        Background="White"
+                                                        BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        SnapsToDevicePixels="True">
+                                                    <ScrollViewer CanContentScroll="True">
+                                                        <Grid>
+                                                            <ItemsPresenter x:Name="ItemsPresenter"
+                                                                            KeyboardNavigation.DirectionalNavigation="Cycle"
+                                                                            KeyboardNavigation.TabNavigation="Cycle"
+                                                                            Grid.IsSharedSizeScope="True"
+                                                                            SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                                        </Grid>
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="HeaderChrome" Property="Background" Value="#E9EBF9" />
+                                        </Trigger>
+                                        <Trigger Property="IsSubmenuOpen" Value="True">
+                                            <Setter TargetName="HeaderChrome" Property="Background" Value="#DADDF3" />
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.42" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Menu.Resources>
+                <MenuItem Header="文件(_F)" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="新建(_N)" InputGestureText="Ctrl+N" Click="New_Click" />
                     <MenuItem Header="打开(_O)..." InputGestureText="Ctrl+O" Click="Open_Click" />
                     <Separator />
@@ -39,7 +118,7 @@
                     <Separator />
                     <MenuItem Header="退出(_X)" Click="Exit_Click" />
                 </MenuItem>
-                <MenuItem Header="编辑(_E)" SubmenuOpened="EditMenu_SubmenuOpened">
+                <MenuItem Header="编辑(_E)" Style="{StaticResource TopLevelMenuItemStyle}" SubmenuOpened="EditMenu_SubmenuOpened">
                     <MenuItem x:Name="UndoMenuItem" Header="撤销(_U)" InputGestureText="Ctrl+Z" Click="Undo_Click" />
                     <MenuItem x:Name="RedoMenuItem" Header="重做(_R)" InputGestureText="Ctrl+Y" Click="Redo_Click" />
                     <Separator />
@@ -47,8 +126,24 @@
                     <MenuItem x:Name="CopyMenuItem" Header="复制(_C)" InputGestureText="Ctrl+C" Click="Copy_Click" />
                     <MenuItem x:Name="PasteMenuItem" Header="粘贴(_P)" InputGestureText="Ctrl+V" Click="Paste_Click" />
                     <MenuItem Header="全选(_A)" InputGestureText="Ctrl+A" Click="SelectAll_Click" />
+                    <Separator />
+                    <MenuItem Header="Markdown 格式">
+                        <MenuItem Header="粗体" InputGestureText="Ctrl+B" Tag="bold" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="斜体" InputGestureText="Ctrl+I" Tag="italic" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="删除线" InputGestureText="Ctrl+`" Tag="strike" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="行内代码" InputGestureText="Ctrl+E" Tag="inline-code" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="代码块" InputGestureText="Ctrl+Shift+K" Tag="code-block" Click="MarkdownFormat_Click" />
+                        <Separator />
+                        <MenuItem Header="链接" InputGestureText="Ctrl+K" Tag="link" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="图片" InputGestureText="Ctrl+Shift+I" Tag="image" Click="MarkdownFormat_Click" />
+                        <Separator />
+                        <MenuItem Header="有序列表" InputGestureText="Ctrl+Shift+7" Tag="ordered-list" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="无序列表" InputGestureText="Ctrl+Shift+8" Tag="unordered-list" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="引用" InputGestureText="Ctrl+Shift+9" Tag="quote" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="任务列表" InputGestureText="Ctrl+Shift+L" Tag="task-list" Click="MarkdownFormat_Click" />
+                    </MenuItem>
                 </MenuItem>
-                <MenuItem Header="视图(_V)">
+                <MenuItem Header="视图(_V)" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="循环切换视图" InputGestureText="F9" Click="CycleViewMode_Click" />
                     <Separator />
                     <MenuItem x:Name="PreviewOnlyModeMenuItem" Header="仅预览" IsCheckable="True" Click="PreviewOnlyMode_Click" />
@@ -58,7 +153,7 @@
                     <MenuItem x:Name="RecentPaneMenuItem" Header="显示最近文件" IsCheckable="True" Click="RecentPaneToggle_Click" />
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
-                <MenuItem Header="帮助(_H)">
+                <MenuItem Header="帮助(_H)" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="关于 WIMD" Click="About_Click" />
                 </MenuItem>
             </Menu>
@@ -140,17 +235,17 @@
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H5" ToolTip="五级标题 (Ctrl+5)" Tag="5" Click="Heading_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H6" ToolTip="六级标题 (Ctrl+6)" Tag="6" Click="Heading_Click" />
                                 <Separator Margin="5,4" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" FontWeight="Bold" Content="B" ToolTip="粗体 (Ctrl+B)" Tag="bold" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" FontStyle="Italic" Content="I" ToolTip="斜体 (Ctrl+I)" Tag="italic" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="S̶" ToolTip="删除线" Tag="strike" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="❝" ToolTip="引用" Tag="quote" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="&lt;/&gt;" ToolTip="行内代码" Tag="inline-code" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="代码块" ToolTip="代码块" Tag="code-block" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="链接" ToolTip="插入链接" Tag="link" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="图片" ToolTip="插入图片" Tag="image" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="• 列表" ToolTip="无序列表" Tag="unordered-list" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="1. 列表" ToolTip="有序列表" Tag="ordered-list" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="☑ 任务" ToolTip="任务列表" Tag="task-list" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" FontWeight="Bold" Content="B" ToolTip="粗体 (Ctrl+B，可再次执行取消)" Tag="bold" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" FontStyle="Italic" Content="I" ToolTip="斜体 (Ctrl+I，可再次执行取消)" Tag="italic" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="S̶" ToolTip="删除线 (Ctrl+`，可再次执行取消)" Tag="strike" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="❝" ToolTip="引用 (Ctrl+Shift+9)" Tag="quote" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="&lt;/&gt;" ToolTip="行内代码 (Ctrl+E)" Tag="inline-code" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="代码块" ToolTip="代码块 (Ctrl+Shift+K)" Tag="code-block" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="链接" ToolTip="插入链接 (Ctrl+K)" Tag="link" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="图片" ToolTip="插入图片 (Ctrl+Shift+I)" Tag="image" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="• 列表" ToolTip="无序列表 (Ctrl+Shift+8)" Tag="unordered-list" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="1. 列表" ToolTip="有序列表 (Ctrl+Shift+7)" Tag="ordered-list" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="☑ 任务" ToolTip="任务列表 (Ctrl+Shift+L)" Tag="task-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="表格" ToolTip="插入表格" Tag="table" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="—" ToolTip="分隔线" Tag="separator" Click="MarkdownFormat_Click" />
                             </StackPanel>

@@ -71,28 +71,40 @@ public partial class MainWindow
             return;
         }
 
-        if (modifiers != ModifierKeys.Control)
-        {
-            return;
-        }
-
-        if (eventArgs.Key is >= Key.D1 and <= Key.D6)
+        if (modifiers == ModifierKeys.Control
+            && eventArgs.Key is >= Key.D1 and <= Key.D6)
         {
             int level = eventArgs.Key - Key.D0;
             ApplyMarkdownFormat($"h{level}");
             eventArgs.Handled = true;
+            return;
         }
-        else if (eventArgs.Key == Key.B)
+
+        string? format = GetMarkdownFormatForShortcut(eventArgs.Key, modifiers);
+        if (format is not null)
         {
-            ApplyMarkdownFormat("bold");
-            eventArgs.Handled = true;
-        }
-        else if (eventArgs.Key == Key.I)
-        {
-            ApplyMarkdownFormat("italic");
+            ApplyMarkdownFormat(format);
             eventArgs.Handled = true;
         }
     }
+
+    private static string? GetMarkdownFormatForShortcut(Key key, ModifierKeys modifiers) =>
+        (key, modifiers) switch
+        {
+            (Key.B, ModifierKeys.Control) => "bold",
+            (Key.I, ModifierKeys.Control) => "italic",
+            // OemTilde/Oem3 is the physical backtick key below Esc; Shift is intentionally not accepted.
+            (Key.OemTilde, ModifierKeys.Control) => "strike",
+            (Key.E, ModifierKeys.Control) => "inline-code",
+            (Key.K, ModifierKeys.Control) => "link",
+            (Key.K, ModifierKeys.Control | ModifierKeys.Shift) => "code-block",
+            (Key.I, ModifierKeys.Control | ModifierKeys.Shift) => "image",
+            (Key.D7, ModifierKeys.Control | ModifierKeys.Shift) => "ordered-list",
+            (Key.D8, ModifierKeys.Control | ModifierKeys.Shift) => "unordered-list",
+            (Key.D9, ModifierKeys.Control | ModifierKeys.Shift) => "quote",
+            (Key.L, ModifierKeys.Control | ModifierKeys.Shift) => "task-list",
+            _ => null,
+        };
 
     protected override void OnSourceInitialized(EventArgs e)
     {

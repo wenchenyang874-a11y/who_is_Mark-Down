@@ -1,5 +1,5 @@
+using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
 using WhoIsMarkdown.Core.Editing;
 
 namespace WhoIsMarkdown.App;
@@ -18,7 +18,24 @@ public partial class MainWindow
         RedoMenuItem.IsEnabled = Editor.CanRedo;
         CutMenuItem.IsEnabled = hasSelection;
         CopyMenuItem.IsEnabled = hasSelection;
-        PasteMenuItem.IsEnabled = Clipboard.ContainsText();
+        PasteMenuItem.IsEnabled = ClipboardContainsText();
+    }
+
+    /// <summary>
+    /// Bug fix: another process can briefly lock the Windows clipboard. Opening the
+    /// Edit menu must remain usable in that case, so Paste is disabled for this menu
+    /// opening instead of allowing the clipboard COM exception to abort the popup.
+    /// </summary>
+    private static bool ClipboardContainsText()
+    {
+        try
+        {
+            return Clipboard.ContainsText();
+        }
+        catch (ExternalException)
+        {
+            return false;
+        }
     }
 
     private void Undo_Click(object sender, RoutedEventArgs eventArgs)
@@ -69,7 +86,7 @@ public partial class MainWindow
 
     private void Heading_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (sender is Button { Tag: string level })
+        if (sender is FrameworkElement { Tag: string level })
         {
             ApplyMarkdownFormat($"h{level}");
         }
@@ -77,7 +94,7 @@ public partial class MainWindow
 
     private void MarkdownFormat_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (sender is Button { Tag: string format })
+        if (sender is FrameworkElement { Tag: string format })
         {
             ApplyMarkdownFormat(format);
         }
