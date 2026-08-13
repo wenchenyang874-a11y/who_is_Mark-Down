@@ -1,42 +1,77 @@
-# WIMD
+<div align="center">
+  <img src="./assets/app-icon.png" width="96" alt="WIMD 应用图标">
+  <h1>WIMD</h1>
+  <p><strong>为 Windows 打造的本地、轻量、安全 Markdown 实时预览编辑器</strong></p>
+  <p>Windows 10/11 · 离线优先 · Apache-2.0 · .NET 10</p>
+  <p>
+    <a href="https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest">下载最新版</a>
+    · <a href="#功能亮点">功能亮点</a>
+    · <a href="./CHANGELOG.md">更新日志</a>
+  </p>
+</div>
 
-WIMD 是面向 Windows 10/11 的本地 Markdown 实时预览编辑器，强调离线可用、清晰交互和安全的本地文件处理。
+---
 
-## 当前能力
+## 基础演示
 
-- AvalonEdit 编辑器与 Markdig 100ms 防抖实时预览
-- `F9` 在仅预览、编辑 + 预览、仅编辑三种模式间循环
-- 紧凑菜单栏和 Markdown 快捷工具条；`Ctrl+1`～`Ctrl+6` 设置标题
-- 粗体、斜体、删除线支持重复快捷键切换；常用格式快捷键见编辑菜单
-- 菜单栏提供“快捷键”设置入口，可查看、自定义并恢复默认组合
-- 编辑区与预览区双向滚动联动；光标对应内容已处于预览可视区 25%～75% 时保持预览不动
-- 安全显示当前文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片
-- 可折叠最近文件侧栏；右键可打开、在资源管理器中定位、复制路径或移出记录，且不会删除原文件
-- UTF-8、BOM、CRLF/LF 检测及同目录安全替换保存
-- 本地自定义背景与透明度调节
-- Markdown 原始 HTML 禁用、CSP 隔离、宿主滚动脚本和危险链接拦截
+<p align="center">
+  <img src="./assets/screenshots/wimd-basic-demo.gif" width="100%" alt="WIMD Markdown 编辑与实时预览基础演示">
+</p>
 
-文件操作使用 `Ctrl+N`、`Ctrl+O`、`Ctrl+S`、`Ctrl+Shift+S`。格式快捷键包括 `Ctrl+B` 粗体、`Ctrl+I` 斜体、`Ctrl+Shift+X` 删除线、`Ctrl+E` 行内代码、`Ctrl+K` 链接，以及 `Ctrl+Shift+7/8/9` 有序列表、无序列表和引用；完整组合可在“快捷键”菜单查看和自定义；自定义结果仅保存在本机。应用无需账号，不包含遥测或文档上传；远程图片默认不会加载。
+## 界面预览
 
-## 技术栈与结构
+<table>
+  <tr>
+    <th width="68%">编辑与实时预览</th>
+    <th width="32%">Windows 右键打开</th>
+  </tr>
+  <tr>
+    <td><img src="./assets/screenshots/wimd-interface.png" alt="WIMD 软件主界面"></td>
+    <td><img src="./assets/screenshots/wimd-shell-open.png" alt="使用 WIMD 打开 Markdown 文件"></td>
+  </tr>
+</table>
 
-- C# / .NET 10 / WPF
-- AvalonEdit / Markdig / WebView2
-- xUnit v3 / Coverlet / Inno Setup
+## 功能亮点
 
-```text
-src/WhoIsMarkdown.Core/         文档、编辑、渲染、安全策略和本地设置
-src/WhoIsMarkdown.App/          WPF 外壳、视图和 WebView2 集成
-tests/WhoIsMarkdown.Core.Tests/ 核心层单元测试
-assets/                         应用图标和静态资源
-packaging/                      WIMD Windows 安装包构建脚本
-```
+- **实时预览**：AvalonEdit + Markdig，输入防抖并增量更新预览，避免整页闪烁。
+- **三种布局**：按 `F9` 在仅预览、编辑 + 预览、仅编辑之间循环切换。
+- **顺滑定位**：编辑与预览双向滚动同步；光标目标位于预览可视区 25%～75% 时保持稳定。
+- **高效编辑**：Markdown 快捷工具条、可自定义快捷键，以及粗体、斜体、删除线切换取消。
+- **本地图片**：安全显示文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片。
+- **最近文件**：可折叠侧栏；右键支持打开、资源管理器定位、复制路径和移出记录。
+- **安全离线**：无需账号、不含遥测、不上传文档；原始 HTML 经过严格白名单过滤。
+- **个性背景**：选择本地图片作为工作区背景，并调节透明度。
 
-IR、SR、AR 保存在代码仓库外的统一项目文档目录，不随源码提交。
+## 快速开始
 
-## 开发与发布
+1. 前往 [Releases](https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest) 下载 `WIMD-Setup-v1.4.1-win-x64.exe`。
+2. 运行简体中文安装向导。若检测到已有 WIMD，确认后会在原目录覆盖升级。
+3. 启动 WIMD，或在 Windows 资源管理器中右键 `.md` / `.markdown` 文件并选择 WIMD。
 
-需要 .NET SDK 10.0.302 或兼容的 10.0 补丁版本。
+> WIMD 的核心编辑和预览可完全离线运行。除用户主动打开外部链接等操作外，软件不会主动联网。
+
+## 常用快捷键
+
+| 功能 | 快捷键 |
+| --- | --- |
+| 新建 / 打开 / 保存 / 另存为 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` |
+| 一至六级标题 | `Ctrl+1` ～ `Ctrl+6` |
+| 粗体 / 斜体 / 删除线 | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
+| 行内代码 / 链接 | `Ctrl+E` / `Ctrl+K` |
+| 循环切换视图 | `F9` |
+
+完整组合可在应用顶部的“快捷键”菜单中查看、自定义或恢复默认值；冲突组合会被自动拒绝。
+
+## 安全与隐私
+
+- 文档内容只在本机处理，不上传、不遥测。
+- 远程图片默认不加载；危险协议、脚本、iframe、表单和事件属性会被拦截。
+- 本地图片只允许来自当前文档目录；最近文件和背景操作不会删除原文件。
+- Windows 资源管理器调用使用独立路径参数，不把文件路径拼接为可执行命令。
+
+## 开发
+
+技术栈：C#、.NET 10、WPF、AvalonEdit、Markdig、WebView2、xUnit、Inno Setup。
 
 ```powershell
 dotnet restore --locked-mode
@@ -44,7 +79,11 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.4.0
+./packaging/build-release.ps1 -Version 1.4.1
 ```
 
-发布脚本生成自包含 x64 程序和 `artifacts/installer/WIMD-Setup-v1.4.0-win-x64.exe`。安装向导使用简体中文；检测到已有 WIMD 时会显示版本和原安装位置，确认后原位覆盖，取消则退出。设置保存在 `%LocalAppData%\WIMD\settings.json`；首次运行会兼容迁移旧版 `%LocalAppData%\WhoIsMarkdown` 设置。
+核心代码位于 `src/`，测试位于 `tests/WhoIsMarkdown.Core.Tests/`，Windows 安装脚本位于 `packaging/`。IR、SR、AR 保存在仓库外的项目文档目录，不随源码提交。
+
+## 版本与许可
+
+版本变化见 [CHANGELOG.md](./CHANGELOG.md)。本项目采用 [Apache License 2.0](./LICENSE) 开源许可。
