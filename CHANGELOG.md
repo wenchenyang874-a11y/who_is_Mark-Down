@@ -2,7 +2,7 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
-## [未发布]
+## [1.5.0] - 2026-08-13
 
 ### 新增
 
@@ -84,7 +84,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.1...HEAD
+[1.5.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.2.1...v1.3.0

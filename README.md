@@ -45,7 +45,7 @@
 
 ## 快速开始
 
-1. 前往 [Releases](https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest) 下载 `WIMD-Setup-v1.4.1-win-x64.exe`。
+1. 前往 [Releases](https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest) 下载 `WIMD-Setup-v1.5.0-win-x64.exe`。
 2. 运行简体中文安装向导。若检测到已有 WIMD，确认后会在原目录覆盖升级。
 3. 启动 WIMD，通过“文件 → 打开文件夹”进入工作区模式，或直接打开单个 `.md` / `.markdown` 文件。
 
