@@ -2,6 +2,19 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
+## [未发布]
+
+### 新增
+
+- 新增“打开文件夹”工作区模式，左侧资源管理器按需显示目录和 Markdown 文档。
+- 工作区支持新建 Markdown 文件、新建文件夹、重命名、刷新、资源管理器定位、复制路径和经二次确认后删除真实磁盘内容。
+- 支持把文件夹路径作为启动参数直接打开工作区。
+
+### 修复
+
+- 修复从已启动的 WIMD 内部打开 Markdown 文件时，相对路径图片因预览资源目录切换后仅更新 DOM 而无法显示的问题。
+- 修复收起最近文件或工作区侧栏后缺少可见恢复入口、只能重新打开文件夹的问题。
+
 ## [1.4.1] - 2026-08-13
 
 ### 修复
@@ -71,6 +84,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.1...HEAD
 [1.4.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.2.1...v1.3.0

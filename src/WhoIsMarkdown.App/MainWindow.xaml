@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:viewModels="clr-namespace:WhoIsMarkdown.App.ViewModels"
         xmlns:webView="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         x:Name="RootWindow"
         Title="{Binding WindowTitle}"
@@ -96,7 +97,9 @@
                 </Menu.Resources>
                 <MenuItem Header="文件(_F)" AutomationProperties.Name="文件" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem x:Name="NewDocumentMenuItem" Header="新建(_N)" InputGestureText="Ctrl+N" Click="New_Click" />
-                    <MenuItem x:Name="OpenDocumentMenuItem" Header="打开(_O)..." InputGestureText="Ctrl+O" Click="Open_Click" />
+                    <MenuItem x:Name="OpenDocumentMenuItem" Header="打开文件(_O)..." InputGestureText="Ctrl+O" Click="Open_Click" />
+                    <MenuItem x:Name="OpenFolderMenuItem" Header="打开文件夹..." AutomationProperties.Name="打开文件夹" Click="OpenFolder_Click" />
+                    <MenuItem x:Name="CloseWorkspaceMenuItem" Header="关闭文件夹" IsEnabled="False" Click="CloseWorkspace_Click" />
                     <Separator />
                     <MenuItem x:Name="SaveDocumentMenuItem" Header="保存(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
                     <MenuItem x:Name="SaveAsDocumentMenuItem" Header="另存为(_A)..." InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
@@ -135,7 +138,7 @@
                     <MenuItem x:Name="SplitModeMenuItem" Header="编辑 + 预览" IsCheckable="True" IsChecked="True" Click="SplitMode_Click" />
                     <MenuItem x:Name="EditorOnlyModeMenuItem" Header="仅编辑" IsCheckable="True" Click="EditorOnlyMode_Click" />
                     <Separator />
-                    <MenuItem x:Name="RecentPaneMenuItem" Header="显示最近文件" IsCheckable="True" Click="RecentPaneToggle_Click" />
+                    <MenuItem x:Name="RecentPaneMenuItem" Header="显示侧栏" IsCheckable="True" Click="RecentPaneToggle_Click" />
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
                 <MenuItem Header="快捷键(_K)" AutomationProperties.Name="快捷键" Style="{StaticResource TopLevelMenuItemStyle}">
@@ -149,76 +152,174 @@
             <Grid Grid.Row="1" Margin="8,6,8,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="RecentPaneColumn" Width="252" />
-                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition x:Name="RecentPaneGutterColumn" Width="6" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
                 <Border x:Name="RecentPane" Grid.Column="0" Style="{StaticResource SurfaceCardStyle}">
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-                        <Grid Margin="14,10,8,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource PanelTitleTextStyle}" Text="最近打开" />
-                                <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Text="仅保存在这台电脑" />
-                            </StackPanel>
-                            <Button Grid.Column="1" Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="收起最近文件" Click="CollapseRecentPane_Click">
-                                <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE76B;" />
-                            </Button>
+                        <Grid x:Name="RecentPaneContent">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid Margin="14,10,8,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource PanelTitleTextStyle}" Text="最近打开" />
+                                    <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Text="打开文件夹后切换为资源管理器" />
+                                </StackPanel>
+                                <Button Grid.Column="1" AutomationProperties.Name="收起侧栏" Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="收起侧栏" Click="CollapseRecentPane_Click">
+                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE76B;" />
+                                </Button>
+                            </Grid>
+
+                            <Grid Grid.Row="1" Margin="8,0,8,8">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding RecentFiles, ElementName=RootWindow}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Button Grid.Column="0" Tag="{Binding Path}" ToolTip="{Binding Path}" Style="{StaticResource RecentOpenButtonStyle}" Click="OpenRecentFile_Click">
+                                                        <Button.ContextMenu>
+                                                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                                                <MenuItem Header="打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFile_Click" />
+                                                                <MenuItem Header="在文件资源管理器中显示" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="RevealRecentFile_Click" />
+                                                                <Separator />
+                                                                <MenuItem Header="复制文件路径" Tag="{Binding Path}" Click="CopyRecentFilePath_Click" />
+                                                                <MenuItem Header="复制所在文件夹路径" Tag="{Binding DirectoryPath}" Click="CopyRecentDirectoryPath_Click" />
+                                                                <MenuItem Header="复制文件名" Tag="{Binding DisplayName}" Click="CopyRecentFileName_Click" />
+                                                                <Separator />
+                                                                <MenuItem Header="移出最近记录（不删除文件）" Tag="{Binding Path}" Click="RemoveRecentFile_Click" />
+                                                            </ContextMenu>
+                                                        </Button.ContextMenu>
+                                                        <StackPanel HorizontalAlignment="Stretch">
+                                                            <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="#9299AA" Text="{Binding LastOpenedDisplay}" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Grid.Column="1" Width="30" Height="30" Margin="2,0,0,0" VerticalAlignment="Center" Tag="{Binding Path}" ToolTip="移出最近文件（不删除原文件）" Style="{StaticResource CompactToolbarButtonStyle}" Click="RemoveRecentFile_Click">
+                                                        <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE711;" />
+                                                    </Button>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                                <StackPanel x:Name="RecentFilesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock HorizontalAlignment="Center" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="26" Foreground="#A7ADBC" Text="&#xE81C;" />
+                                    <TextBlock Margin="0,10,0,0" Foreground="{StaticResource TextSecondaryBrush}" Text="还没有最近文件" />
+                                    <TextBlock Margin="0,3,0,0" FontSize="11" Foreground="#9299AA" Text="打开文档后会显示在这里" />
+                                </StackPanel>
+                            </Grid>
                         </Grid>
 
-                        <Grid Grid.Row="1" Margin="8,0,8,8">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding RecentFiles, ElementName=RootWindow}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <Button Grid.Column="0" Tag="{Binding Path}" ToolTip="{Binding Path}" Style="{StaticResource RecentOpenButtonStyle}" Click="OpenRecentFile_Click">
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                                            <MenuItem Header="打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFile_Click" />
-                                                            <MenuItem Header="在文件资源管理器中显示" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="RevealRecentFile_Click" />
-                                                            <Separator />
-                                                            <MenuItem Header="复制文件路径" Tag="{Binding Path}" Click="CopyRecentFilePath_Click" />
-                                                            <MenuItem Header="复制所在文件夹路径" Tag="{Binding DirectoryPath}" Click="CopyRecentDirectoryPath_Click" />
-                                                            <MenuItem Header="复制文件名" Tag="{Binding DisplayName}" Click="CopyRecentFileName_Click" />
-                                                            <Separator />
-                                                            <MenuItem Header="移出最近记录（不删除文件）" Tag="{Binding Path}" Click="RemoveRecentFile_Click" />
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
-                                                    <StackPanel HorizontalAlignment="Stretch">
-                                                        <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="#9299AA" Text="{Binding LastOpenedDisplay}" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Grid.Column="1" Width="30" Height="30" Margin="2,0,0,0" VerticalAlignment="Center" Tag="{Binding Path}" ToolTip="移出最近文件（不删除原文件）" Style="{StaticResource CompactToolbarButtonStyle}" Click="RemoveRecentFile_Click">
-                                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE711;" />
-                                                </Button>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                            <StackPanel x:Name="RecentFilesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock HorizontalAlignment="Center" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="26" Foreground="#A7ADBC" Text="&#xE81C;" />
-                                <TextBlock Margin="0,10,0,0" Foreground="{StaticResource TextSecondaryBrush}" Text="还没有最近文件" />
-                                <TextBlock Margin="0,3,0,0" FontSize="11" Foreground="#9299AA" Text="打开文档后会显示在这里" />
+                        <Grid x:Name="WorkspacePaneContent" Visibility="Collapsed">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid Margin="12,9,8,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock x:Name="WorkspaceFolderNameText" Style="{StaticResource PanelTitleTextStyle}" Text="工作区" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="WorkspaceFolderPathText" Margin="0,3,0,0" FontSize="9" Foreground="#9299AA" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <Button Grid.Column="1" AutomationProperties.Name="收起侧栏" Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="收起侧栏" Click="CollapseRecentPane_Click">
+                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE76B;" />
+                                </Button>
+                            </Grid>
+                            <StackPanel Grid.Row="1" Margin="8,2,8,5" Orientation="Horizontal">
+                                <Button Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="新建 Markdown 文件" Click="NewWorkspaceFile_Click">
+                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE7C3;" />
+                                </Button>
+                                <Button Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="新建文件夹" Click="NewWorkspaceDirectory_Click">
+                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE8F4;" />
+                                </Button>
+                                <Button Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="刷新工作区" Click="RefreshWorkspace_Click">
+                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE72C;" />
+                                </Button>
+                                <Button Style="{StaticResource CompactToolbarButtonStyle}" ToolTip="关闭文件夹" Click="CloseWorkspace_Click">
+                                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE711;" />
+                                </Button>
                             </StackPanel>
+                            <Grid Grid.Row="2" Margin="5,0,5,7">
+                                <TreeView x:Name="WorkspaceTree"
+                                          AutomationProperties.Name="工作区文件树"
+                                          Padding="2"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          ItemsSource="{Binding WorkspaceItems, ElementName=RootWindow}"
+                                          SelectedItemChanged="WorkspaceTree_SelectedItemChanged"
+                                          KeyDown="WorkspaceTree_KeyDown"
+                                          MouseDoubleClick="WorkspaceTree_MouseDoubleClick"
+                                          TreeViewItem.Expanded="WorkspaceTree_Expanded">
+                                    <TreeView.ItemContainerStyle>
+                                        <Style TargetType="{x:Type TreeViewItem}">
+                                            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                        </Style>
+                                    </TreeView.ItemContainerStyle>
+                                    <TreeView.Resources>
+                                        <HierarchicalDataTemplate DataType="{x:Type viewModels:WorkspaceTreeItemViewModel}" ItemsSource="{Binding Children}">
+                                            <Grid MinHeight="27" Background="Transparent" ToolTip="{Binding Path}">
+                                                <Grid.ContextMenu>
+                                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                                        <MenuItem Header="打开" Tag="{Binding}" IsEnabled="{Binding IsFile}" Click="OpenWorkspaceEntry_Click" />
+                                                        <Separator />
+                                                        <MenuItem Header="新建 Markdown 文件" Tag="{Binding}" IsEnabled="{Binding IsDirectory}" Click="NewWorkspaceFile_Click" />
+                                                        <MenuItem Header="新建文件夹" Tag="{Binding}" IsEnabled="{Binding IsDirectory}" Click="NewWorkspaceDirectory_Click" />
+                                                        <MenuItem Header="重命名" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="RenameWorkspaceEntry_Click" />
+                                                        <MenuItem Header="删除磁盘内容..." Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="DeleteWorkspaceEntry_Click" />
+                                                        <Separator />
+                                                        <MenuItem Header="在文件资源管理器中显示" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="RevealWorkspaceEntry_Click" />
+                                                        <MenuItem Header="复制路径" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="CopyWorkspacePath_Click" />
+                                                    </ContextMenu>
+                                                </Grid.ContextMenu>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Width="20" VerticalAlignment="Center" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#687086" Text="{Binding IconGlyph}" />
+                                                    <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </HierarchicalDataTemplate>
+                                    </TreeView.Resources>
+                                </TreeView>
+                                <StackPanel x:Name="WorkspaceEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                    <TextBlock HorizontalAlignment="Center" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="25" Foreground="#A7ADBC" Text="&#xE838;" />
+                                    <TextBlock Margin="0,9,0,0" Foreground="{StaticResource TextSecondaryBrush}" Text="没有 Markdown 文件" />
+                                    <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="#9299AA" Text="可在上方新建文件或文件夹" />
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Border>
+
+                <Button x:Name="ExpandRecentPaneButton"
+                        Grid.Column="1"
+                        Width="30"
+                        Height="34"
+                        Margin="3,4,3,0"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Panel.ZIndex="10"
+                        AutomationProperties.Name="展开侧栏"
+                        Style="{StaticResource CompactToolbarButtonStyle}"
+                        ToolTip="展开侧栏"
+                        Visibility="Collapsed"
+                        Click="ExpandRecentPane_Click">
+                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE76C;" />
+                </Button>
 
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>

@@ -47,6 +47,12 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
         LoadApplicationSettings();
+        string? startupWorkspacePath = GetStartupWorkspacePath();
+        if (startupWorkspacePath is not null)
+        {
+            await OpenWorkspaceAsync(startupWorkspacePath);
+        }
+
         string? startupDocumentPath = GetStartupDocumentPath();
         if (startupDocumentPath is not null)
         {
@@ -82,6 +88,13 @@ public partial class MainWindow : Window
 
     private async void New_Click(object sender, RoutedEventArgs eventArgs)
     {
+        if (workspaceRootPath is not null)
+        {
+            string parentDirectory = GetWorkspaceParentDirectory(sender) ?? workspaceRootPath;
+            await CreateWorkspaceFileAsync(parentDirectory);
+            return;
+        }
+
         if (!await ConfirmDiscardOrSaveAsync())
         {
             return;
@@ -338,12 +351,23 @@ public partial class MainWindow : Window
 
     private void About_Click(object sender, RoutedEventArgs eventArgs)
     {
+        System.Version? version = typeof(MainWindow).Assembly.GetName().Version;
+        string displayVersion = version is null ? "未知版本" : version.ToString(3);
         MessageBox.Show(
             this,
-            "WIMD v1.4.1\n\n本地、离线优先的 Markdown 实时预览编辑器。",
+            $"WIMD v{displayVersion}\n\n本地、离线优先的 Markdown 实时预览编辑器。",
             "关于 WIMD",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+    }
+
+    private static string? GetStartupWorkspacePath()
+    {
+        // Directory arguments are treated strictly as paths. Supporting them here
+        // also prepares the Windows shell integration without evaluating commands.
+        return Environment.GetCommandLineArgs()
+            .Skip(1)
+            .FirstOrDefault(Directory.Exists);
     }
 
     private static string? GetStartupDocumentPath()

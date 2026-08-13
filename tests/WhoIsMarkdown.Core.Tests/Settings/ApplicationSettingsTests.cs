@@ -42,4 +42,40 @@ public sealed class ApplicationSettingsTests
         Assert.Empty(result.RecentFiles);
         Assert.True(File.Exists(documentPath));
     }
+    [Fact]
+    public void RelocateRecentFiles_WhenWorkspaceDirectoryIsRenamed_UpdatesNestedPaths()
+    {
+        string source = System.IO.Path.GetFullPath("旧目录");
+        string target = System.IO.Path.GetFullPath("新目录");
+        string documentPath = System.IO.Path.Combine(source, "子目录", "文档.md");
+        ApplicationSettings settings = new()
+        {
+            RecentFiles = [new(documentPath, DateTimeOffset.UtcNow)],
+        };
+
+        ApplicationSettings result = settings.RelocateRecentFiles(source, target);
+
+        Assert.Equal(
+            System.IO.Path.Combine(target, "子目录", "文档.md"),
+            Assert.Single(result.RecentFiles).Path);
+    }
+
+    [Fact]
+    public void RemoveRecentFilesAtOrBelow_WhenDirectoryIsDeleted_RemovesOnlyNestedRecords()
+    {
+        string deletedDirectory = System.IO.Path.GetFullPath("待删除");
+        string retainedPath = System.IO.Path.GetFullPath("保留.md");
+        ApplicationSettings settings = new()
+        {
+            RecentFiles =
+            [
+                new(System.IO.Path.Combine(deletedDirectory, "文档.md"), DateTimeOffset.UtcNow),
+                new(retainedPath, DateTimeOffset.UtcNow.AddMinutes(-1)),
+            ],
+        };
+
+        ApplicationSettings result = settings.RemoveRecentFilesAtOrBelow(deletedDirectory);
+
+        Assert.Equal(retainedPath, Assert.Single(result.RecentFiles).Path);
+    }
 }

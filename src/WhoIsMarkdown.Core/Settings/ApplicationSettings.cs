@@ -99,6 +99,66 @@ public sealed record ApplicationSettings
         };
     }
 
+    public ApplicationSettings RemoveRecentFilesAtOrBelow(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        string normalizedPath = System.IO.Path.GetFullPath(path);
+        ApplicationSettings normalizedSettings = Normalize();
+
+        return normalizedSettings with
+        {
+            RecentFiles = normalizedSettings.RecentFiles
+                .Where(entry => GetRelativePathWhenContained(entry.Path, normalizedPath) is null)
+                .ToArray(),
+        };
+    }
+
+    public ApplicationSettings RelocateRecentFiles(string sourcePath, string targetPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        string normalizedSource = System.IO.Path.GetFullPath(sourcePath);
+        string normalizedTarget = System.IO.Path.GetFullPath(targetPath);
+        ApplicationSettings normalizedSettings = Normalize();
+
+        RecentFileEntry[] relocatedEntries = normalizedSettings.RecentFiles
+            .Select(entry =>
+            {
+                string? relative = GetRelativePathWhenContained(entry.Path, normalizedSource);
+                if (relative is null)
+                {
+                    return entry;
+                }
+
+                string relocatedPath = relative.Length == 0
+                    ? normalizedTarget
+                    : System.IO.Path.Combine(normalizedTarget, relative);
+                return entry with { Path = relocatedPath };
+            })
+            .ToArray();
+
+        return (normalizedSettings with { RecentFiles = relocatedEntries }).Normalize();
+    }
+
+    private static string? GetRelativePathWhenContained(string candidatePath, string containerPath)
+    {
+        if (string.Equals(candidatePath, containerPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        string relative = System.IO.Path.GetRelativePath(containerPath, candidatePath);
+        return !System.IO.Path.IsPathFullyQualified(relative)
+            && !relative.Equals("..", StringComparison.Ordinal)
+            && !relative.StartsWith(
+                string.Concat("..", System.IO.Path.DirectorySeparatorChar),
+                StringComparison.Ordinal)
+            && !relative.StartsWith(
+                string.Concat("..", System.IO.Path.AltDirectorySeparatorChar),
+                StringComparison.Ordinal)
+            ? relative
+            : null;
+    }
     private static string? TryNormalizePath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))

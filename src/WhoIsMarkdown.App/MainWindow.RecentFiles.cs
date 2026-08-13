@@ -170,10 +170,19 @@ public partial class MainWindow
         SetRecentPaneExpanded(expanded: false, persist: true);
     }
 
+    private void ExpandRecentPane_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        SetRecentPaneExpanded(expanded: true, persist: true);
+    }
+
     private void SetRecentPaneExpanded(bool expanded, bool persist)
     {
+        // Keep a dedicated gutter visible while the pane is collapsed. Previously
+        // the only restore control lived inside the pane and disappeared with it.
         RecentPaneColumn.Width = expanded ? new GridLength(252) : new GridLength(0);
+        RecentPaneGutterColumn.Width = expanded ? new GridLength(6) : new GridLength(36);
         RecentPane.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        ExpandRecentPaneButton.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
         RecentPaneMenuItem.IsChecked = expanded;
         applicationSettings = applicationSettings with { IsRecentPaneExpanded = expanded };
 

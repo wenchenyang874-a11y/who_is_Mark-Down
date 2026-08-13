@@ -38,7 +38,8 @@
 - **顺滑定位**：编辑与预览双向滚动同步；光标目标位于预览可视区 25%～75% 时保持稳定。
 - **高效编辑**：Markdown 快捷工具条、可自定义快捷键，以及粗体、斜体、删除线切换取消。
 - **本地图片**：安全显示文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片。
-- **最近文件**：可折叠侧栏；右键支持打开、资源管理器定位、复制路径和移出记录。
+- **文件夹工作区**：打开文件夹后切换为资源管理器，按需浏览其中的 `.md` / `.markdown`，并支持新建、重命名、刷新和经确认后删除磁盘内容。
+- **最近文件**：未打开文件夹时显示可折叠的最近文件侧栏；移出记录不会删除原文件。
 - **安全离线**：无需账号、不含遥测、不上传文档；原始 HTML 经过严格白名单过滤。
 - **个性背景**：选择本地图片作为工作区背景，并调节透明度。
 
@@ -46,7 +47,7 @@
 
 1. 前往 [Releases](https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest) 下载 `WIMD-Setup-v1.4.1-win-x64.exe`。
 2. 运行简体中文安装向导。若检测到已有 WIMD，确认后会在原目录覆盖升级。
-3. 启动 WIMD，或在 Windows 资源管理器中右键 `.md` / `.markdown` 文件并选择 WIMD。
+3. 启动 WIMD，通过“文件 → 打开文件夹”进入工作区模式，或直接打开单个 `.md` / `.markdown` 文件。
 
 > WIMD 的核心编辑和预览可完全离线运行。除用户主动打开外部链接等操作外，软件不会主动联网。
 
@@ -79,7 +80,7 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.4.1
+./packaging/build-release.ps1 -Version 1.5.0
 ```
 
 核心代码位于 `src/`，测试位于 `tests/WhoIsMarkdown.Core.Tests/`，Windows 安装脚本位于 `packaging/`。IR、SR、AR 保存在仓库外的项目文档目录，不随源码提交。

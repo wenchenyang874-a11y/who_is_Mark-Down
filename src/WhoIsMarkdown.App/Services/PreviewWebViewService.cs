@@ -38,8 +38,8 @@ public sealed class PreviewWebViewService : IDisposable
 
     private readonly WebView2 webView;
     private readonly PreviewNavigationGate navigationGate = new();
+    private readonly PreviewResourceMappingState resourceMappingState = new();
     private CoreWebView2? core;
-    private string? mappedDocumentDirectory;
     private PreviewSnapshot? pendingPreview;
     private bool processingPreview;
     private bool navigationInProgress;
@@ -203,9 +203,14 @@ public sealed class PreviewWebViewService : IDisposable
             {
                 PreviewSnapshot snapshot = pendingPreview;
                 pendingPreview = null;
-                ConfigureDocumentResourceMapping(snapshot.DocumentPath);
+                bool resourceMappingChanged = ConfigureDocumentResourceMapping(
+                    snapshot.DocumentPath);
 
-                if (!previewPageReady)
+                // Bug fix: opening a file from an already-running blank editor changes
+                // the virtual-host folder after the preview page exists. A DOM-only
+                // replacement can keep WebView2's earlier failed image responses, so
+                // rebuild the host page once when the resource directory changes.
+                if (!previewPageReady || resourceMappingChanged)
                 {
                     NavigateToPreview(snapshot.FullHtml);
                     return;
@@ -244,6 +249,7 @@ public sealed class PreviewWebViewService : IDisposable
         // admits only this host-generated document and keeps user data URLs blocked.
         navigationGate.BeginGeneratedNavigation();
         navigationInProgress = true;
+        previewPageReady = false;
         try
         {
             core.NavigateToString(html);
@@ -284,33 +290,30 @@ public sealed class PreviewWebViewService : IDisposable
     /// images. The current Markdown directory is mapped to an isolated HTTPS origin;
     /// DenyCors permits image elements but blocks fetch/XHR access.
     /// </summary>
-    private void ConfigureDocumentResourceMapping(string? documentPath)
+    private bool ConfigureDocumentResourceMapping(string? documentPath)
     {
         if (core is null)
         {
-            return;
+            return false;
         }
 
-        string? directory = string.IsNullOrWhiteSpace(documentPath)
-            ? null
-            : Path.GetDirectoryName(Path.GetFullPath(documentPath));
-        if (string.Equals(directory, mappedDocumentDirectory, StringComparison.OrdinalIgnoreCase))
+        PreviewResourceMappingUpdate update = resourceMappingState.Update(documentPath);
+        if (!update.HasChanged)
         {
-            return;
+            return false;
         }
 
         core.ClearVirtualHostNameToFolderMapping(LocalImageUrlResolver.VirtualHostName);
-        mappedDocumentDirectory = null;
-        if (directory is null)
+        if (update.DirectoryPath is null)
         {
-            return;
+            return true;
         }
 
         core.SetVirtualHostNameToFolderMapping(
             LocalImageUrlResolver.VirtualHostName,
-            directory,
+            update.DirectoryPath,
             CoreWebView2HostResourceAccessKind.DenyCors);
-        mappedDocumentDirectory = directory;
+        return true;
     }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs eventArgs)

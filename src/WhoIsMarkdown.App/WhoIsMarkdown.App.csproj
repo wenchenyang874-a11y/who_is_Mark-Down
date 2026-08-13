@@ -10,9 +10,9 @@
     <Product>WIMD</Product>
     <AssemblyTitle>WIMD</AssemblyTitle>
     <Description>Offline-first Markdown editor with real-time preview.</Description>
-    <Version>1.4.1</Version>
-    <FileVersion>1.4.1.0</FileVersion>
-    <AssemblyVersion>1.4.1.0</AssemblyVersion>
+    <Version>1.5.0</Version>
+    <FileVersion>1.5.0.0</FileVersion>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
     <ApplicationIcon Condition="Exists('..\..\assets\app.ico')">..\..\assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

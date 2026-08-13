@@ -5,17 +5,25 @@ using WhoIsMarkdown.Core.Settings;
 namespace WhoIsMarkdown.App.Services;
 
 /// <summary>
-/// Opens Windows File Explorer with a recent file selected. ArgumentList keeps the
-/// path as data, including Chinese text and spaces, instead of constructing a shell command.
+/// Opens Windows File Explorer with an existing file or directory selected.
+/// ArgumentList keeps Chinese, spaces, and punctuation as path data instead of
+/// constructing an executable command string.
 /// </summary>
 public sealed class WindowsFileExplorerService : IFileExplorerService
 {
     public void RevealFile(string path)
     {
         RecentFileActionTargets targets = RecentFileActionTargets.Create(path);
-        if (!File.Exists(targets.FilePath))
+        RevealPath(targets.FilePath);
+    }
+
+    public void RevealPath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        string fullPath = Path.GetFullPath(path);
+        if (!File.Exists(fullPath) && !Directory.Exists(fullPath))
         {
-            throw new FileNotFoundException("The recent file no longer exists.", targets.FilePath);
+            throw new FileNotFoundException("The workspace entry no longer exists.", fullPath);
         }
 
         string explorerPath = Path.Combine(
@@ -26,7 +34,7 @@ public sealed class WindowsFileExplorerService : IFileExplorerService
             FileName = explorerPath,
             UseShellExecute = false,
         };
-        startInfo.ArgumentList.Add($"/select,{targets.FilePath}");
+        startInfo.ArgumentList.Add($"/select,{fullPath}");
 
         using Process? process = Process.Start(startInfo);
         if (process is null)
