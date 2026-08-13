@@ -2,6 +2,17 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
+## [1.5.1] - 2026-08-13
+
+### 新增
+
+- 工作区侧栏空白区域提供与目录节点一致的根目录右键操作，包括新建 Markdown 文件、新建文件夹、刷新、在资源管理器中显示和复制路径。
+
+### 修复
+
+- 修复新建文件、新建文件夹和重命名时，后台文件操作跨线程读取 WPF 对话框控件而报错的问题。
+- 工作区条目的“删除磁盘内容”改为“删除”，确认弹窗明确提示将删除磁盘上的实际文件或文件夹且无法撤销。
+
 ## [1.5.0] - 2026-08-13
 
 ### 新增
@@ -84,6 +95,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
+[1.5.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.3.0...v1.4.0

@@ -45,7 +45,7 @@
 
 ## 快速开始
 
-1. 前往 [Releases](https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest) 下载 `WIMD-Setup-v1.5.0-win-x64.exe`。
+1. 前往 [Releases](https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest) 下载 `WIMD-Setup-v1.5.1-win-x64.exe`。
 2. 运行简体中文安装向导。若检测到已有 WIMD，确认后会在原目录覆盖升级。
 3. 启动 WIMD，通过“文件 → 打开文件夹”进入工作区模式，或直接打开单个 `.md` / `.markdown` 文件。
 
@@ -80,7 +80,7 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.5.0
+./packaging/build-release.ps1 -Version 1.5.1
 ```
 
 核心代码位于 `src/`，测试位于 `tests/WhoIsMarkdown.Core.Tests/`，Windows 安装脚本位于 `packaging/`。IR、SR、AR 保存在仓库外的项目文档目录，不随源码提交。
