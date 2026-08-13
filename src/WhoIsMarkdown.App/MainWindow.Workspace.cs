@@ -210,6 +210,17 @@ public partial class MainWindow
         }
     }
 
+    private async void NewWorkspaceRootFile_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        // A blank-area command intentionally targets the workspace root instead of
+        // reusing a previously selected node, which would make the result surprising.
+        string? root = workspaceRootPath;
+        if (root is not null)
+        {
+            await CreateWorkspaceFileAsync(root);
+        }
+    }
+
     private async Task CreateWorkspaceFileAsync(string parentDirectory)
     {
         if (workspaceRootPath is null || workspaceOperationRunning)
@@ -228,6 +239,9 @@ public partial class MainWindow
             return;
         }
 
+        // WPF controls are thread-affine. Capture dialog input before entering
+        // Task.Run so the worker receives only immutable strings and pure file I/O.
+        string enteredName = dialog.EnteredName;
         workspaceOperationRunning = true;
         try
         {
@@ -236,7 +250,7 @@ public partial class MainWindow
                 () => workspaceFileService.CreateMarkdownFile(
                     root,
                     parentDirectory,
-                    dialog.EnteredName));
+                    enteredName));
             await RefreshWorkspaceCoreAsync();
             await OpenDocumentAsync(path);
             UpdateStatus($"已新建文件：{path}");
@@ -254,7 +268,26 @@ public partial class MainWindow
     private async void NewWorkspaceDirectory_Click(object sender, RoutedEventArgs eventArgs)
     {
         string? parent = GetWorkspaceParentDirectory(sender);
-        if (parent is null || workspaceRootPath is null || workspaceOperationRunning)
+        if (parent is not null)
+        {
+            await CreateWorkspaceDirectoryAsync(parent);
+        }
+    }
+
+    private async void NewWorkspaceRootDirectory_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        // Blank-area commands always operate on the root. A stale selection must not
+        // redirect a root-level action into a previously selected child directory.
+        string? root = workspaceRootPath;
+        if (root is not null)
+        {
+            await CreateWorkspaceDirectoryAsync(root);
+        }
+    }
+
+    private async Task CreateWorkspaceDirectoryAsync(string parentDirectory)
+    {
+        if (workspaceRootPath is null || workspaceOperationRunning)
         {
             return;
         }
@@ -268,12 +301,15 @@ public partial class MainWindow
             return;
         }
 
+        // WPF controls are thread-affine. The worker may receive the copied string,
+        // but it must never read NameTextBox through dialog.EnteredName itself.
+        string enteredName = dialog.EnteredName;
         workspaceOperationRunning = true;
         try
         {
             string root = workspaceRootPath;
             string path = await Task.Run(
-                () => workspaceFileService.CreateDirectory(root, parent, dialog.EnteredName));
+                () => workspaceFileService.CreateDirectory(root, parentDirectory, enteredName));
             await RefreshWorkspaceCoreAsync();
             UpdateStatus($"已新建文件夹：{path}");
         }
@@ -305,6 +341,7 @@ public partial class MainWindow
             return;
         }
 
+        string enteredName = dialog.EnteredName;
         string? currentRelativePath = GetRelativePathWhenContained(document.FilePath, item.Path);
         if (currentRelativePath is not null && !await ConfirmDiscardOrSaveAsync())
         {
@@ -316,7 +353,7 @@ public partial class MainWindow
         {
             string root = workspaceRootPath;
             string target = await Task.Run(
-                () => workspaceFileService.Rename(root, item.Path, dialog.EnteredName));
+                () => workspaceFileService.Rename(root, item.Path, enteredName));
             applicationSettings = applicationSettings.RelocateRecentFiles(item.Path, target);
             RefreshRecentFilesView();
             TrySaveApplicationSettings();
@@ -359,8 +396,8 @@ public partial class MainWindow
             : string.Empty;
         MessageBoxResult confirmation = MessageBox.Show(
             this,
-            $"确定永久删除{itemKind}吗？\n\n{item.Path}{dirtyWarning}\n\n此操作不能通过 WIMD 撤销。",
-            "确认删除磁盘内容",
+            $"此操作将删除磁盘上的实际{itemKind}，确定继续吗？\n\n{item.Path}{dirtyWarning}\n\n删除后无法通过 WIMD 撤销。",
+            "确认删除",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
@@ -396,17 +433,38 @@ public partial class MainWindow
         }
     }
 
+    private void RevealWorkspaceRoot_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        string? root = workspaceRootPath;
+        if (root is not null)
+        {
+            RevealWorkspacePath(root, "工作区根目录");
+        }
+    }
+
+    private async void CopyWorkspaceRootPath_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        string? root = workspaceRootPath;
+        if (root is not null)
+        {
+            await CopyRecentValueAsync(root, "工作区根目录路径");
+        }
+    }
+
     private void RevealWorkspaceEntry_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (!TryGetWorkspaceItem(sender, out WorkspaceTreeItemViewModel item))
+        if (TryGetWorkspaceItem(sender, out WorkspaceTreeItemViewModel item))
         {
-            return;
+            RevealWorkspacePath(item.Path, "工作区条目");
         }
+    }
 
+    private void RevealWorkspacePath(string path, string description)
+    {
         try
         {
-            fileExplorerService.RevealPath(item.Path);
-            UpdateStatus("已在文件资源管理器中定位工作区条目");
+            fileExplorerService.RevealPath(path);
+            UpdateStatus($"已在文件资源管理器中显示{description}");
         }
         catch (Exception exception) when (exception is ArgumentException
             or NotSupportedException

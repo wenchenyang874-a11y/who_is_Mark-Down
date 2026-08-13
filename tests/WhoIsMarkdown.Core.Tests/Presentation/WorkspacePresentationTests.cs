@@ -20,7 +20,10 @@ public sealed class WorkspacePresentationTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("Header=\"重命名\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Header=\"删除磁盘内容...\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Header=\"删除\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"删除实际文件或文件夹\"", xaml, StringComparison.Ordinal);
+        string codeBehind = File.ReadAllText(Path.Combine(repositoryRoot, "src", "WhoIsMarkdown.App", "MainWindow.Workspace.cs"));
+        Assert.Contains("此操作将删除磁盘上的实际", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Header=\"移出最近记录（不删除文件）\"", xaml, StringComparison.Ordinal);
     }
 
@@ -49,6 +52,59 @@ public sealed class WorkspacePresentationTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void 主窗口_工作区文件操作_进入后台线程前复制对话框输入()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string codeBehind = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Workspace.cs"));
+
+        Assert.Equal(
+            3,
+            System.Text.RegularExpressions.Regex.Count(
+                codeBehind,
+                @"string enteredName = dialog\.EnteredName;"));
+        Assert.DoesNotContain("dialog.EnteredName));", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 主窗口_工作区空白区域_提供根目录上下文操作()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string xaml = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml"));
+        string codeBehind = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Workspace.cs"));
+
+        Assert.Contains(
+            "AutomationProperties.Name=\"工作区根目录菜单\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Click=\"NewWorkspaceRootFile_Click\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"NewWorkspaceRootDirectory_Click\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"RefreshWorkspace_Click\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"RevealWorkspaceRoot_Click\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"CopyWorkspaceRootPath_Click\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<TreeView.ContextMenu>", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsHitTestVisible=\"False\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "private async void NewWorkspaceRootFile_Click",
+            codeBehind,
+            StringComparison.Ordinal);
+        Assert.Contains("await CreateWorkspaceFileAsync(root);", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("await CreateWorkspaceDirectoryAsync(root);", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("RevealWorkspacePath(root, \"工作区根目录\");", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("await CopyRecentValueAsync(root, \"工作区根目录路径\");", codeBehind, StringComparison.Ordinal);
+    }
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

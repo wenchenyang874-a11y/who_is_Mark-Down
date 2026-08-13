@@ -266,6 +266,26 @@
                                           KeyDown="WorkspaceTree_KeyDown"
                                           MouseDoubleClick="WorkspaceTree_MouseDoubleClick"
                                           TreeViewItem.Expanded="WorkspaceTree_Expanded">
+                                    <TreeView.ContextMenu>
+                                        <ContextMenu AutomationProperties.Name="工作区根目录菜单">
+                                            <MenuItem Header="新建 Markdown 文件"
+                                                      AutomationProperties.Name="在工作区根目录新建 Markdown 文件"
+                                                      Click="NewWorkspaceRootFile_Click" />
+                                            <MenuItem Header="新建文件夹"
+                                                      AutomationProperties.Name="在工作区根目录新建文件夹"
+                                                      Click="NewWorkspaceRootDirectory_Click" />
+                                            <MenuItem Header="刷新"
+                                                      AutomationProperties.Name="刷新工作区"
+                                                      Click="RefreshWorkspace_Click" />
+                                            <Separator />
+                                            <MenuItem Header="在文件资源管理器中显示"
+                                                      AutomationProperties.Name="在文件资源管理器中显示工作区根目录"
+                                                      Click="RevealWorkspaceRoot_Click" />
+                                            <MenuItem Header="复制路径"
+                                                      AutomationProperties.Name="复制工作区根目录路径"
+                                                      Click="CopyWorkspaceRootPath_Click" />
+                                        </ContextMenu>
+                                    </TreeView.ContextMenu>
                                     <TreeView.ItemContainerStyle>
                                         <Style TargetType="{x:Type TreeViewItem}">
                                             <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
@@ -281,7 +301,7 @@
                                                         <MenuItem Header="新建 Markdown 文件" Tag="{Binding}" IsEnabled="{Binding IsDirectory}" Click="NewWorkspaceFile_Click" />
                                                         <MenuItem Header="新建文件夹" Tag="{Binding}" IsEnabled="{Binding IsDirectory}" Click="NewWorkspaceDirectory_Click" />
                                                         <MenuItem Header="重命名" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="RenameWorkspaceEntry_Click" />
-                                                        <MenuItem Header="删除磁盘内容..." Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="DeleteWorkspaceEntry_Click" />
+                                                        <MenuItem Header="删除" AutomationProperties.Name="删除实际文件或文件夹" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="DeleteWorkspaceEntry_Click" />
                                                         <Separator />
                                                         <MenuItem Header="在文件资源管理器中显示" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="RevealWorkspaceEntry_Click" />
                                                         <MenuItem Header="复制路径" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="CopyWorkspacePath_Click" />
@@ -295,7 +315,7 @@
                                         </HierarchicalDataTemplate>
                                     </TreeView.Resources>
                                 </TreeView>
-                                <StackPanel x:Name="WorkspaceEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                <StackPanel x:Name="WorkspaceEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed">
                                     <TextBlock HorizontalAlignment="Center" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="25" Foreground="#A7ADBC" Text="&#xE838;" />
                                     <TextBlock Margin="0,9,0,0" Foreground="{StaticResource TextSecondaryBrush}" Text="没有 Markdown 文件" />
                                     <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="#9299AA" Text="可在上方新建文件或文件夹" />
