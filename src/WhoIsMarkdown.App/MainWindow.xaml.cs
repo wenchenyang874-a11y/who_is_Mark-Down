@@ -340,7 +340,7 @@ public partial class MainWindow : Window
     {
         MessageBox.Show(
             this,
-            "WIMD v1.4.0\n\n本地、离线优先的 Markdown 实时预览编辑器。",
+            "WIMD v1.4.1\n\n本地、离线优先的 Markdown 实时预览编辑器。",
             "关于 WIMD",
             MessageBoxButton.OK,
             MessageBoxImage.Information);

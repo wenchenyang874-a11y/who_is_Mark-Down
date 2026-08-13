@@ -1,6 +1,6 @@
 #define MyAppName "WIMD"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.4.0"
+  #define MyAppVersion "1.4.1"
 #endif
 #define MyAppPublisher "wenchenyang874-a11y"
 #define MyAppURL "https://github.com/wenchenyang874-a11y/who_is_Mark-Down"
