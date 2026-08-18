@@ -10,16 +10,7 @@ namespace WhoIsMarkdown.Core.Markdown;
 /// </summary>
 public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
 {
-    private const string ContentSecurityPolicy =
-        "default-src 'none'; " +
-        "base-uri 'none'; " +
-        "form-action 'none'; " +
-        "frame-src 'none'; " +
-        "object-src 'none'; " +
-        "script-src 'none'; " +
-        "img-src data: https://wimd-document.invalid; " +
-        "style-src 'unsafe-inline'; " +
-        "font-src data:;";
+
 
     private const string EmptyDocumentMarkup = """
         <section class="preview-empty-state" aria-label="空文档提示">
@@ -29,18 +20,23 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         </section>
         """;
 
-    public string Build(string bodyHtml, string styleSheet)
+    public string Build(
+        string bodyHtml,
+        string styleSheet,
+        RemoteImagePolicy? remoteImagePolicy = null)
     {
         ArgumentNullException.ThrowIfNull(bodyHtml);
         ArgumentNullException.ThrowIfNull(styleSheet);
         string visibleBody = GetVisibleBody(bodyHtml);
+        string contentSecurityPolicy = CreateContentSecurityPolicy(
+            remoteImagePolicy ?? RemoteImagePolicy.BlockAll);
 
         StringBuilder html = new(capacity: visibleBody.Length + styleSheet.Length + 640);
         html.AppendLine("<!doctype html>");
         html.AppendLine("<html lang=\"zh-CN\">");
         html.AppendLine("<head>");
         html.Append("  <meta http-equiv=\"Content-Security-Policy\" content=\"")
-            .Append(WebUtility.HtmlEncode(ContentSecurityPolicy))
+            .Append(WebUtility.HtmlEncode(contentSecurityPolicy))
             .AppendLine("\">");
         html.AppendLine("  <meta charset=\"utf-8\">");
         html.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
@@ -57,6 +53,22 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         return html.ToString();
     }
 
+    private static string CreateContentSecurityPolicy(RemoteImagePolicy remoteImagePolicy)
+    {
+        IReadOnlyList<string> remoteSources = remoteImagePolicy.GetContentSecurityPolicySources();
+        string imageSources = remoteSources.Count == 0
+            ? "data: https://wimd-document.invalid"
+            : $"data: https://wimd-document.invalid {string.Join(' ', remoteSources)}";
+        return "default-src 'none'; " +
+            "base-uri 'none'; " +
+            "form-action 'none'; " +
+            "frame-src 'none'; " +
+            "object-src 'none'; " +
+            "script-src 'none'; " +
+            $"img-src {imageSources}; " +
+            "style-src 'unsafe-inline'; " +
+            "font-src data:;";
+    }
     public string GetVisibleBody(string bodyHtml)
     {
         ArgumentNullException.ThrowIfNull(bodyHtml);

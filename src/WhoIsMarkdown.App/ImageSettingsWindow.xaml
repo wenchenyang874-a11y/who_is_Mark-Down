@@ -1,0 +1,112 @@
+<Window x:Class="WhoIsMarkdown.App.ImageSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="图片设置"
+        Width="680"
+        Height="700"
+        MinWidth="620"
+        MinHeight="600"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#F7F8FC"
+        FontFamily="Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="0,0,10,0">
+                <TextBlock FontSize="21" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="图片插入与远程预览" />
+                <TextBlock Margin="0,5,0,16" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                           Text="选择图片或粘贴微信截图时，WIMD 会按这里的方式保存图片并插入 Markdown。普通文本粘贴不受影响。" />
+
+                <Border Padding="16" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="保存方式" />
+                        <ComboBox x:Name="StorageModeComboBox" Margin="0,9,0,0" Padding="8,6" SelectionChanged="StorageMode_SelectionChanged">
+                            <ComboBoxItem Tag="Local" Content="保存到本地图片目录（推荐）" />
+                            <ComboBoxItem Tag="ImgBb" Content="上传到 ImgBB 免费图床" />
+                        </ComboBox>
+
+                        <StackPanel x:Name="LocalSettingsPanel" Margin="0,14,0,0">
+                            <TextBlock Foreground="{StaticResource TextSecondaryBrush}" Text="相对于当前 Markdown 文件的图片目录" />
+                            <TextBox x:Name="LocalDirectoryTextBox" Margin="0,7,0,0" Padding="9,7" ToolTip="例如 ./img/ 或 ./assets/images/" />
+                            <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="只允许文档目录内的相对路径，不允许 ..、绝对路径或符号链接越界。" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="ImgBbSettingsPanel" Margin="0,14,0,0">
+                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"
+                                       Text="上传模式只发送所选或粘贴的图片，不发送 Markdown 正文。需要使用你自己的 ImgBB API Key。" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="ApiKeyPasswordBox" Padding="9,7" ToolTip="留空表示保留已保存的 API Key" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,0" Content="获取 API Key" Click="OpenImgBbApiPage_Click" />
+                            </Grid>
+                            <Grid Margin="0,6,0,0">
+                                <TextBlock x:Name="ApiKeyStatusText" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <Button HorizontalAlignment="Right" Padding="9,3" Content="清除已保存密钥" Click="ClearApiKey_Click" />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Margin="0,14,0,0" Padding="16" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="远程图片信任策略" />
+                        <ComboBox x:Name="TrustModeComboBox" Margin="0,9,0,0" Padding="8,6" SelectionChanged="TrustMode_SelectionChanged">
+                            <ComboBoxItem Tag="BlockAll" Content="不信任 - 阻止全部远程图片（默认）" />
+                            <ComboBoxItem Tag="AllowList" Content="白名单 - 只加载命中规则的图片" />
+                            <ComboBoxItem Tag="BlockList" Content="黑名单 - 阻止命中规则的图片" />
+                            <ComboBoxItem Tag="TrustAll" Content="信任所有 - 加载任意 HTTPS 图片" />
+                        </ComboBox>
+                        <TextBlock x:Name="TrustModeDescriptionText" Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+
+                        <StackPanel x:Name="RulesPanel" Margin="0,14,0,0">
+                            <Grid>
+                                <TextBlock x:Name="RulesTitleText" VerticalAlignment="Center" FontWeight="SemiBold" Text="匹配规则" />
+                                <Button HorizontalAlignment="Right" Padding="11,4" Content="添加规则" Click="AddRule_Click" />
+                            </Grid>
+                            <TextBlock Margin="0,5,0,8" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                       Text="规则命中任意一条即生效。域名匹配主机名，其余方式匹配完整 HTTPS 图片地址。" />
+                            <ItemsControl ItemsSource="{Binding Rules}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,7">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="135" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox Padding="7,5"
+                                                      ItemsSource="{Binding DataContext.MatchOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      DisplayMemberPath="DisplayName"
+                                                      SelectedValuePath="Id"
+                                                      SelectedValue="{Binding KindId, Mode=TwoWay}" />
+                                            <TextBox Grid.Column="1" Margin="7,0,0,0" Padding="8,6" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" />
+                                            <Button Grid.Column="2" Margin="7,0,0,0" Padding="9,4" Content="删除" Tag="{Binding}" Click="RemoveRule_Click" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Border Padding="10" Background="#FFF5F6FB" CornerRadius="6">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                                           Text="示例：域名 i.ibb.co；前缀 https://cdn.example.com/；后缀 /cover.png；关键词 avatar；正则 ^https://images\.example\.com/.+\.(png|jpg)$" />
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="1" Margin="0,16,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
+            <Button Width="88" Height="34" Margin="0,0,8,0" Content="取消" IsCancel="True" />
+            <Button Width="88" Height="34" Content="保存" IsDefault="True" Click="Save_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

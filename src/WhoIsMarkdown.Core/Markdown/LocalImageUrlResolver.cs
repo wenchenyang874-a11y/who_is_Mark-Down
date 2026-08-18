@@ -35,7 +35,8 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
         "data:image/webp;base64,",
     ];
 
-    public string RewriteGeneratedHtml(string bodyHtml, string? documentPath)
+    public string RewriteGeneratedHtml(string bodyHtml, string? documentPath,
+        RemoteImagePolicy? remoteImagePolicy = null)
     {
         ArgumentNullException.ThrowIfNull(bodyHtml);
         if (bodyHtml.Length == 0)
@@ -48,11 +49,17 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
             bodyHtml,
             match => string.Concat(
                 match.Groups[1].Value,
-                RewriteSource(match.Groups[2].Value, documentDirectory),
+                RewriteSource(
+                    match.Groups[2].Value,
+                    documentDirectory,
+                    remoteImagePolicy ?? RemoteImagePolicy.BlockAll),
                 match.Groups[3].Value));
     }
 
-    private static string RewriteSource(string encodedSource, string? documentDirectory)
+    private static string RewriteSource(
+        string encodedSource,
+        string? documentDirectory,
+        RemoteImagePolicy remoteImagePolicy)
     {
         string source = WebUtility.HtmlDecode(encodedSource);
         // Bug fix: a broad data:image/* exception also admitted SVG, whose nested
@@ -63,13 +70,21 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
             return encodedSource;
         }
 
-        if (documentDirectory is null || string.IsNullOrWhiteSpace(source))
+        if (string.IsNullOrWhiteSpace(source))
         {
             return InertPixel;
         }
 
         if (Uri.TryCreate(source, UriKind.Absolute, out Uri? absoluteUri)
             && !absoluteUri.IsFile)
+        {
+            return remoteImagePolicy.Allows(absoluteUri)
+                && SupportedExtensions.Contains(Path.GetExtension(absoluteUri.AbsolutePath))
+                ? WebUtility.HtmlEncode(absoluteUri.AbsoluteUri)
+                : InertPixel;
+        }
+
+        if (documentDirectory is null)
         {
             return InertPixel;
         }

@@ -39,6 +39,7 @@ public sealed class PreviewWebViewService : IDisposable
     private readonly WebView2 webView;
     private readonly PreviewNavigationGate navigationGate = new();
     private readonly PreviewResourceMappingState resourceMappingState = new();
+    private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
     private CoreWebView2? core;
     private PreviewSnapshot? pendingPreview;
     private bool processingPreview;
@@ -46,6 +47,7 @@ public sealed class PreviewWebViewService : IDisposable
     private bool previewPageReady;
     private bool initialized;
     private bool disposed;
+    private string? currentPagePolicyIdentity;
 
     public PreviewWebViewService(WebView2 webView)
     {
@@ -102,10 +104,15 @@ public sealed class PreviewWebViewService : IDisposable
     /// loaded page avoids WebView2's white unload/repaint frame on every keystroke.
     /// Requests arriving during initial navigation are coalesced to the newest body.
     /// </summary>
-    public Task ShowAsync(string fullHtml, string bodyHtml, string? documentPath)
+    public Task ShowAsync(
+        string fullHtml,
+        string bodyHtml,
+        string? documentPath,
+        string pagePolicyIdentity)
     {
         ArgumentNullException.ThrowIfNull(fullHtml);
         ArgumentNullException.ThrowIfNull(bodyHtml);
+        ArgumentNullException.ThrowIfNull(pagePolicyIdentity);
         ThrowIfDisposed();
 
         if (!initialized || core is null)
@@ -113,8 +120,88 @@ public sealed class PreviewWebViewService : IDisposable
             throw new InvalidOperationException("预览组件尚未初始化。");
         }
 
-        pendingPreview = new PreviewSnapshot(fullHtml, bodyHtml, documentPath);
+        MarkPreviewPending();
+        pendingPreview = new PreviewSnapshot(
+            fullHtml,
+            bodyHtml,
+            documentPath,
+            pagePolicyIdentity);
         return ProcessPreviewQueueAsync();
+    }
+
+    public async Task ExportPdfAsync(string outputPath, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
+        ThrowIfDisposed();
+        await WaitUntilReadyAsync(cancellationToken).ConfigureAwait(true);
+        if (core is null)
+        {
+            throw new InvalidOperationException("预览组件尚未初始化。");
+        }
+
+        // Remote images can finish after the DOM update. Bound the wait so a dead
+        // image host cannot make PDF export hang indefinitely.
+        await core.ExecuteScriptAsync("""
+            (async () => {
+              const pending = [...document.images]
+                .filter(image => !image.complete)
+                .map(image => new Promise(resolve => {
+                  image.addEventListener('load', resolve, { once: true });
+                  image.addEventListener('error', resolve, { once: true });
+                }));
+              await Promise.race([
+                Promise.all(pending),
+                new Promise(resolve => setTimeout(resolve, 3000))
+              ]);
+              return true;
+            })();
+            """).WaitAsync(cancellationToken).ConfigureAwait(true);
+
+        bool succeeded = await core.PrintToPdfAsync(outputPath)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(true);
+        if (!succeeded)
+        {
+            throw new InvalidOperationException("WebView2 未能生成 PDF 文件。");
+        }
+    }
+
+    public Task WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (previewPageReady
+            && !navigationInProgress
+            && !processingPreview
+            && pendingPreview is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return previewReadySource.Task.WaitAsync(cancellationToken);
+    }
+
+    private static TaskCompletionSource<bool> CreatePreviewReadySource()
+    {
+        return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private void MarkPreviewPending()
+    {
+        if (previewReadySource.Task.IsCompleted)
+        {
+            previewReadySource = CreatePreviewReadySource();
+        }
+    }
+
+    private void SignalPreviewReady()
+    {
+        previewReadySource.TrySetResult(true);
+        PreviewReady?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SignalPreviewFailure(string message)
+    {
+        previewReadySource.TrySetException(new InvalidOperationException(message));
     }
 
     public Task ScrollToRatioAsync(double ratio)
@@ -167,10 +254,12 @@ public sealed class PreviewWebViewService : IDisposable
         }
 
         disposed = true;
+        previewReadySource.TrySetCanceled();
         pendingPreview = null;
         previewPageReady = false;
         navigationInProgress = false;
         navigationGate.CancelGeneratedNavigation();
+        currentPagePolicyIdentity = null;
         if (core is not null)
         {
             core.NavigationStarting -= OnNavigationStarting;
@@ -205,12 +294,17 @@ public sealed class PreviewWebViewService : IDisposable
                 pendingPreview = null;
                 bool resourceMappingChanged = ConfigureDocumentResourceMapping(
                     snapshot.DocumentPath);
+                bool pagePolicyChanged = !string.Equals(
+                    currentPagePolicyIdentity,
+                    snapshot.PagePolicyIdentity,
+                    StringComparison.Ordinal);
+                currentPagePolicyIdentity = snapshot.PagePolicyIdentity;
 
                 // Bug fix: opening a file from an already-running blank editor changes
                 // the virtual-host folder after the preview page exists. A DOM-only
                 // replacement can keep WebView2's earlier failed image responses, so
                 // rebuild the host page once when the resource directory changes.
-                if (!previewPageReady || resourceMappingChanged)
+                if (!previewPageReady || resourceMappingChanged || pagePolicyChanged)
                 {
                     NavigateToPreview(snapshot.FullHtml);
                     return;
@@ -225,7 +319,7 @@ public sealed class PreviewWebViewService : IDisposable
                 }
             }
 
-            PreviewReady?.Invoke(this, EventArgs.Empty);
+            SignalPreviewReady();
         }
         finally
         {
@@ -258,6 +352,7 @@ public sealed class PreviewWebViewService : IDisposable
         {
             navigationInProgress = false;
             navigationGate.CancelGeneratedNavigation();
+            currentPagePolicyIdentity = null;
             throw;
         }
     }
@@ -358,8 +453,14 @@ public sealed class PreviewWebViewService : IDisposable
                 }
                 catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or System.Runtime.InteropServices.COMException)
                 {
-                    PreviewNavigationFailed?.Invoke(this, $"预览更新失败：{exception.Message}");
+                    string message = $"预览更新失败：{exception.Message}";
+                    SignalPreviewFailure(message);
+                    PreviewNavigationFailed?.Invoke(this, message);
                 }
+            }
+            else
+            {
+                SignalPreviewFailure($"预览页面加载失败：{eventArgs.WebErrorStatus}");
             }
 
             return;
@@ -373,12 +474,14 @@ public sealed class PreviewWebViewService : IDisposable
             }
             else
             {
-                PreviewReady?.Invoke(this, EventArgs.Empty);
+                SignalPreviewReady();
             }
         }
         catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or System.Runtime.InteropServices.COMException)
         {
-            PreviewNavigationFailed?.Invoke(this, $"预览更新失败：{exception.Message}");
+            string message = $"预览更新失败：{exception.Message}";
+            SignalPreviewFailure(message);
+            PreviewNavigationFailed?.Invoke(this, message);
         }
     }
 
@@ -443,7 +546,8 @@ public sealed class PreviewWebViewService : IDisposable
     private sealed record PreviewSnapshot(
         string FullHtml,
         string BodyHtml,
-        string? DocumentPath);
+        string? DocumentPath,
+        string PagePolicyIdentity);
 
     private static bool IsAllowedExternalScheme(string scheme)
     {

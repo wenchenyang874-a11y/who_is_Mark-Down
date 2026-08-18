@@ -61,6 +61,7 @@ public partial class MainWindow
     {
         windowClosed = true;
         CancelPreviewWork();
+        CancelImageWork();
         DisposeAppearanceController();
         DisposeScrollSynchronization();
 

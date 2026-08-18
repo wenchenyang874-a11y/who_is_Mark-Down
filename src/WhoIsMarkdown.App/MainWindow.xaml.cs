@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private string previewStyleSheet = string.Empty;
     private int untitledCounter = 1;
     private long previewVersion;
+    private long documentOpenVersion;
     private bool applyingDocumentText;
     private bool closeApproved;
     private bool closeWorkflowRunning;
@@ -167,9 +168,18 @@ public partial class MainWindow : Window
 
     private async Task OpenDocumentAsync(string path)
     {
+        // Workspace double-clicks may start overlapping asynchronous reads. Only the
+        // latest request may update the editor; otherwise an older, slower read can
+        // finish last and make switching appear to jump back to the previous file.
+        long requestVersion = Interlocked.Increment(ref documentOpenVersion);
         try
         {
             LoadedDocument loadedDocument = await fileService.ReadAsync(path);
+            if (requestVersion != Volatile.Read(ref documentOpenVersion))
+            {
+                return;
+            }
+
             document.Load(loadedDocument);
             ApplyDocumentToEditor();
             RecordRecentFile(loadedDocument.Path);
@@ -177,7 +187,10 @@ public partial class MainWindow : Window
         }
         catch (DocumentFileException exception)
         {
-            ShowFileError("无法打开文档", exception);
+            if (requestVersion == Volatile.Read(ref documentOpenVersion))
+            {
+                ShowFileError("无法打开文档", exception);
+            }
         }
     }
 
@@ -276,7 +289,13 @@ public partial class MainWindow : Window
         previewCancellation?.Dispose();
         previewCancellation = new CancellationTokenSource();
         long version = ++previewVersion;
-        _ = RefreshPreviewAsync(document.Text, document.FilePath, version, previewCancellation.Token);
+        RemoteImagePolicy remoteImagePolicy = CreateRemoteImagePolicy();
+        _ = RefreshPreviewAsync(
+            document.Text,
+            document.FilePath,
+            remoteImagePolicy,
+            version,
+            previewCancellation.Token);
     }
 
     /// <summary>
@@ -286,6 +305,7 @@ public partial class MainWindow : Window
     private async Task RefreshPreviewAsync(
         string markdown,
         string? documentPath,
+        RemoteImagePolicy remoteImagePolicy,
         long version,
         CancellationToken cancellationToken)
     {
@@ -293,10 +313,10 @@ public partial class MainWindow : Window
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
             string body = await Task.Run(
-                () => markdownRenderer.RenderBody(markdown, documentPath),
+                () => markdownRenderer.RenderBody(markdown, documentPath, remoteImagePolicy),
                 cancellationToken);
             string visibleBody = previewDocumentBuilder.GetVisibleBody(body);
-            string page = previewDocumentBuilder.Build(body, previewStyleSheet);
+            string page = previewDocumentBuilder.Build(body, previewStyleSheet, remoteImagePolicy);
 
             PreviewWebViewService? service = previewService;
             if (!cancellationToken.IsCancellationRequested
@@ -306,7 +326,11 @@ public partial class MainWindow : Window
                 // Replacing content can clamp WebView's scroll range. Suppress that
                 // host-generated report so an edit never scrolls AvalonEdit.
                 SuppressPreviewScrollEcho();
-                await service.ShowAsync(page, visibleBody, documentPath);
+                await service.ShowAsync(
+                    page,
+                    visibleBody,
+                    documentPath,
+                    remoteImagePolicy.Identity);
             }
         }
         catch (OperationCanceledException)

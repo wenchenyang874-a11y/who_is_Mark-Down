@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.App.Shortcuts;
 using WhoIsMarkdown.Core.Settings;
 
@@ -28,10 +29,20 @@ public partial class MainWindow
         UpdateShortcutHints();
     }
 
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs eventArgs)
+    private async void MainWindow_PreviewKeyDown(object sender, KeyEventArgs eventArgs)
     {
         Key key = eventArgs.Key == Key.System ? eventArgs.SystemKey : eventArgs.Key;
         ModifierKeys modifiers = Keyboard.Modifiers;
+        if (key == Key.V
+            && modifiers == ModifierKeys.Control
+            && ClipboardImageReader.ContainsImage())
+        {
+            // WPF/AvalonEdit does not understand WeChat's clipboard PNG payload.
+            // Intercept only image-bearing Ctrl+V; text paste keeps native behavior.
+            eventArgs.Handled = true;
+            await PasteClipboardImageAsync();
+            return;
+        }
         if (modifiers.HasFlag(ModifierKeys.Windows)
             || key is Key.None or Key.System
                 or Key.LeftCtrl or Key.RightCtrl
@@ -118,7 +129,7 @@ public partial class MainWindow
                 ApplyMarkdownFormat("link");
                 break;
             case "format.image":
-                ApplyMarkdownFormat("image");
+                InsertImage_Click(this, new RoutedEventArgs());
                 break;
             case "format.ordered-list":
                 ApplyMarkdownFormat("ordered-list");

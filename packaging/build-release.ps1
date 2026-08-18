@@ -1,13 +1,21 @@
 [CmdletBinding()]
 param(
     [ValidateNotNullOrEmpty()]
-    [string]$Version = '1.5.1',
+    [string]$Version = '1.6.0',
 
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64'
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw 'Version must use the numeric major.minor.patch format required by the Windows installer.'
+}
+
+# Keep every Windows version surface aligned. Passing only Version leaves an
+# explicit FileVersion/AssemblyVersion from the project file unchanged, which
+# made Explorer report an older application version inside a newer installer.
+$binaryVersion = "$Version.0"
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repositoryRoot 'src\WhoIsMarkdown.App\WhoIsMarkdown.App.csproj'
 $publishDirectory = Join-Path $repositoryRoot "artifacts\publish\$Runtime"
@@ -47,6 +55,9 @@ dotnet publish $projectPath `
     -p:DebugType=None `
     -p:DebugSymbols=false `
     -p:Version=$Version `
+    -p:FileVersion=$binaryVersion `
+    -p:AssemblyVersion=$binaryVersion `
+    -p:InformationalVersion=$Version `
     --output $publishDirectory
 
 if ($LASTEXITCODE -ne 0) {

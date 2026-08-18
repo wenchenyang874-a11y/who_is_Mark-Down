@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Editing;
 
 namespace WhoIsMarkdown.App;
@@ -18,7 +19,7 @@ public partial class MainWindow
         RedoMenuItem.IsEnabled = Editor.CanRedo;
         CutMenuItem.IsEnabled = hasSelection;
         CopyMenuItem.IsEnabled = hasSelection;
-        PasteMenuItem.IsEnabled = ClipboardContainsText();
+        PasteMenuItem.IsEnabled = ClipboardContainsText() || ClipboardImageReader.ContainsImage();
     }
 
     /// <summary>
@@ -70,8 +71,14 @@ public partial class MainWindow
         }
     }
 
-    private void Paste_Click(object sender, RoutedEventArgs eventArgs)
+    private async void Paste_Click(object sender, RoutedEventArgs eventArgs)
     {
+        if (ClipboardImageReader.ContainsImage())
+        {
+            await PasteClipboardImageAsync();
+            return;
+        }
+
         if (Clipboard.ContainsText())
         {
             Editor.Paste();

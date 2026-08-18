@@ -178,3 +178,47 @@ hr {
   border: 0;
   background: #dfe3eb;
 }
+@page {
+  size: auto;
+  margin: 18mm 16mm;
+}
+
+@media print {
+  :root,
+  html,
+  body {
+    color: #20283a;
+    background: #ffffff;
+  }
+
+  body {
+    padding: 0;
+  }
+
+  .preview-document {
+    min-height: 0;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    border: 0;
+    border-radius: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid-page;
+  }
+
+  blockquote,
+  figure,
+  img,
+  pre,
+  table {
+    break-inside: avoid-page;
+  }
+}

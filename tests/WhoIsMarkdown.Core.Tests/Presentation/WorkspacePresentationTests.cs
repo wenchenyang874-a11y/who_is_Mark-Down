@@ -105,6 +105,47 @@ public sealed class WorkspacePresentationTests
         Assert.Contains("RevealWorkspacePath(root, \"工作区根目录\");", codeBehind, StringComparison.Ordinal);
         Assert.Contains("await CopyRecentValueAsync(root, \"工作区根目录路径\");", codeBehind, StringComparison.Ordinal);
     }
+    [Fact]
+    public void 主窗口_工作区树交互_双击切换与右键选中保持一致()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string xaml = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml"));
+        string workspaceCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Workspace.cs"));
+        string windowCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml.cs"));
+
+        Assert.Contains(
+            "PreviewMouseRightButtonDown=\"WorkspaceTree_PreviewMouseRightButtonDown\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Value=\"#ECE9FF\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("CornerRadius=\"6\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "MouseLeftButtonDown=\"WorkspaceTreeItem_MouseLeftButtonDown\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("MouseDoubleClick=", xaml, StringComparison.Ordinal);
+        Assert.Contains("eventArgs.ChangedButton != MouseButton.Left", workspaceCode, StringComparison.Ordinal);
+        Assert.Contains("eventArgs.ClickCount != 2", workspaceCode, StringComparison.Ordinal);
+        Assert.Contains("WorkspaceTreeItem_MouseLeftButtonDown", workspaceCode, StringComparison.Ordinal);
+        Assert.Contains("FindWorkspaceTreeItem", workspaceCode, StringComparison.Ordinal);
+        Assert.Contains("container.IsSelected = true;", workspaceCode, StringComparison.Ordinal);
+        Assert.Contains("VisualTreeHelper.GetParent(source)", workspaceCode, StringComparison.Ordinal);
+        Assert.Contains("Interlocked.Increment(ref documentOpenVersion)", windowCode, StringComparison.Ordinal);
+        Assert.Contains("Volatile.Read(ref documentOpenVersion)", windowCode, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

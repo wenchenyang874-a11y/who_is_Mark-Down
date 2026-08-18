@@ -17,6 +17,8 @@ public sealed record ApplicationSettings
 
     public bool IsRecentPaneExpanded { get; init; } = true;
 
+    public ImageInsertionSettings ImageInsertion { get; init; } = new();
+
     public IReadOnlyDictionary<string, ShortcutGesture> ShortcutOverrides { get; init; }
         = new Dictionary<string, ShortcutGesture>(StringComparer.Ordinal);
 
@@ -59,6 +61,7 @@ public sealed record ApplicationSettings
             RecentFiles = normalizedRecentFiles,
             BackgroundImagePath = TryNormalizePath(BackgroundImagePath),
             BackgroundOpacity = Math.Clamp(BackgroundOpacity, 0, 1),
+            ImageInsertion = (ImageInsertion ?? new ImageInsertionSettings()).Normalize(),
             ShortcutOverrides = normalizedShortcuts,
         };
     }

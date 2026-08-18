@@ -16,6 +16,14 @@ public sealed class JsonApplicationSettingsStoreTests
             BackgroundImagePath = System.IO.Path.Combine(temporaryDirectory.Path, "背景.png"),
             BackgroundOpacity = 0.32,
             IsRecentPaneExpanded = false,
+            ImageInsertion = new ImageInsertionSettings
+            {
+                StorageMode = ImageStorageMode.ImgBb,
+                LocalDirectory = "./assets/images/",
+                TrustMode = RemoteImageTrustMode.AllowList,
+                RemoteImageRules = ["domain:i.ibb.co", "keyword:public-image"],
+                ProtectedImgBbApiKey = "ciphertext",
+            },
             RecentFiles =
             [
                 new(
@@ -39,6 +47,11 @@ public sealed class JsonApplicationSettingsStoreTests
         Assert.Equal(System.IO.Path.GetFullPath(settings.BackgroundImagePath), result.BackgroundImagePath);
         Assert.Equal(0.32, result.BackgroundOpacity);
         Assert.False(result.IsRecentPaneExpanded);
+        Assert.Equal(ImageStorageMode.ImgBb, result.ImageInsertion.StorageMode);
+        Assert.Equal("./assets/images/", result.ImageInsertion.LocalDirectory);
+        Assert.Equal(RemoteImageTrustMode.AllowList, result.ImageInsertion.TrustMode);
+        Assert.Equal(["domain:i.ibb.co", "keyword:public-image"], result.ImageInsertion.RemoteImageRules);
+        Assert.Equal("ciphertext", result.ImageInsertion.ProtectedImgBbApiKey);
         ShortcutGesture strike = Assert.Single(result.ShortcutOverrides).Value;
         Assert.Equal("Oem3", strike.Key);
         Assert.True(strike.Control);

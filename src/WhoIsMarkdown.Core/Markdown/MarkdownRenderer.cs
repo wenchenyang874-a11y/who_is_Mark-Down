@@ -37,11 +37,14 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
             .Build();
     }
 
-    public string RenderBody(string markdown, string? documentPath = null)
+    public string RenderBody(
+        string markdown,
+        string? documentPath = null,
+        RemoteImagePolicy? remoteImagePolicy = null)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         string generatedHtml = Markdig.Markdown.ToHtml(markdown, pipeline);
         string safeHtml = htmlSanitizer.Sanitize(generatedHtml);
-        return imageUrlResolver.RewriteGeneratedHtml(safeHtml, documentPath);
+        return imageUrlResolver.RewriteGeneratedHtml(safeHtml, documentPath, remoteImagePolicy);
     }
 }

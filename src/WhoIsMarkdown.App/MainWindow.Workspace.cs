@@ -4,6 +4,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using Microsoft.Win32;
 using WhoIsMarkdown.App.ViewModels;
 using WhoIsMarkdown.Core.Workspace;
@@ -168,20 +170,66 @@ public partial class MainWindow
         }
     }
 
-    private async void WorkspaceTree_MouseDoubleClick(object sender, MouseButtonEventArgs eventArgs)
+    private void WorkspaceTree_PreviewMouseRightButtonDown(
+        object sender,
+        MouseButtonEventArgs eventArgs)
     {
-        TreeViewItem? container = ItemsControl.ContainerFromElement(
-            WorkspaceTree,
-            eventArgs.OriginalSource as DependencyObject) as TreeViewItem;
-        if (container?.DataContext is WorkspaceTreeItemViewModel
-            {
-                IsDirectory: false,
-                IsPlaceholder: false,
-            } item)
+        TreeViewItem? container = FindWorkspaceTreeItem(
+            eventArgs.OriginalSource as DependencyObject);
+        if (container?.DataContext is not WorkspaceTreeItemViewModel { IsPlaceholder: false })
         {
-            eventArgs.Handled = true;
-            await OpenWorkspaceDocumentAsync(item.Path);
+            return;
         }
+
+        // WPF does not move TreeView selection on right-click. Select and focus the
+        // actual target before its context menu opens so visual and command targets agree.
+        container.IsSelected = true;
+        container.Focus();
+    }
+
+    private async void WorkspaceTreeItem_MouseLeftButtonDown(
+        object sender,
+        MouseButtonEventArgs eventArgs)
+    {
+        if (eventArgs.ChangedButton != MouseButton.Left
+            || eventArgs.ClickCount != 2
+            || sender is not FrameworkElement
+            {
+                DataContext: WorkspaceTreeItemViewModel
+                {
+                    IsDirectory: false,
+                    IsPlaceholder: false,
+                } item,
+            })
+        {
+            return;
+        }
+
+        // Handle the file row directly. Root-level container lookup is ambiguous for
+        // nested TreeView nodes and caused valid double-clicks to target a parent folder.
+        eventArgs.Handled = true;
+        await OpenWorkspaceDocumentAsync(item.Path);
+    }
+
+    /// <summary>
+    /// Walks the real right-click source ancestry so the context-menu target also
+    /// becomes the selected TreeView item before the menu is displayed.
+    /// </summary>
+    private static TreeViewItem? FindWorkspaceTreeItem(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is TreeViewItem container)
+            {
+                return container;
+            }
+
+            source = source is Visual or Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        return null;
     }
 
     private async void OpenWorkspaceEntry_Click(object sender, RoutedEventArgs eventArgs)

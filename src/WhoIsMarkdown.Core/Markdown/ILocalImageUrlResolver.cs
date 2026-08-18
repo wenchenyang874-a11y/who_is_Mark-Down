@@ -6,5 +6,8 @@ namespace WhoIsMarkdown.Core.Markdown;
 /// </summary>
 public interface ILocalImageUrlResolver
 {
-    public string RewriteGeneratedHtml(string bodyHtml, string? documentPath);
+    public string RewriteGeneratedHtml(
+        string bodyHtml,
+        string? documentPath,
+        RemoteImagePolicy? remoteImagePolicy = null);
 }

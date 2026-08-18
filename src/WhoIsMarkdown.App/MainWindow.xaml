@@ -104,6 +104,8 @@
                     <MenuItem x:Name="SaveDocumentMenuItem" Header="保存(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
                     <MenuItem x:Name="SaveAsDocumentMenuItem" Header="另存为(_A)..." InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
                     <Separator />
+                    <MenuItem x:Name="ExportPdfMenuItem" Header="导出为 PDF..." Click="ExportPdf_Click" />
+                    <Separator />
                     <MenuItem Header="退出(_X)" Click="Exit_Click" />
                 </MenuItem>
                 <MenuItem Header="编辑(_E)" AutomationProperties.Name="编辑" Style="{StaticResource TopLevelMenuItemStyle}" SubmenuOpened="EditMenu_SubmenuOpened">
@@ -123,7 +125,7 @@
                         <MenuItem Header="代码块" InputGestureText="Ctrl+Shift+K" Tag="code-block" Click="MarkdownFormat_Click" />
                         <Separator />
                         <MenuItem Header="链接" InputGestureText="Ctrl+K" Tag="link" Click="MarkdownFormat_Click" />
-                        <MenuItem Header="图片" InputGestureText="Ctrl+Shift+I" Tag="image" Click="MarkdownFormat_Click" />
+                        <MenuItem x:Name="InsertImageMenuItem" Header="选择图片并插入..." InputGestureText="Ctrl+Shift+I" Tag="image" Click="InsertImage_Click" />
                         <Separator />
                         <MenuItem Header="有序列表" InputGestureText="Ctrl+Shift+7" Tag="ordered-list" Click="MarkdownFormat_Click" />
                         <MenuItem Header="无序列表" InputGestureText="Ctrl+Shift+8" Tag="unordered-list" Click="MarkdownFormat_Click" />
@@ -139,10 +141,13 @@
                     <MenuItem x:Name="EditorOnlyModeMenuItem" Header="仅编辑" IsCheckable="True" Click="EditorOnlyMode_Click" />
                     <Separator />
                     <MenuItem x:Name="RecentPaneMenuItem" Header="显示侧栏" IsCheckable="True" Click="RecentPaneToggle_Click" />
-                    <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
                 <MenuItem Header="快捷键(_K)" AutomationProperties.Name="快捷键" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="快捷键设置..." Click="Shortcuts_Click" />
+                </MenuItem>
+                <MenuItem Header="设置(_S)" AutomationProperties.Name="设置" Style="{StaticResource TopLevelMenuItemStyle}">
+                    <MenuItem Header="图片设置..." Click="ImageSettings_Click" />
+                    <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
                 <MenuItem Header="帮助(_H)" AutomationProperties.Name="帮助" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="关于 WIMD" Click="About_Click" />
@@ -263,8 +268,8 @@
                                           BorderThickness="0"
                                           ItemsSource="{Binding WorkspaceItems, ElementName=RootWindow}"
                                           SelectedItemChanged="WorkspaceTree_SelectedItemChanged"
+                                          PreviewMouseRightButtonDown="WorkspaceTree_PreviewMouseRightButtonDown"
                                           KeyDown="WorkspaceTree_KeyDown"
-                                          MouseDoubleClick="WorkspaceTree_MouseDoubleClick"
                                           TreeViewItem.Expanded="WorkspaceTree_Expanded">
                                     <TreeView.ContextMenu>
                                         <ContextMenu AutomationProperties.Name="工作区根目录菜单">
@@ -289,12 +294,49 @@
                                     <TreeView.ItemContainerStyle>
                                         <Style TargetType="{x:Type TreeViewItem}">
                                             <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="Margin" Value="0,1" />
                                         </Style>
                                     </TreeView.ItemContainerStyle>
                                     <TreeView.Resources>
+                                        <!-- The native TreeView highlight is suppressed so the header can
+                                             render WIMD's rounded hover and selection surfaces consistently. -->
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Transparent" />
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="Transparent" />
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1D2433" />
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1D2433" />
                                         <HierarchicalDataTemplate DataType="{x:Type viewModels:WorkspaceTreeItemViewModel}" ItemsSource="{Binding Children}">
-                                            <Grid MinHeight="27" Background="Transparent" ToolTip="{Binding Path}">
-                                                <Grid.ContextMenu>
+                                            <Border MinHeight="29"
+                                                    Margin="0,1,2,1"
+                                                    Padding="6,2"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6"
+                                                    ToolTip="{Binding Path}"
+                                                    MouseLeftButtonDown="WorkspaceTreeItem_MouseLeftButtonDown">
+                                                <Border.Style>
+                                                    <Style TargetType="{x:Type Border}">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType={x:Type TreeViewItem}}}" Value="True">
+                                                                <Setter Property="Background" Value="#F3F4F8" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type TreeViewItem}}}" Value="True">
+                                                                <Setter Property="Background" Value="#ECE9FF" />
+                                                                <Setter Property="BorderBrush" Value="#D4CEFF" />
+                                                            </DataTrigger>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type TreeViewItem}}}" Value="True" />
+                                                                    <Condition Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType={x:Type TreeViewItem}}}" Value="True" />
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="BorderBrush" Value="#8C7CF0" />
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Border.ContextMenu>
                                                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                                         <MenuItem Header="打开" Tag="{Binding}" IsEnabled="{Binding IsFile}" Click="OpenWorkspaceEntry_Click" />
                                                         <Separator />
@@ -306,12 +348,12 @@
                                                         <MenuItem Header="在文件资源管理器中显示" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="RevealWorkspaceEntry_Click" />
                                                         <MenuItem Header="复制路径" Tag="{Binding}" IsEnabled="{Binding IsActionable}" Click="CopyWorkspacePath_Click" />
                                                     </ContextMenu>
-                                                </Grid.ContextMenu>
+                                                </Border.ContextMenu>
                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                     <TextBlock Width="20" VerticalAlignment="Center" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#687086" Text="{Binding IconGlyph}" />
                                                     <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
-                                            </Grid>
+                                            </Border>
                                         </HierarchicalDataTemplate>
                                     </TreeView.Resources>
                                 </TreeView>
@@ -364,7 +406,7 @@
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="&lt;/&gt;" ToolTip="行内代码 (Ctrl+E)" Tag="inline-code" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="代码块" ToolTip="代码块 (Ctrl+Shift+K)" Tag="code-block" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="链接" ToolTip="插入链接 (Ctrl+K)" Tag="link" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="图片" ToolTip="插入图片 (Ctrl+Shift+I)" Tag="image" Click="MarkdownFormat_Click" />
+                                <Button x:Name="InsertImageToolbarButton" Style="{StaticResource MarkdownToolbarButtonStyle}" Content="图片" ToolTip="选择或粘贴图片 (Ctrl+Shift+I)" Tag="image" Click="InsertImage_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="• 列表" ToolTip="无序列表 (Ctrl+Shift+8)" Tag="unordered-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="1. 列表" ToolTip="有序列表 (Ctrl+Shift+7)" Tag="ordered-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="☑ 任务" ToolTip="任务列表 (Ctrl+Shift+L)" Tag="task-list" Click="MarkdownFormat_Click" />
