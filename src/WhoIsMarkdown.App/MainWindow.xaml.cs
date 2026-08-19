@@ -63,10 +63,11 @@ public partial class MainWindow : Window
         try
         {
             previewStyleSheet = ReadPreviewStyleSheet();
-            previewService = new PreviewWebViewService(Preview);
+            previewService = new PreviewWebViewService(Preview, clipboardTextService);
             previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
             previewService.PreviewImageOpenRequested += PreviewService_PreviewImageOpenRequested;
+            previewService.CodeBlockCopyStatusChanged += PreviewService_CodeBlockCopyStatusChanged;
             previewService.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
             previewService.PreviewReady += PreviewService_PreviewReady;
             await previewService.InitializeAsync();
@@ -370,6 +371,11 @@ public partial class MainWindow : Window
     }
 
     private void PreviewService_PreviewNavigationFailed(object? sender, string message)
+    {
+        UpdateStatus(message);
+    }
+
+    private void PreviewService_CodeBlockCopyStatusChanged(object? sender, string message)
     {
         UpdateStatus(message);
     }

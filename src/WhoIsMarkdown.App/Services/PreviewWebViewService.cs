@@ -90,7 +90,104 @@ public sealed class PreviewWebViewService : IDisposable
         })();
         """;
 
+    private static readonly string CodeBlockCopyScript = $$"""
+        (() => {
+          const previewSelector = 'main.preview-document';
+          const buttonSelector = 'button.wimd-code-copy-button';
+          const maximumCodeLength = {{PreviewCodeCopyRequest.MaximumCodeLength}};
+          const trustedButtons = new WeakSet();
+          const pendingButtons = new Map();
+          const resetTimers = new WeakMap();
+          let nextRequestId = 1;
+
+          const setReadyState = button => {
+            button.disabled = false;
+            button.dataset.state = 'ready';
+            button.setAttribute('aria-label', '复制代码块');
+            button.title = '复制代码';
+          };
+
+          const showResult = (button, succeeded) => {
+            button.disabled = false;
+            button.dataset.state = succeeded ? 'success' : 'failure';
+            button.setAttribute('aria-label', succeeded ? '代码已复制' : '复制失败，点击重试');
+            button.title = succeeded ? '已复制' : '复制失败，点击重试';
+            const previousTimer = resetTimers.get(button);
+            if (previousTimer) clearTimeout(previousTimer);
+            resetTimers.set(button, setTimeout(() => {
+              if (button.isConnected) setReadyState(button);
+              resetTimers.delete(button);
+            }, 1500));
+          };
+
+          const prepareCodeBlocks = () => {
+            const preview = document.querySelector(previewSelector);
+            if (!preview) return;
+            preview.querySelectorAll('pre').forEach(block => {
+              const code = block.querySelector(':scope > code') || block.querySelector('code');
+              if (!code || !code.textContent?.trim() || block.parentElement?.classList.contains('wimd-code-block')) return;
+
+              // Keep the button outside the horizontally scrolling pre element so
+              // it remains pinned to the visible top-right corner.
+              const container = document.createElement('div');
+              container.className = 'wimd-code-block';
+              block.before(container);
+              container.append(block);
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'wimd-code-copy-button';
+              button.dataset.state = 'ready';
+              button.setAttribute('aria-label', '复制代码块');
+              button.title = '复制代码';
+              trustedButtons.add(button);
+              container.append(button);
+            });
+          };
+
+          document.addEventListener('click', event => {
+            if (!(event.target instanceof Element) || event.button !== 0) return;
+            const button = event.target.closest(buttonSelector);
+            if (!button || !trustedButtons.has(button) || button.disabled) return;
+
+            const container = button.closest('.wimd-code-block');
+            const code = container?.querySelector(':scope > pre > code') || container?.querySelector('pre code');
+            const rawCode = code?.textContent || '';
+            const value = rawCode.replace(/\r?\n$/, '');
+            if (!value.trim() || value.length > maximumCodeLength) {
+              showResult(button, false);
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            const requestId = nextRequestId++;
+            pendingButtons.set(requestId, button);
+            button.disabled = true;
+            button.dataset.state = 'pending';
+            button.setAttribute('aria-label', '正在复制代码块');
+            button.title = '正在复制';
+            window.chrome.webview.postMessage({
+              type: 'copy-code-block',
+              requestId,
+              code: value
+            });
+          }, true);
+
+          window.wimdCodeCopy = Object.freeze({
+            complete(requestId, succeeded) {
+              const button = pendingButtons.get(requestId);
+              pendingButtons.delete(requestId);
+              if (button?.isConnected) showResult(button, Boolean(succeeded));
+            }
+          });
+
+          document.addEventListener('DOMContentLoaded', prepareCodeBlocks, { once: true });
+          document.addEventListener('wimd:preview-updated', prepareCodeBlocks);
+        })();
+        """;
+
     private readonly WebView2 webView;
+    private readonly IClipboardTextService clipboardTextService;
     private readonly PreviewNavigationGate navigationGate = new();
     private readonly PreviewResourceMappingState resourceMappingState = new();
     private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
@@ -103,9 +200,13 @@ public sealed class PreviewWebViewService : IDisposable
     private bool disposed;
     private string? currentPagePolicyIdentity;
 
-    public PreviewWebViewService(WebView2 webView)
+    public PreviewWebViewService(
+        WebView2 webView,
+        IClipboardTextService clipboardTextService)
     {
         this.webView = webView ?? throw new ArgumentNullException(nameof(webView));
+        this.clipboardTextService = clipboardTextService
+            ?? throw new ArgumentNullException(nameof(clipboardTextService));
         this.webView.DefaultBackgroundColor = Color.Transparent;
     }
 
@@ -114,6 +215,8 @@ public sealed class PreviewWebViewService : IDisposable
     public event EventHandler<string>? PreviewNavigationFailed;
 
     public event EventHandler<PreviewImageOpenRequestedEventArgs>? PreviewImageOpenRequested;
+
+    public event EventHandler<string>? CodeBlockCopyStatusChanged;
 
     public event EventHandler<PreviewScrollChangedEventArgs>? ScrollRatioChanged;
 
@@ -149,6 +252,7 @@ public sealed class PreviewWebViewService : IDisposable
         core.Settings.IsWebMessageEnabled = true;
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ScrollReportingScript).ConfigureAwait(true);
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ImageInteractionScript).ConfigureAwait(true);
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(CodeBlockCopyScript).ConfigureAwait(true);
         core.NavigationStarting += OnNavigationStarting;
         core.NavigationCompleted += OnNavigationCompleted;
         core.NewWindowRequested += OnNewWindowRequested;
@@ -542,7 +646,7 @@ public sealed class PreviewWebViewService : IDisposable
         }
     }
 
-    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs eventArgs)
+    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs eventArgs)
     {
         try
         {
@@ -562,12 +666,61 @@ public sealed class PreviewWebViewService : IDisposable
             {
                 TryRaisePreviewImageOpenRequested(root);
             }
+            else if (messageType == "copy-code-block")
+            {
+                await TryCopyCodeBlockAsync(root).ConfigureAwait(true);
+            }
         }
         catch (JsonException)
         {
             // Messages are emitted only by the host-injected script. Invalid data is
             // ignored defensively rather than affecting the editor event loop.
         }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or ObjectDisposedException
+            or System.Runtime.InteropServices.COMException)
+        {
+            if (!disposed)
+            {
+                CodeBlockCopyStatusChanged?.Invoke(
+                    this,
+                    $"无法复制代码块：{exception.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies only validated host-script messages. Clipboard access remains in WPF
+    /// so preview pages never receive browser clipboard permissions.
+    /// </summary>
+    private async Task TryCopyCodeBlockAsync(JsonElement root)
+    {
+        if (!PreviewCodeCopyRequest.TryCreate(root, out PreviewCodeCopyRequest? request)
+            || request is null)
+        {
+            return;
+        }
+
+        bool copied = await clipboardTextService.TrySetTextAsync(request.Code).ConfigureAwait(true);
+        await CompleteCodeCopyRequestAsync(request.RequestId, copied).ConfigureAwait(true);
+        CodeBlockCopyStatusChanged?.Invoke(
+            this,
+            copied
+                ? "已复制代码块"
+                : "无法复制代码块：剪贴板正被其他程序占用");
+    }
+
+    private async Task CompleteCodeCopyRequestAsync(int requestId, bool succeeded)
+    {
+        if (disposed || core is null)
+        {
+            return;
+        }
+
+        string successLiteral = succeeded ? "true" : "false";
+        await core.ExecuteScriptAsync(
+            $"window.wimdCodeCopy?.complete({requestId}, {successLiteral});")
+            .ConfigureAwait(true);
     }
 
     private void TryRaiseScrollChanged(JsonElement root)

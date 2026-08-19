@@ -71,6 +71,7 @@ public partial class MainWindow
             previewService.ExternalNavigationFailed -= PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed -= PreviewService_PreviewNavigationFailed;
             previewService.PreviewImageOpenRequested -= PreviewService_PreviewImageOpenRequested;
+            previewService.CodeBlockCopyStatusChanged -= PreviewService_CodeBlockCopyStatusChanged;
             previewService.ScrollRatioChanged -= PreviewService_ScrollRatioChanged;
             previewService.PreviewReady -= PreviewService_PreviewReady;
             previewService.Dispose();

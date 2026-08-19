@@ -141,6 +141,37 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("cursor: zoom-in", previewStyle, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void 预览代码块_提供宿主剪贴板按钮且打印时隐藏()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string previewCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Services",
+            "PreviewWebViewService.cs"));
+        string previewStyle = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Resources",
+            "preview.css"));
+
+        Assert.Contains("copy-code-block", previewCode, StringComparison.Ordinal);
+        Assert.Contains("wimd:preview-updated", previewCode, StringComparison.Ordinal);
+        Assert.Contains("PreviewCodeCopyRequest.TryCreate", previewCode, StringComparison.Ordinal);
+        Assert.Contains("clipboardTextService.TrySetTextAsync", previewCode, StringComparison.Ordinal);
+        Assert.Contains("window.wimdCodeCopy?.complete", previewCode, StringComparison.Ordinal);
+        Assert.Contains("block.before(container)", previewCode, StringComparison.Ordinal);
+        Assert.Contains("rawCode.replace(/\\r?\\n$/, '')", previewCode, StringComparison.Ordinal);
+        Assert.Contains(".wimd-code-copy-button", previewStyle, StringComparison.Ordinal);
+        Assert.Contains(".wimd-code-block pre", previewStyle, StringComparison.Ordinal);
+        Assert.Matches(
+            "@media print[\\s\\S]*\\.wimd-code-copy-button\\s*\\{\\s*display: none;\\s*\\}",
+            previewStyle);
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
