@@ -1,0 +1,63 @@
+<Window x:Class="WhoIsMarkdown.App.TableSizeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="插入表格"
+        Width="430"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#F7F8FC"
+        FontFamily="Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock FontSize="16"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Text="选择表格大小" />
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Margin="0,0,0,7"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Text="行数（含表头）" />
+                <ComboBox x:Name="RowCountComboBox"
+                          MinHeight="34"
+                          Padding="8,4"
+                          SelectionChanged="Size_SelectionChanged" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Margin="0,0,0,7"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Text="列数" />
+                <ComboBox x:Name="ColumnCountComboBox"
+                          MinHeight="34"
+                          Padding="8,4"
+                          SelectionChanged="Size_SelectionChanged" />
+            </StackPanel>
+        </Grid>
+        <Border Grid.Row="2"
+                Margin="0,16"
+                Padding="12,9"
+                CornerRadius="8"
+                Background="#ECEEFB">
+            <TextBlock x:Name="SummaryText"
+                       Foreground="{StaticResource AccentBrush}"
+                       Text="将插入 3 行 × 3 列的表格" />
+        </Border>
+        <StackPanel Grid.Row="3" HorizontalAlignment="Right" Orientation="Horizontal">
+            <Button Width="82" Height="32" Margin="0,0,8,0" Content="取消" IsCancel="True" />
+            <Button Width="82" Height="32" Content="插入" IsDefault="True" Click="Insert_Click" />
+        </StackPanel>
+    </Grid>
+</Window>
+

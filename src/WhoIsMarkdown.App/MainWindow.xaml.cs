@@ -68,6 +68,7 @@ public partial class MainWindow : Window
             previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
             previewService.PreviewImageOpenRequested += PreviewService_PreviewImageOpenRequested;
             previewService.CodeBlockCopyStatusChanged += PreviewService_CodeBlockCopyStatusChanged;
+            previewService.PreviewTaskToggleRequested += PreviewService_TaskToggleRequested;
             previewService.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
             previewService.PreviewReady += PreviewService_PreviewReady;
             await previewService.InitializeAsync();

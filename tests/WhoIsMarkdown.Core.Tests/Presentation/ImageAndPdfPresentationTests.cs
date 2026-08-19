@@ -172,6 +172,63 @@ public sealed class ImageAndPdfPresentationTests
             previewStyle);
     }
 
+    [Fact]
+    public void 预览任务_提供绿色完成状态和受校验的源码切换桥接()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string previewCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Services",
+            "PreviewWebViewService.cs"));
+        string editorCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Editing.cs"));
+        string previewStyle = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Resources",
+            "preview.css"));
+
+        Assert.Contains("toggle-task-list-item", previewCode, StringComparison.Ordinal);
+        Assert.Contains("PreviewTaskToggleRequest.TryCreate", previewCode, StringComparison.Ordinal);
+        Assert.Contains("window.wimdTaskToggle?.complete", previewCode, StringComparison.Ordinal);
+        Assert.Contains("MarkdownTaskListService.TryCreateStateEdit", editorCode, StringComparison.Ordinal);
+        Assert.Contains(".wimd-task-completed", previewStyle, StringComparison.Ordinal);
+        Assert.Contains("#17835c", previewStyle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void 表格工具_提供含表头行数与列数选择窗口()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string mainWindow = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml"));
+        string dialog = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "TableSizeDialog.xaml"));
+        string dialogCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "TableSizeDialog.xaml.cs"));
+
+        Assert.Contains("Header=\"插入表格...\"", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Text=\"行数（含表头）\"", dialog, StringComparison.Ordinal);
+        Assert.Contains("Text=\"列数\"", dialog, StringComparison.Ordinal);
+        Assert.Contains("SelectedRowCount", dialogCode, StringComparison.Ordinal);
+        Assert.Contains("SelectedColumnCount", dialogCode, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

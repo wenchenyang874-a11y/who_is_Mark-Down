@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace WhoIsMarkdown.Core.Editing;
@@ -9,6 +10,14 @@ namespace WhoIsMarkdown.Core.Editing;
 /// </summary>
 public static partial class MarkdownFormattingService
 {
+    public const int MinimumTableRowCount = 2;
+
+    public const int MaximumTableRowCount = 20;
+
+    public const int MinimumTableColumnCount = 1;
+
+    public const int MaximumTableColumnCount = 12;
+
     public static MarkdownTextEdit Apply(
         string text,
         int selectionStart,
@@ -32,8 +41,8 @@ public static partial class MarkdownFormattingService
             "unordered-list" => PrefixLines(text, selectionStart, selectionLength, "- "),
             "ordered-list" => PrefixLines(text, selectionStart, selectionLength, "1. "),
             "task-list" => PrefixLines(text, selectionStart, selectionLength, "- [ ] "),
-            "table" => InsertBlock(text, selectionStart, selectionLength, "| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |"),
-            "separator" => InsertBlock(text, selectionStart, selectionLength, "---"),
+            "table" => ApplyTable(text, selectionStart, selectionLength, 2, 2),
+            "separator" => InsertStandaloneSeparator(text, selectionStart, selectionLength),
             _ when HeadingFormatRegex().IsMatch(format) => ApplyHeading(
                 text,
                 selectionStart,
@@ -41,6 +50,40 @@ public static partial class MarkdownFormattingService
                 int.Parse(format.AsSpan(1), System.Globalization.CultureInfo.InvariantCulture)),
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "未知的 Markdown 格式。"),
         };
+    }
+
+    /// <summary>
+    /// Creates a pipe table with a header included in <paramref name="rowCount"/>.
+    /// Explicit limits keep accidental toolbar input from generating an enormous
+    /// editor replacement while still covering practical Markdown tables.
+    /// </summary>
+    public static MarkdownTextEdit ApplyTable(
+        string text,
+        int selectionStart,
+        int selectionLength,
+        int rowCount,
+        int columnCount)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ValidateSelection(text, selectionStart, selectionLength);
+        if (rowCount is < MinimumTableRowCount or > MaximumTableRowCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rowCount));
+        }
+
+        if (columnCount is < MinimumTableColumnCount or > MaximumTableColumnCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(columnCount));
+        }
+
+        string header = CreateTableRow(
+            Enumerable.Range(1, columnCount)
+                .Select(index => $"列 {index.ToString(CultureInfo.InvariantCulture)}"));
+        string delimiter = CreateTableRow(Enumerable.Repeat("---", columnCount));
+        string content = CreateTableRow(Enumerable.Repeat("内容", columnCount));
+        string table = string.Join('\n', new[] { header, delimiter }
+            .Concat(Enumerable.Repeat(content, rowCount - 1)));
+        return InsertBlock(text, selectionStart, selectionLength, table);
     }
 
     /// <summary>
@@ -108,6 +151,84 @@ public static partial class MarkdownFormattingService
         string result = text.Remove(start, length).Insert(start, replacement);
         int caretOffset = start + replacement.Length + (followedByLineBreak ? 1 : 0);
         return new MarkdownTextEdit(result, caretOffset, 0, caretOffset);
+    }
+
+    /// <summary>
+    /// Bug fix: a thematic break directly adjacent to text can be parsed as a
+    /// heading underline or merge with the next block. Keep one empty line on both
+    /// sides whenever surrounding content exists, and leave an empty line ready for
+    /// continued typing at the end of the document.
+    /// </summary>
+    private static MarkdownTextEdit InsertStandaloneSeparator(string text, int start, int length)
+    {
+        string prefix = text[..start];
+        string suffix = text[(start + length)..];
+        string lineBreak = DetectLineBreak(text);
+        int leadingBreakCount = CountTrailingLineBreaks(prefix);
+        int trailingBreakCount = CountLeadingLineBreaks(suffix);
+        string leadingBreaks = prefix.Length == 0
+            ? string.Empty
+            : RepeatLineBreak(lineBreak, Math.Max(0, 2 - leadingBreakCount));
+        string trailingBreaks = RepeatLineBreak(lineBreak, Math.Max(0, 2 - trailingBreakCount));
+        string replacement = string.Concat(leadingBreaks, "---", trailingBreaks);
+        string result = text.Remove(start, length).Insert(start, replacement);
+        int caretOffset = start + replacement.Length;
+        return new MarkdownTextEdit(result, caretOffset, 0, caretOffset);
+    }
+
+    private static string CreateTableRow(IEnumerable<string> cells)
+    {
+        return $"| {string.Join(" | ", cells)} |";
+    }
+
+    private static string DetectLineBreak(string text)
+    {
+        return text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+    }
+
+    private static int CountTrailingLineBreaks(string value)
+    {
+        int count = 0;
+        for (int index = value.Length - 1; index >= 0 && value[index] == '\n'; index--)
+        {
+            count++;
+            if (index > 0 && value[index - 1] == '\r')
+            {
+                index--;
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountLeadingLineBreaks(string value)
+    {
+        int count = 0;
+        int index = 0;
+        while (index < value.Length)
+        {
+            if (value[index] == '\r' && index + 1 < value.Length && value[index + 1] == '\n')
+            {
+                count++;
+                index += 2;
+                continue;
+            }
+
+            if (value[index] != '\n')
+            {
+                break;
+            }
+
+            count++;
+            index++;
+        }
+
+        return count;
+    }
+
+    private static string RepeatLineBreak(string lineBreak, int count)
+    {
+        return string.Concat(Enumerable.Repeat(lineBreak, count));
     }
 
     private static MarkdownTextEdit PrefixLines(string text, int start, int length, string prefix)

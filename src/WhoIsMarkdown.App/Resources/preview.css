@@ -111,6 +111,26 @@ blockquote {
   background: #f5f5fc;
 }
 
+.preview-document li.task-list-item {
+  transition: color 120ms ease;
+}
+
+.preview-document li.task-list-item > input[type="checkbox"] {
+  margin-right: 0.42em;
+  accent-color: #1f9d68;
+  cursor: pointer;
+}
+
+.preview-document li.task-list-item.wimd-task-completed,
+.preview-document li.task-list-item:has(> input[type="checkbox"]:checked) {
+  color: #17835c;
+}
+
+.preview-document li.task-list-item.wimd-task-completed > input[type="checkbox"],
+.preview-document li.task-list-item:has(> input[type="checkbox"]:checked) > input[type="checkbox"] {
+  accent-color: #17835c;
+}
+
 code,
 pre {
   font-family: "Cascadia Mono", Consolas, monospace;

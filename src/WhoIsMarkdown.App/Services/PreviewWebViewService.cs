@@ -186,6 +186,85 @@ public sealed class PreviewWebViewService : IDisposable
         })();
         """;
 
+    private const string TaskListInteractionScript = """
+        (() => {
+          const checkboxSelector = 'main.preview-document li.task-list-item input[type="checkbox"]';
+          const trustedCheckboxes = new WeakSet();
+          const pendingCheckboxes = new Map();
+          let nextRequestId = 1;
+
+          const getTaskItem = checkbox => {
+            const item = checkbox.closest('li.task-list-item');
+            if (!item || item.querySelector('input[type="checkbox"]') !== checkbox) return null;
+            return item;
+          };
+
+          const getSourceLine = checkbox => {
+            const item = getTaskItem(checkbox);
+            if (!item || !item.id.startsWith('pragma-line-')) return null;
+            const line = Number(item.id.slice(12));
+            return Number.isSafeInteger(line) && line >= 0 ? line : null;
+          };
+
+          const updateAppearance = checkbox => {
+            const item = getTaskItem(checkbox);
+            if (!item) return;
+            item.classList.toggle('wimd-task-completed', checkbox.checked);
+            checkbox.setAttribute(
+              'aria-label',
+              checkbox.checked ? '标记任务为未完成' : '标记任务为已完成');
+            checkbox.title = checkbox.checked ? '点击标记为未完成' : '点击标记为已完成';
+          };
+
+          const prepareTasks = () => {
+            document.querySelectorAll(checkboxSelector).forEach(checkbox => {
+              if (getSourceLine(checkbox) === null) return;
+              checkbox.disabled = false;
+              trustedCheckboxes.add(checkbox);
+              updateAppearance(checkbox);
+            });
+          };
+
+          document.addEventListener('change', event => {
+            const checkbox = event.target;
+            if (!(checkbox instanceof HTMLInputElement)
+                || !checkbox.matches(checkboxSelector)
+                || !trustedCheckboxes.has(checkbox)
+                || checkbox.disabled) return;
+
+            const sourceLine = getSourceLine(checkbox);
+            if (sourceLine === null) return;
+            const requestId = nextRequestId++;
+            pendingCheckboxes.set(requestId, {
+              checkbox,
+              previousState: !checkbox.checked
+            });
+            checkbox.disabled = true;
+            updateAppearance(checkbox);
+            window.chrome.webview.postMessage({
+              type: 'toggle-task-list-item',
+              requestId,
+              sourceLine,
+              completed: checkbox.checked
+            });
+          }, true);
+
+          window.wimdTaskToggle = Object.freeze({
+            complete(requestId, succeeded) {
+              const pending = pendingCheckboxes.get(requestId);
+              pendingCheckboxes.delete(requestId);
+              if (!pending?.checkbox.isConnected) return;
+              if (!succeeded) pending.checkbox.checked = pending.previousState;
+              pending.checkbox.disabled = false;
+              updateAppearance(pending.checkbox);
+            }
+          });
+
+          document.addEventListener('DOMContentLoaded', prepareTasks, { once: true });
+          document.addEventListener('wimd:preview-updated', prepareTasks);
+        })();
+        """;
+
     private readonly WebView2 webView;
     private readonly IClipboardTextService clipboardTextService;
     private readonly PreviewNavigationGate navigationGate = new();
@@ -217,6 +296,8 @@ public sealed class PreviewWebViewService : IDisposable
     public event EventHandler<PreviewImageOpenRequestedEventArgs>? PreviewImageOpenRequested;
 
     public event EventHandler<string>? CodeBlockCopyStatusChanged;
+
+    public event EventHandler<PreviewTaskToggleRequestedEventArgs>? PreviewTaskToggleRequested;
 
     public event EventHandler<PreviewScrollChangedEventArgs>? ScrollRatioChanged;
 
@@ -253,6 +334,7 @@ public sealed class PreviewWebViewService : IDisposable
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ScrollReportingScript).ConfigureAwait(true);
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ImageInteractionScript).ConfigureAwait(true);
         await core.AddScriptToExecuteOnDocumentCreatedAsync(CodeBlockCopyScript).ConfigureAwait(true);
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(TaskListInteractionScript).ConfigureAwait(true);
         core.NavigationStarting += OnNavigationStarting;
         core.NavigationCompleted += OnNavigationCompleted;
         core.NewWindowRequested += OnNewWindowRequested;
@@ -670,6 +752,10 @@ public sealed class PreviewWebViewService : IDisposable
             {
                 await TryCopyCodeBlockAsync(root).ConfigureAwait(true);
             }
+            else if (messageType == "toggle-task-list-item")
+            {
+                await TryToggleTaskListItemAsync(root).ConfigureAwait(true);
+            }
         }
         catch (JsonException)
         {
@@ -682,9 +768,7 @@ public sealed class PreviewWebViewService : IDisposable
         {
             if (!disposed)
             {
-                CodeBlockCopyStatusChanged?.Invoke(
-                    this,
-                    $"无法复制代码块：{exception.Message}");
+                PreviewNavigationFailed?.Invoke(this, $"预览交互失败：{exception.Message}");
             }
         }
     }
@@ -720,6 +804,50 @@ public sealed class PreviewWebViewService : IDisposable
         string successLiteral = succeeded ? "true" : "false";
         await core.ExecuteScriptAsync(
             $"window.wimdCodeCopy?.complete({requestId}, {successLiteral});")
+            .ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// The host script may request a checkbox change, but only the WPF editor can
+    /// approve it after validating the current source line as Markdown task syntax.
+    /// This keeps DOM interaction from becoming arbitrary document mutation.
+    /// </summary>
+    private async Task TryToggleTaskListItemAsync(JsonElement root)
+    {
+        if (!PreviewTaskToggleRequest.TryCreate(root, out PreviewTaskToggleRequest? request)
+            || request is null)
+        {
+            return;
+        }
+
+        bool succeeded = false;
+        try
+        {
+            PreviewTaskToggleRequestedEventArgs eventArgs = new(
+                request.SourceLine,
+                request.IsCompleted);
+            PreviewTaskToggleRequested?.Invoke(this, eventArgs);
+            succeeded = eventArgs.Succeeded;
+        }
+        finally
+        {
+            // Always release or revert the DOM checkbox, even if a host event
+            // handler fails while validating the current editor snapshot.
+            await CompleteTaskToggleRequestAsync(request.RequestId, succeeded)
+                .ConfigureAwait(true);
+        }
+    }
+
+    private async Task CompleteTaskToggleRequestAsync(int requestId, bool succeeded)
+    {
+        if (disposed || core is null)
+        {
+            return;
+        }
+
+        string successLiteral = succeeded ? "true" : "false";
+        await core.ExecuteScriptAsync(
+            $"window.wimdTaskToggle?.complete({requestId}, {successLiteral});")
             .ConfigureAwait(true);
     }
 

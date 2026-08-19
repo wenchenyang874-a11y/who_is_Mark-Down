@@ -14,7 +14,7 @@ public sealed class MarkdownFormattingBoundaryTests
     [InlineData("unordered-list", "- 内容")]
     [InlineData("ordered-list", "1. 内容")]
     [InlineData("table", "| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")]
-    [InlineData("separator", "---\n")]
+    [InlineData("separator", "---\n\n")]
     public void Apply_SupportedToolbarFormat_ProducesExpectedMarkdown(
         string format,
         string expected)
@@ -29,7 +29,48 @@ public sealed class MarkdownFormattingBoundaryTests
     {
         MarkdownTextEdit edit = MarkdownFormattingService.Apply("前后", 1, 0, "separator");
 
-        Assert.Equal("前\n---\n后", edit.Text);
+        Assert.Equal("前\n\n---\n\n后", edit.Text);
+    }
+
+    [Fact]
+    public void Apply_SeparatorBesideExistingBlankLines_DoesNotDuplicateBlankLines()
+    {
+        MarkdownTextEdit edit = MarkdownFormattingService.Apply("前\n\n后", 2, 0, "separator");
+
+        Assert.Equal("前\n\n---\n\n后", edit.Text);
+    }
+
+    [Fact]
+    public void Apply_SeparatorInCrLfDocument_PreservesLineEndingStyle()
+    {
+        MarkdownTextEdit edit = MarkdownFormattingService.Apply("前\r\n后", 3, 0, "separator");
+
+        Assert.Equal("前\r\n\r\n---\r\n\r\n后", edit.Text);
+    }
+
+    [Fact]
+    public void ApplyTable_SelectedDimensions_GeneratesRequestedRowsAndColumns()
+    {
+        MarkdownTextEdit edit = MarkdownFormattingService.ApplyTable(string.Empty, 0, 0, 4, 3);
+
+        Assert.Equal(
+            "| 列 1 | 列 2 | 列 3 |\n" +
+            "| --- | --- | --- |\n" +
+            "| 内容 | 内容 | 内容 |\n" +
+            "| 内容 | 内容 | 内容 |\n" +
+            "| 内容 | 内容 | 内容 |\n",
+            edit.Text);
+    }
+
+    [Theory]
+    [InlineData(1, 3)]
+    [InlineData(21, 3)]
+    [InlineData(3, 0)]
+    [InlineData(3, 13)]
+    public void ApplyTable_UnsupportedDimensions_Throws(int rows, int columns)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => MarkdownFormattingService.ApplyTable(string.Empty, 0, 0, rows, columns));
     }
 
     [Fact]

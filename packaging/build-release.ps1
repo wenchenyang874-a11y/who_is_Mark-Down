@@ -19,9 +19,11 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 $binaryVersion = "$Version.0"
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repositoryRoot 'src\WhoIsMarkdown.App\WhoIsMarkdown.App.csproj'
+$nugetConfig = Join-Path $repositoryRoot 'NuGet.Config'
 $publishDirectory = Join-Path $repositoryRoot "artifacts\publish\$Runtime"
 $installerScript = Join-Path $PSScriptRoot 'WIMD.iss'
 $innoCandidates = @(
+    (Join-Path $repositoryRoot 'artifacts\tools\inno-setup-6\ISCC.exe'),
     (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
     (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
 )
@@ -42,7 +44,8 @@ if (-not $innoCompiler) {
 
 dotnet restore $projectPath `
     --runtime $Runtime `
-    --locked-mode
+    --locked-mode `
+    --configfile $nugetConfig
 
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet restore failed with exit code $LASTEXITCODE."

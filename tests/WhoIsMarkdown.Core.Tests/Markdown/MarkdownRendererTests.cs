@@ -52,6 +52,15 @@ public sealed class MarkdownRendererTests
     }
 
     [Fact]
+    public void RenderBody_TaskItems_PreservePerItemSourceLineAnchors()
+    {
+        string html = renderer.RenderBody("- [ ] 第一项\n- [x] 第二项");
+
+        Assert.Matches("<li[^>]*id=\"pragma-line-0\"[^>]*class=\"task-list-item\"", html);
+        Assert.Matches("<li[^>]*id=\"pragma-line-1\"[^>]*class=\"task-list-item\"", html);
+    }
+
+    [Fact]
     public void RenderBody_WhenImageIsRelative_ResolvesAgainstDocumentDirectory()
     {
         string documentPath = Path.Combine(Path.GetTempPath(), "文档", "指南.md");

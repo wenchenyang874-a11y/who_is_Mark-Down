@@ -103,8 +103,35 @@ public partial class MainWindow
     {
         if (sender is FrameworkElement { Tag: string format })
         {
+            if (format == "table")
+            {
+                ShowTableSizeDialog();
+                return;
+            }
+
             ApplyMarkdownFormat(format);
         }
+    }
+
+    private void ShowTableSizeDialog()
+    {
+        TableSizeDialog dialog = new()
+        {
+            Owner = this,
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            Editor.Focus();
+            return;
+        }
+
+        MarkdownTextEdit edit = MarkdownFormattingService.ApplyTable(
+            Editor.Text,
+            Editor.SelectionStart,
+            Editor.SelectionLength,
+            dialog.SelectedRowCount,
+            dialog.SelectedColumnCount);
+        ApplyMarkdownTextEdit(edit);
     }
 
     private void ApplyMarkdownFormat(string format)
@@ -115,6 +142,11 @@ public partial class MainWindow
             Editor.SelectionLength,
             format);
 
+        ApplyMarkdownTextEdit(edit);
+    }
+
+    private void ApplyMarkdownTextEdit(MarkdownTextEdit edit)
+    {
         Editor.Document.BeginUpdate();
         try
         {
@@ -128,5 +160,34 @@ public partial class MainWindow
         }
 
         Editor.Focus();
+    }
+
+    /// <summary>
+    /// A preview checkbox is only a request to modify a source-line marker. The
+    /// current editor text is parsed again here so a stale DOM cannot write to an
+    /// arbitrary line that is no longer valid Markdown task syntax.
+    /// </summary>
+    private void PreviewService_TaskToggleRequested(
+        object? sender,
+        PreviewTaskToggleRequestedEventArgs eventArgs)
+    {
+        if (!MarkdownTaskListService.TryCreateStateEdit(
+                Editor.Text,
+                eventArgs.SourceLine,
+                eventArgs.IsCompleted,
+                out MarkdownTaskStateEdit? edit)
+            || edit is null)
+        {
+            UpdateStatus("任务状态未更新：源文本已发生变化");
+            return;
+        }
+
+        if (edit.HasChanged)
+        {
+            Editor.Document.Replace(edit.Offset, 1, edit.Replacement.ToString());
+        }
+
+        eventArgs.Succeeded = true;
+        UpdateStatus(eventArgs.IsCompleted ? "任务已标记为完成" : "任务已标记为未完成");
     }
 }

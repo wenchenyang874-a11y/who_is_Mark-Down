@@ -131,6 +131,9 @@
                         <MenuItem Header="无序列表" InputGestureText="Ctrl+Shift+8" Tag="unordered-list" Click="MarkdownFormat_Click" />
                         <MenuItem Header="引用" InputGestureText="Ctrl+Shift+9" Tag="quote" Click="MarkdownFormat_Click" />
                         <MenuItem Header="任务列表" InputGestureText="Ctrl+Shift+L" Tag="task-list" Click="MarkdownFormat_Click" />
+                        <Separator />
+                        <MenuItem Header="插入表格..." Tag="table" Click="MarkdownFormat_Click" />
+                        <MenuItem Header="插入分割线" Tag="separator" Click="MarkdownFormat_Click" />
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="视图(_V)" AutomationProperties.Name="视图" Style="{StaticResource TopLevelMenuItemStyle}">
@@ -411,7 +414,7 @@
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="1. 列表" ToolTip="有序列表 (Ctrl+Shift+7)" Tag="ordered-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="☑ 任务" ToolTip="任务列表 (Ctrl+Shift+L)" Tag="task-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="表格" ToolTip="插入表格" Tag="table" Click="MarkdownFormat_Click" />
-                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="—" ToolTip="分隔线" Tag="separator" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="—" ToolTip="插入分割线" Tag="separator" Click="MarkdownFormat_Click" />
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
