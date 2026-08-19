@@ -2,6 +2,13 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
+## [未发布]
+
+### 修复
+
+- 快速开始不再写死某个版本的安装包文件名，始终引导用户从最新 Release 选择 Windows x64 安装包。
+- 发布脚本改为强制传入版本号，README 和仓库指南中的示例也不再绑定当前发布版本，避免后续升级时遗留旧版本文案。
+
 ## [1.6.1] - 2026-08-18
 
 ### 新增
@@ -131,6 +138,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.1...HEAD
 [1.6.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.0...v1.5.1
