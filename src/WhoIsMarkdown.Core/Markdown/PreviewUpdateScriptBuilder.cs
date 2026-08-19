@@ -23,6 +23,7 @@ public sealed class PreviewUpdateScriptBuilder
               const template = document.createElement('template');
               template.innerHTML = {{encodedBody}};
               preview.replaceChildren(template.content);
+              document.dispatchEvent(new CustomEvent('wimd:preview-updated'));
 
               const root = document.scrollingElement || document.documentElement;
               const maximumY = Math.max(0, root.scrollHeight - root.clientHeight);

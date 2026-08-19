@@ -38,6 +38,7 @@
 - **顺滑定位**：编辑与预览双向滚动同步；光标目标位于预览可视区 25%～75% 时保持稳定。
 - **高效编辑**：Markdown 快捷工具条、可自定义快捷键，以及粗体、斜体、删除线切换取消。
 - **本地图片**：安全显示文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片。
+- **独立图片查看器**：单击预览图片后在单独窗口中打开，可最小化、最大化和拖动窗口；支持滚轮缩放、左键平移、100%、适应窗口和安全另存为。
 - **截图与图床**：直接粘贴微信等截图，可保存到可配置的本地目录或由用户明确上传到 ImgBB。
 - **远程图片策略**：可选择不信任、白名单、黑名单或信任所有，并按域名、前缀、后缀、关键词和正则匹配。
 - **PDF 导出**：复用安全预览样式，把当前 Markdown 文档导出为 PDF。
@@ -83,7 +84,7 @@ dotnet build WhoIsMarkdown.sln --no-restore --configuration Release
 dotnet test WhoIsMarkdown.sln --no-build --configuration Release
 dotnet run --project src/WhoIsMarkdown.App/WhoIsMarkdown.App.csproj
 dotnet format WhoIsMarkdown.sln --verify-no-changes
-./packaging/build-release.ps1 -Version 1.6.0
+./packaging/build-release.ps1 -Version 1.6.1
 ```
 
 核心代码位于 `src/`，测试位于 `tests/WhoIsMarkdown.Core.Tests/`，Windows 安装脚本位于 `packaging/`。IR、SR、AR 保存在仓库外的项目文档目录，不随源码提交。

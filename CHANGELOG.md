@@ -2,6 +2,17 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
+## [1.6.1] - 2026-08-18
+
+### 新增
+
+- 支持单击预览图片打开独立的非模态查看窗口，可拖动、最小化、最大化，且不遮挡或占用原预览页。
+- 图片查看器支持鼠标滚轮连续缩放、左键拖拽平移、适应窗口、100% 显示和中文文件选择框另存为。
+
+### 安全与稳定性
+
+- 图片打开前会校验文档目录边界、图片格式与 32 MB 大小限制；远程图片仅在用户明确点击后下载，并对每次 HTTPS 重定向重新应用当前信任策略。查看器与另存为复用同一份已验证图片，避免二次联网。
+
 ## [1.6.0] - 2026-08-18
 
 ### 新增
@@ -120,6 +131,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
+[1.6.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.4.1...v1.5.0

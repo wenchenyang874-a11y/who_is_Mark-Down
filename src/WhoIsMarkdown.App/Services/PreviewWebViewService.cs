@@ -36,6 +36,60 @@ public sealed class PreviewWebViewService : IDisposable
         })();
         """;
 
+    private const string ImageInteractionScript = """
+        (() => {
+          const imageSelector = 'main.preview-document img';
+          const requestOpen = image => {
+            const source = image.currentSrc || image.src;
+            if (!source) return;
+            window.chrome.webview.postMessage({
+              type: 'open-preview-image',
+              source,
+              alternativeText: image.alt || ''
+            });
+          };
+
+          const prepareImages = () => {
+            document.querySelectorAll(imageSelector).forEach(image => {
+              image.draggable = false;
+              if (!image.hasAttribute('tabindex')) image.tabIndex = 0;
+              if (!image.hasAttribute('role')) image.setAttribute('role', 'button');
+              if (!image.hasAttribute('aria-label')) {
+                image.setAttribute('aria-label', `${image.alt?.trim() || '图片'}，在独立窗口中查看`);
+              }
+              if (!image.hasAttribute('title')) image.title = '单击在独立窗口中查看';
+            });
+          };
+
+          document.addEventListener('click', event => {
+            if (!(event.target instanceof Element) || event.button !== 0) return;
+            const image = event.target.closest(imageSelector);
+            if (!image) return;
+            event.preventDefault();
+            event.stopPropagation();
+            requestOpen(image);
+          }, true);
+
+          document.addEventListener('dragstart', event => {
+            if (event.target instanceof Element && event.target.closest(imageSelector)) {
+              event.preventDefault();
+            }
+          }, true);
+
+          document.addEventListener('keydown', event => {
+            if ((event.key === 'Enter' || event.key === ' ')
+                && event.target instanceof Element
+                && event.target.matches(imageSelector)) {
+              event.preventDefault();
+              requestOpen(event.target);
+            }
+          });
+
+          document.addEventListener('DOMContentLoaded', prepareImages, { once: true });
+          document.addEventListener('wimd:preview-updated', prepareImages);
+        })();
+        """;
+
     private readonly WebView2 webView;
     private readonly PreviewNavigationGate navigationGate = new();
     private readonly PreviewResourceMappingState resourceMappingState = new();
@@ -58,6 +112,8 @@ public sealed class PreviewWebViewService : IDisposable
     public event EventHandler<string>? ExternalNavigationFailed;
 
     public event EventHandler<string>? PreviewNavigationFailed;
+
+    public event EventHandler<PreviewImageOpenRequestedEventArgs>? PreviewImageOpenRequested;
 
     public event EventHandler<PreviewScrollChangedEventArgs>? ScrollRatioChanged;
 
@@ -92,6 +148,7 @@ public sealed class PreviewWebViewService : IDisposable
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsWebMessageEnabled = true;
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ScrollReportingScript).ConfigureAwait(true);
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(ImageInteractionScript).ConfigureAwait(true);
         core.NavigationStarting += OnNavigationStarting;
         core.NavigationCompleted += OnNavigationCompleted;
         core.NewWindowRequested += OnNewWindowRequested;
@@ -491,12 +548,19 @@ public sealed class PreviewWebViewService : IDisposable
         {
             using JsonDocument message = JsonDocument.Parse(eventArgs.WebMessageAsJson);
             JsonElement root = message.RootElement;
-            if (root.TryGetProperty("type", out JsonElement type)
-                && type.GetString() == "scroll"
-                && root.TryGetProperty("ratio", out JsonElement ratio)
-                && ratio.TryGetDouble(out double value))
+            if (!root.TryGetProperty("type", out JsonElement type))
             {
-                ScrollRatioChanged?.Invoke(this, new PreviewScrollChangedEventArgs(value));
+                return;
+            }
+
+            string? messageType = type.GetString();
+            if (messageType == "scroll")
+            {
+                TryRaiseScrollChanged(root);
+            }
+            else if (messageType == "open-preview-image")
+            {
+                TryRaisePreviewImageOpenRequested(root);
             }
         }
         catch (JsonException)
@@ -504,6 +568,38 @@ public sealed class PreviewWebViewService : IDisposable
             // Messages are emitted only by the host-injected script. Invalid data is
             // ignored defensively rather than affecting the editor event loop.
         }
+    }
+
+    private void TryRaiseScrollChanged(JsonElement root)
+    {
+        if (root.TryGetProperty("ratio", out JsonElement ratio)
+            && ratio.TryGetDouble(out double value))
+        {
+            ScrollRatioChanged?.Invoke(this, new PreviewScrollChangedEventArgs(value));
+        }
+    }
+
+    private void TryRaisePreviewImageOpenRequested(JsonElement root)
+    {
+        if (!root.TryGetProperty("source", out JsonElement sourceElement))
+        {
+            return;
+        }
+
+        string? source = sourceElement.GetString();
+        if (string.IsNullOrWhiteSpace(source) || source.Length > 48 * 1024 * 1024)
+        {
+            return;
+        }
+
+        string? alternativeText = root.TryGetProperty(
+            "alternativeText",
+            out JsonElement alternativeTextElement)
+            ? alternativeTextElement.GetString()
+            : null;
+        PreviewImageOpenRequested?.Invoke(
+            this,
+            new PreviewImageOpenRequestedEventArgs(source, alternativeText));
     }
 
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs eventArgs)

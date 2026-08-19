@@ -62,6 +62,7 @@ public partial class MainWindow
         windowClosed = true;
         CancelPreviewWork();
         CancelImageWork();
+        CancelPreviewImageWork();
         DisposeAppearanceController();
         DisposeScrollSynchronization();
 
@@ -69,6 +70,7 @@ public partial class MainWindow
         {
             previewService.ExternalNavigationFailed -= PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed -= PreviewService_PreviewNavigationFailed;
+            previewService.PreviewImageOpenRequested -= PreviewService_PreviewImageOpenRequested;
             previewService.ScrollRatioChanged -= PreviewService_ScrollRatioChanged;
             previewService.PreviewReady -= PreviewService_PreviewReady;
             previewService.Dispose();

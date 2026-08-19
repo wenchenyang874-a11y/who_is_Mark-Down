@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateNotNullOrEmpty()]
-    [string]$Version = '1.6.0',
+    [string]$Version = '1.6.1',
 
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64'
@@ -58,6 +58,7 @@ dotnet publish $projectPath `
     -p:FileVersion=$binaryVersion `
     -p:AssemblyVersion=$binaryVersion `
     -p:InformationalVersion=$Version `
+    -p:IncludeSourceRevisionInInformationalVersion=false `
     --output $publishDirectory
 
 if ($LASTEXITCODE -ne 0) {

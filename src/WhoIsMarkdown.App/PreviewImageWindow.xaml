@@ -1,0 +1,92 @@
+<Window x:Class="WhoIsMarkdown.App.PreviewImageWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="WIMD 图片预览"
+        Width="1100"
+        Height="760"
+        MinWidth="720"
+        MinHeight="480"
+        Background="#17181D"
+        Icon="Resources/app-icon.png"
+        ResizeMode="CanResize"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen"
+        AutomationProperties.Name="WIMD 独立图片查看器">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#F7F8FC" BorderBrush="#DDE2EC" BorderThickness="0,0,0,1">
+            <DockPanel Margin="10,7">
+                <TextBlock x:Name="ImageNameText"
+                           MaxWidth="360"
+                           Margin="8,0,16,0"
+                           VerticalAlignment="Center"
+                           DockPanel.Dock="Left"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel HorizontalAlignment="Right" DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="ZoomOutButton"
+                            MinWidth="38"
+                            AutomationProperties.Name="缩小图片"
+                            Click="ZoomOut_Click"
+                            Content="−"
+                            IsEnabled="False"
+                            Style="{StaticResource CompactToolbarButtonStyle}"
+                            ToolTip="缩小" />
+                    <TextBlock x:Name="ZoomText"
+                               Width="58"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Text="--"
+                               TextAlignment="Center" />
+                    <Button x:Name="ZoomInButton"
+                            MinWidth="38"
+                            AutomationProperties.Name="放大图片"
+                            Click="ZoomIn_Click"
+                            Content="+"
+                            IsEnabled="False"
+                            Style="{StaticResource CompactToolbarButtonStyle}"
+                            ToolTip="放大" />
+                    <Border Width="1" Height="22" Margin="7,0" Background="#DDE2EC" />
+                    <Button x:Name="FitButton"
+                            AutomationProperties.Name="适应窗口"
+                            Click="Fit_Click"
+                            Content="适应窗口"
+                            IsEnabled="False"
+                            Style="{StaticResource CompactToolbarButtonStyle}" />
+                    <Button x:Name="ActualSizeButton"
+                            AutomationProperties.Name="显示原始尺寸"
+                            Click="ActualSize_Click"
+                            Content="100%"
+                            IsEnabled="False"
+                            Style="{StaticResource CompactToolbarButtonStyle}" />
+                    <Button x:Name="SaveAsButton"
+                            Margin="10,1,1,1"
+                            AutomationProperties.Name="另存预览图片"
+                            Click="SaveAs_Click"
+                            Content="另存为…"
+                            IsEnabled="False"
+                            Style="{StaticResource CompactToolbarButtonStyle}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <wv2:WebView2 x:Name="ImageWebView" Grid.Row="1" DefaultBackgroundColor="#17181D" />
+
+        <Border Grid.Row="2" Padding="14,7" Background="#202127" BorderBrush="#30323A" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock x:Name="DimensionsText"
+                           DockPanel.Dock="Right"
+                           Foreground="#AEB3C0"
+                           Text="正在载入…" />
+                <TextBlock Foreground="#AEB3C0" Text="鼠标滚轮缩放  ·  按住左键拖动  ·  双击切换 100% / 适应窗口" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

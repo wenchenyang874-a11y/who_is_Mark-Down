@@ -89,6 +89,58 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("WaitUntilReadyAsync", previewCode, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void 预览图片_使用独立窗口并提供缩放拖拽与另存()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string previewCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Services",
+            "PreviewWebViewService.cs"));
+        string previewImageCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.PreviewImages.cs"));
+        string viewerXaml = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "PreviewImageWindow.xaml"));
+        string viewerCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "PreviewImageWindow.xaml.cs"));
+        string previewStyle = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Resources",
+            "preview.css"));
+
+        Assert.Contains("open-preview-image", previewCode, StringComparison.Ordinal);
+        Assert.Contains("PreviewImageOpenRequested", previewCode, StringComparison.Ordinal);
+        Assert.Contains("image.draggable = false", previewCode, StringComparison.Ordinal);
+        Assert.Contains("ResizeMode=\"CanResize\"", viewerXaml, StringComparison.Ordinal);
+        Assert.Contains("ShowInTaskbar=\"True\"", viewerXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"Fit_Click\"", viewerXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"ActualSize_Click\"", viewerXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"SaveAs_Click\"", viewerXaml, StringComparison.Ordinal);
+        Assert.Contains("addEventListener('wheel'", viewerCode, StringComparison.Ordinal);
+        Assert.Contains("addEventListener('pointerdown'", viewerCode, StringComparison.Ordinal);
+        Assert.Contains("setPointerCapture", viewerCode, StringComparison.Ordinal);
+        Assert.Contains("addEventListener('dragstart'", viewerCode, StringComparison.Ordinal);
+        Assert.Contains("viewer.Show();", previewImageCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("viewer.ShowDialog()", previewImageCode, StringComparison.Ordinal);
+        Assert.Contains("Title = \"预览图片另存为\"", previewImageCode, StringComparison.Ordinal);
+        Assert.Contains("PreviewImageSaveService", previewImageCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("preview-image-lightbox", previewStyle, StringComparison.Ordinal);
+        Assert.Contains("cursor: zoom-in", previewStyle, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

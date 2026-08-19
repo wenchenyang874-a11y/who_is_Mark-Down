@@ -10,6 +10,7 @@ public sealed class PreviewUpdateScriptBuilderTests
         string script = PreviewUpdateScriptBuilder.Build("<h1>更新</h1>");
 
         Assert.Contains("preview.replaceChildren", script, StringComparison.Ordinal);
+        Assert.Contains("wimd:preview-updated", script, StringComparison.Ordinal);
         Assert.Contains("window.scrollTo", script, StringComparison.Ordinal);
         Assert.DoesNotContain("location", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("navigate", script, StringComparison.OrdinalIgnoreCase);

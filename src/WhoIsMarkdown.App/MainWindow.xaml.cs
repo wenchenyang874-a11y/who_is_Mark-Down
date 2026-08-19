@@ -66,6 +66,7 @@ public partial class MainWindow : Window
             previewService = new PreviewWebViewService(Preview);
             previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
+            previewService.PreviewImageOpenRequested += PreviewService_PreviewImageOpenRequested;
             previewService.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
             previewService.PreviewReady += PreviewService_PreviewReady;
             await previewService.InitializeAsync();
