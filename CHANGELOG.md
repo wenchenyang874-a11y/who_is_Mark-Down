@@ -4,6 +4,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.6.2] - 2026-08-19
+
 ### 新增
 
 - 预览区的每个非空代码块右上角新增复制按钮，可将纯代码写入 Windows 剪贴板，并显示处理中、成功或失败反馈；PDF 导出不会显示该按钮。
@@ -142,7 +144,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.1...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.0...v1.5.1
