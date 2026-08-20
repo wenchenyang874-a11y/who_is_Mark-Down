@@ -38,10 +38,14 @@
                         AutomationProperties.Name="关闭背景设置"
                         Background="Transparent"
                         BorderThickness="0"
-                        Content="&#xE8BB;"
+                        Content="×"
                         Cursor="Hand"
-                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                        FontSize="10"
+                        FontFamily="Segoe UI, Microsoft YaHei UI"
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Padding="0"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
                         Foreground="#596278"
                         Click="Close_Click" />
             </Grid>

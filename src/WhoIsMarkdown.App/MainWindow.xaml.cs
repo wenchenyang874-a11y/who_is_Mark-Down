@@ -78,6 +78,7 @@ public partial class MainWindow : Window
                 SchedulePreview();
                 UpdateStatus("准备就绪");
                 Editor.Focus();
+                _ = StartAutomaticUpdateCheckAsync();
             }
         }
         catch (ObjectDisposedException) when (windowClosed)
@@ -319,7 +320,11 @@ public partial class MainWindow : Window
                 () => markdownRenderer.RenderBody(markdown, documentPath, remoteImagePolicy),
                 cancellationToken);
             string visibleBody = previewDocumentBuilder.GetVisibleBody(body);
-            string page = previewDocumentBuilder.Build(body, previewStyleSheet, remoteImagePolicy);
+            string pageStyleSheet = string.Concat(
+                previewStyleSheet,
+                Environment.NewLine,
+                previewAppearanceStyleSheet);
+            string page = previewDocumentBuilder.Build(body, pageStyleSheet, remoteImagePolicy);
 
             PreviewWebViewService? service = previewService;
             if (!cancellationToken.IsCancellationRequested

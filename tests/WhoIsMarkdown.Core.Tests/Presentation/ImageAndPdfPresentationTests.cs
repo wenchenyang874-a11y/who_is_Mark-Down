@@ -79,11 +79,11 @@ public sealed class ImageAndPdfPresentationTests
             backgroundWindow,
             StringComparison.Ordinal);
         Assert.Contains(
-            "x:Name=\"EditorHost\" Grid.Column=\"0\" Background=\"#B3FFFFFF\"",
+            "x:Name=\"EditorHost\" Grid.Column=\"0\" Background=\"{DynamicResource ShellOverlayBrush}\"",
             mainWindow,
             StringComparison.Ordinal);
         Assert.Contains(
-            "x:Name=\"PreviewHost\" Grid.Column=\"2\" Background=\"#B3FFFFFF\"",
+            "x:Name=\"PreviewHost\" Grid.Column=\"2\" Background=\"{DynamicResource ShellOverlayBrush}\"",
             mainWindow,
             StringComparison.Ordinal);
         XDocument xaml = XDocument.Parse(mainWindow);
@@ -111,7 +111,7 @@ public sealed class ImageAndPdfPresentationTests
             appearanceCode,
             StringComparison.Ordinal);
         Assert.Contains(
-            "background: rgba(255, 255, 255, 0.25);",
+            "background: var(--wimd-document, rgba(255, 255, 255, 0.25));",
             previewStyle,
             StringComparison.Ordinal);
         Assert.DoesNotContain("BackgroundSettingsPopup", mainWindow, StringComparison.Ordinal);
@@ -193,7 +193,9 @@ public sealed class ImageAndPdfPresentationTests
             XElement surface = Assert.Single(
                 xaml.Descendants(),
                 element => (string?)element.Attribute(xNamespace + "Name") == elementName);
-            Assert.Equal("#B3FFFFFF", (string?)surface.Attribute("Background"));
+            Assert.Equal(
+                "{DynamicResource ShellOverlayBrush}",
+                (string?)surface.Attribute("Background"));
         }
 
         Assert.Contains("WindowState = WindowState.Minimized", chromeCode, StringComparison.Ordinal);
@@ -217,15 +219,15 @@ public sealed class ImageAndPdfPresentationTests
             "preview.css"));
 
         Assert.Contains(
-            "background: rgba(238, 241, 247, 0.72);",
+            "background: var(--wimd-code-bg, rgba(238, 241, 247, 0.72));",
             previewStyle,
             StringComparison.Ordinal);
         Assert.Contains(
-            "background: rgba(255, 255, 255, 0.22);",
+            "background: var(--wimd-table-cell-bg, rgba(255, 255, 255, 0.22));",
             previewStyle,
             StringComparison.Ordinal);
         Assert.Contains(
-            "background: rgba(230, 234, 243, 0.78);",
+            "background: var(--wimd-table-heading-bg, rgba(230, 234, 243, 0.78));",
             previewStyle,
             StringComparison.Ordinal);
         Assert.DoesNotContain("background: #f7f8fb;", previewStyle, StringComparison.OrdinalIgnoreCase);

@@ -64,6 +64,7 @@ public partial class MainWindow
         CancelImageWork();
         CancelPreviewImageWork();
         DisposeAppearanceController();
+        DisposeUpdateController();
         DisposeWindowChrome();
         DisposeScrollSynchronization();
 

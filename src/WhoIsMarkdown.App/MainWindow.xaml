@@ -12,7 +12,7 @@
         Height="820"
         MinWidth="900"
         MinHeight="600"
-        Background="#F4F5FA"
+        Background="{DynamicResource WindowBackgroundBrush}"
         FontFamily="Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"
         SnapsToDevicePixels="True"
         UseLayoutRounding="True"
@@ -39,7 +39,7 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="#30384B" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
             <Setter Property="FontSize" Value="10" />
             <Setter Property="Cursor" Value="Arrow" />
@@ -87,7 +87,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid x:Name="TitleBar" Grid.Row="0" Background="#B3FFFFFF">
+            <Grid x:Name="TitleBar" Grid.Row="0" Background="{DynamicResource ShellOverlayBrush}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -97,7 +97,7 @@
                 <TextBlock Grid.Column="1"
                            VerticalAlignment="Center"
                            FontSize="12"
-                           Foreground="{StaticResource TextPrimaryBrush}"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
                            TextOptions.TextFormattingMode="Display"
                            TextOptions.TextRenderingMode="Grayscale"
                            Text="{Binding WindowTitle}"
@@ -127,13 +127,13 @@
                   Grid.Row="1"
                   Height="30"
                   Padding="8,0"
-                  Foreground="{StaticResource TextPrimaryBrush}"
-                  Background="#B3FFFFFF">
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  Background="{DynamicResource ShellOverlayBrush}">
                 <Menu.Resources>
                     <!-- Bug fix: the Windows light theme can otherwise resolve the
                          top-level MenuItem foreground as transparent. -->
                     <Style TargetType="{x:Type MenuItem}">
-                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                     </Style>
                     <!-- Bug fix: the .NET Fluent theme can suppress the complete
                          top-level MenuItem header presenter. This narrow template owns
@@ -160,8 +160,8 @@
                                    PopupAnimation="Fade">
                                 <Border Margin="0,2,0,0"
                                         Padding="3"
-                                        Background="#FFFFFFFF"
-                                        BorderBrush="#FFD7DCE8"
+                                        Background="{DynamicResource MenuPopupBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="6">
                                     <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"
@@ -184,7 +184,7 @@
                     <Style x:Key="TopLevelMenuItemStyle" TargetType="{x:Type MenuItem}">
                         <Setter Property="Height" Value="30" />
                         <Setter Property="Padding" Value="12,0" />
-                        <Setter Property="Foreground" Value="#182033" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                         <Setter Property="Background" Value="Transparent" />
                         <Setter Property="Template" Value="{StaticResource TopLevelMenuItemTemplate}" />
                     </Style>
@@ -243,10 +243,15 @@
                     <MenuItem Header="快捷键设置..." Click="Shortcuts_Click" />
                 </MenuItem>
                 <MenuItem Header="设置(_S)" AutomationProperties.Name="设置" Style="{StaticResource TopLevelMenuItemStyle}">
+                    <MenuItem Header="外观与字体..." Click="AppearanceSettings_Click" />
+                    <Separator />
                     <MenuItem Header="图片设置..." Click="ImageSettings_Click" />
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
                 <MenuItem Header="帮助(_H)" AutomationProperties.Name="帮助" Style="{StaticResource TopLevelMenuItemStyle}">
+                    <MenuItem x:Name="CheckForUpdatesMenuItem" Header="检查更新..." Click="CheckForUpdates_Click" />
+                    <MenuItem x:Name="CheckForUpdatesOnStartupMenuItem" Header="启动时检查更新" IsCheckable="True" Click="CheckForUpdatesOnStartup_Click" />
+                    <Separator />
                     <MenuItem Header="关于 WIMD" Click="About_Click" />
                 </MenuItem>
             </Menu>
@@ -258,7 +263,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border x:Name="RecentPane" Grid.Column="0" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}">
+                <Border x:Name="RecentPane" Grid.Column="0" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}">
                     <Grid>
                         <Grid x:Name="RecentPaneContent">
                             <Grid.RowDefinitions>
@@ -486,7 +491,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border x:Name="MarkdownToolbarHost" Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}">
+                    <Border x:Name="MarkdownToolbarHost" Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                             <StackPanel x:Name="MarkdownToolbar" Orientation="Horizontal">
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H1" ToolTip="一级标题 (Ctrl+1)" Tag="1" Click="Heading_Click" />
@@ -520,7 +525,7 @@
                             <ColumnDefinition x:Name="PreviewColumn" Width="*" MinWidth="0" />
                         </Grid.ColumnDefinitions>
 
-                        <Border x:Name="EditorHost" Grid.Column="0" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
+                        <Border x:Name="EditorHost" Grid.Column="0" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="34" />
@@ -533,7 +538,7 @@
                                                        Grid.Row="1"
                                                        Padding="14,10"
                                                        Background="Transparent"
-                                                       Foreground="#1A2235"
+                                                       Foreground="{DynamicResource EditorForegroundBrush}"
                                                        FontFamily="Cascadia Mono, Consolas"
                                                        FontSize="15"
                                                        ShowLineNumbers="True"
@@ -546,7 +551,7 @@
 
                         <GridSplitter x:Name="WorkspaceSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" />
 
-                        <Border x:Name="PreviewHost" Grid.Column="2" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
+                        <Border x:Name="PreviewHost" Grid.Column="2" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="34" />
@@ -567,7 +572,7 @@
                 </Grid>
             </Grid>
 
-            <Border x:Name="StatusBar" Grid.Row="3" Padding="10,4" Background="#B3FFFFFF" BorderBrush="#DDE2EC" BorderThickness="0,1,0,0">
+            <Border x:Name="StatusBar" Grid.Row="3" Padding="10,4" Background="{DynamicResource ShellOverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />

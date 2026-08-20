@@ -19,6 +19,10 @@ public sealed record ApplicationSettings
 
     public ImageInsertionSettings ImageInsertion { get; init; } = new();
 
+    public AppearanceSettings Appearance { get; init; } = new();
+
+    public bool CheckForUpdatesOnStartup { get; init; }
+
     public IReadOnlyDictionary<string, ShortcutGesture> ShortcutOverrides { get; init; }
         = new Dictionary<string, ShortcutGesture>(StringComparer.Ordinal);
 
@@ -62,6 +66,7 @@ public sealed record ApplicationSettings
             BackgroundImagePath = TryNormalizePath(BackgroundImagePath),
             BackgroundOpacity = Math.Clamp(BackgroundOpacity, 0, 1),
             ImageInsertion = (ImageInsertion ?? new ImageInsertionSettings()).Normalize(),
+            Appearance = (Appearance ?? new AppearanceSettings()).Normalize(),
             ShortcutOverrides = normalizedShortcuts,
         };
     }

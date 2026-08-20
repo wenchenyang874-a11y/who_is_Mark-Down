@@ -1,7 +1,11 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Microsoft.Win32;
+using WhoIsMarkdown.App.Services;
+using WhoIsMarkdown.Core.Markdown;
 using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
@@ -19,16 +23,87 @@ public partial class MainWindow
     };
 
     private bool appearanceSavePending;
+    private ApplicationTheme effectiveTheme = ApplicationTheme.Light;
+    private string previewAppearanceStyleSheet = string.Empty;
 
     private void InitializeAppearanceController()
     {
         appearanceSaveTimer.Tick += AppearanceSaveTimer_Tick;
+        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
     }
 
     private void ApplyAppearanceSettings()
     {
+        AppearanceSettings appearance = applicationSettings.Appearance.Normalize();
+        effectiveTheme = ApplicationThemeManager.Apply(appearance.Theme);
+        previewAppearanceStyleSheet = PreviewAppearanceStyleBuilder.Build(effectiveTheme, appearance);
+        Editor.FontFamily = new FontFamily(
+            appearance.EditorFontFamily ?? "Cascadia Mono, Consolas");
+        Editor.FontSize = appearance.EditorFontSize;
+        CheckForUpdatesOnStartupMenuItem.IsChecked = applicationSettings.CheckForUpdatesOnStartup;
         AppBackgroundImage.Opacity = applicationSettings.BackgroundOpacity;
         SetBackgroundImage(applicationSettings.BackgroundImagePath);
+        _ = ApplyPreviewAppearanceAsync();
+    }
+
+    private void AppearanceSettings_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        AppearanceSettingsWindow dialog = new(applicationSettings.Appearance)
+        {
+            Owner = this,
+        };
+        dialog.AppearanceApplied += ApplyAppearanceFromDialog;
+        bool? result = dialog.ShowDialog();
+        dialog.AppearanceApplied -= ApplyAppearanceFromDialog;
+        if (result != true)
+        {
+            return;
+        }
+
+        ApplyAppearanceFromDialog(dialog.ResultSettings);
+    }
+
+    private void ApplyAppearanceFromDialog(AppearanceSettings appearance)
+    {
+        applicationSettings = applicationSettings with
+        {
+            Appearance = appearance,
+        };
+        ApplyAppearanceSettings();
+        TrySaveApplicationSettings();
+        UpdateStatus("已应用外观与字体设置");
+    }
+
+    private async Task ApplyPreviewAppearanceAsync()
+    {
+        try
+        {
+            if (previewService is not null)
+            {
+                await previewService.ApplyAppearanceAsync(previewAppearanceStyleSheet);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or ObjectDisposedException
+            or System.Runtime.InteropServices.COMException)
+        {
+            if (!windowClosed)
+            {
+                UpdateStatus($"无法更新预览外观：{exception.Message}");
+            }
+        }
+    }
+
+    private void SystemEvents_UserPreferenceChanged(
+        object sender,
+        UserPreferenceChangedEventArgs eventArgs)
+    {
+        if (applicationSettings.Appearance.Theme != ApplicationTheme.System || windowClosed)
+        {
+            return;
+        }
+
+        _ = Dispatcher.InvokeAsync(ApplyAppearanceSettings);
     }
 
     private void BackgroundSettings_Click(object sender, RoutedEventArgs eventArgs)
@@ -148,5 +223,6 @@ public partial class MainWindow
     {
         FlushAppearanceSettings();
         appearanceSaveTimer.Tick -= AppearanceSaveTimer_Tick;
+        SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
     }
 }

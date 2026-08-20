@@ -2,6 +2,24 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
+## [1.7.0] - 2026-08-20
+
+### 新增
+
+- 新增“设置 → 外观与字体...”，提供跟随 Windows、明亮、深色和暖色护眼四种主题；编辑区与预览区可分别设置字号及本机已安装字体。
+- 字体下拉框支持直接输入中文名或英文名实时筛选，点击候选字体后才真正选中；常用中文字体优先显示中文名称，不需要单独的搜索框。
+- 外观窗口新增“应用”按钮，可在不关闭窗口的情况下查看主题和字体效果。
+- 新增“帮助 → 检查更新...”和可选的“启动时检查更新”。更新从 GitHub Release 获取，验证正式三段式版本、固定安装包名称、HTTPS 来源、文件大小和 SHA-256 后才允许用户确认安装。
+
+### 修复
+
+- 背景设置窗口的关闭按钮改为完整可见的通用 `×` 字符，避免图标字体裁切。
+
+### 安全与兼容性
+
+- WIMD 只枚举并引用 Windows 已安装字体，不捆绑、复制、上传或再分发字体文件。
+- 启动更新检查默认关闭；检查不会上传文档，更新不会静默下载或安装。
+
 ## [1.6.4] - 2026-08-20
 
 ### 修复
@@ -171,7 +189,10 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.2...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.4...v1.7.0
+[1.6.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.3...v1.6.4
+[1.6.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.5.1...v1.6.0

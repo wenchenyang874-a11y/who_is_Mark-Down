@@ -16,6 +16,15 @@ public sealed class JsonApplicationSettingsStoreTests
             BackgroundImagePath = System.IO.Path.Combine(temporaryDirectory.Path, "背景.png"),
             BackgroundOpacity = 0.32,
             IsRecentPaneExpanded = false,
+            CheckForUpdatesOnStartup = true,
+            Appearance = new AppearanceSettings
+            {
+                Theme = ApplicationTheme.Warm,
+                EditorFontFamily = "Consolas",
+                EditorFontSize = 16,
+                PreviewFontFamily = "Microsoft YaHei UI",
+                PreviewFontSize = 18,
+            },
             ImageInsertion = new ImageInsertionSettings
             {
                 StorageMode = ImageStorageMode.ImgBb,
@@ -47,6 +56,12 @@ public sealed class JsonApplicationSettingsStoreTests
         Assert.Equal(System.IO.Path.GetFullPath(settings.BackgroundImagePath), result.BackgroundImagePath);
         Assert.Equal(0.32, result.BackgroundOpacity);
         Assert.False(result.IsRecentPaneExpanded);
+        Assert.True(result.CheckForUpdatesOnStartup);
+        Assert.Equal(ApplicationTheme.Warm, result.Appearance.Theme);
+        Assert.Equal("Consolas", result.Appearance.EditorFontFamily);
+        Assert.Equal(16, result.Appearance.EditorFontSize);
+        Assert.Equal("Microsoft YaHei UI", result.Appearance.PreviewFontFamily);
+        Assert.Equal(18, result.Appearance.PreviewFontSize);
         Assert.Equal(ImageStorageMode.ImgBb, result.ImageInsertion.StorageMode);
         Assert.Equal("./assets/images/", result.ImageInsertion.LocalDirectory);
         Assert.Equal(RemoteImageTrustMode.AllowList, result.ImageInsertion.TrustMode);

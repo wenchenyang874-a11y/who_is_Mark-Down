@@ -423,6 +423,33 @@ public sealed class PreviewWebViewService : IDisposable
         return previewReadySource.Task.WaitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Changes only a host-owned style element in the existing DOM. Theme and font
+    /// changes therefore do not navigate WebView2 or reproduce the old white flash.
+    /// </summary>
+    public Task ApplyAppearanceAsync(string styleSheet)
+    {
+        ArgumentNullException.ThrowIfNull(styleSheet);
+        if (styleSheet.Length > 64 * 1024)
+        {
+            throw new ArgumentException("预览外观样式长度异常。", nameof(styleSheet));
+        }
+
+        string styleLiteral = JsonSerializer.Serialize(styleSheet);
+        return ExecuteHostScriptAsync($$"""
+            (() => {
+              let style = document.getElementById('wimd-host-appearance');
+              if (!style) {
+                style = document.createElement('style');
+                style.id = 'wimd-host-appearance';
+                document.head.append(style);
+              }
+              style.textContent = {{styleLiteral}};
+              return true;
+            })();
+            """);
+    }
+
     private static TaskCompletionSource<bool> CreatePreviewReadySource()
     {
         return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
