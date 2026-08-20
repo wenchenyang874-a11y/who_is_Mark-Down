@@ -26,7 +26,9 @@ body {
   max-width: 920px;
   margin: 0 auto;
   padding: 30px 38px 80px;
-  background: rgba(255, 255, 255, 0.93);
+  /* Bug fix: keep the document readable without hiding the workspace image
+     that is composited behind the transparent WebView2 surface. */
+  background: rgba(255, 255, 255, 0.25);
   border: 1px solid rgba(221, 226, 236, 0.92);
   border-radius: 13px;
 }
@@ -146,9 +148,46 @@ code {
 pre {
   overflow: auto;
   padding: 18px;
-  border: 1px solid #e0e3ec;
+  border: 1px solid rgba(184, 193, 211, 0.76);
   border-radius: 10px;
-  background: #f7f8fb;
+  background: rgba(238, 241, 247, 0.72);
+}
+
+/* WebView2 otherwise draws square arrow buttons at both ends of code-block
+   scrollbars. A floating pill-shaped thumb matches the rounded code surface. */
+pre::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+pre::-webkit-scrollbar-track {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+}
+
+pre::-webkit-scrollbar-thumb {
+  min-width: 36px;
+  min-height: 36px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(89, 97, 117, 0.58);
+  background-clip: padding-box;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(69, 71, 189, 0.7);
+  background-clip: padding-box;
+}
+
+pre::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+pre::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 pre code {
@@ -270,20 +309,26 @@ table {
   width: 100%;
   border-spacing: 0;
   border-collapse: separate;
-  border: 1px solid #dfe3eb;
+  border: 1px solid rgba(174, 184, 204, 0.82);
   border-radius: 9px;
+  background: rgba(255, 255, 255, 0.3);
   overflow: hidden;
 }
 
 th,
 td {
   padding: 8px 12px;
-  border-right: 1px solid #e5e8ef;
-  border-bottom: 1px solid #e5e8ef;
+  border-right: 1px solid rgba(190, 199, 216, 0.72);
+  border-bottom: 1px solid rgba(190, 199, 216, 0.72);
+}
+
+td {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 th {
-  background: #f4f5fa;
+  font-weight: 600;
+  background: rgba(230, 234, 243, 0.78);
 }
 
 tr:last-child td {

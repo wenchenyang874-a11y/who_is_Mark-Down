@@ -2,14 +2,14 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
 
 /// <summary>
-/// Applies a user-selected local image behind the workspace. Only the path and
-/// opacity are stored; the source image is neither copied, modified, nor uploaded.
+/// Applies a user-selected local image behind the complete editor and preview
+/// workspace. Only the path and opacity are stored; the source image is neither
+/// copied, modified, nor uploaded.
 /// </summary>
 public partial class MainWindow
 {
@@ -18,7 +18,6 @@ public partial class MainWindow
         Interval = TimeSpan.FromMilliseconds(350),
     };
 
-    private bool applyingAppearanceSettings;
     private bool appearanceSavePending;
 
     private void InitializeAppearanceController()
@@ -28,77 +27,57 @@ public partial class MainWindow
 
     private void ApplyAppearanceSettings()
     {
-        applyingAppearanceSettings = true;
-        try
-        {
-            double transparency = (1 - applicationSettings.BackgroundOpacity) * 100;
-            BackgroundTransparencySlider.Value = transparency;
-            AppBackgroundImage.Opacity = applicationSettings.BackgroundOpacity;
-            SetBackgroundImage(applicationSettings.BackgroundImagePath);
-            UpdateBackgroundControls();
-        }
-        finally
-        {
-            applyingAppearanceSettings = false;
-        }
+        AppBackgroundImage.Opacity = applicationSettings.BackgroundOpacity;
+        SetBackgroundImage(applicationSettings.BackgroundImagePath);
     }
 
     private void BackgroundSettings_Click(object sender, RoutedEventArgs eventArgs)
     {
-        BackgroundSettingsPopup.IsOpen = true;
-    }
-
-    private void SelectBackground_Click(object sender, RoutedEventArgs eventArgs)
-    {
-        OpenFileDialog dialog = new()
+        BackgroundSettingsWindow dialog = new(
+            applicationSettings.BackgroundImagePath,
+            BackgroundAppearanceScale.ToPercentage(applicationSettings.BackgroundOpacity))
         {
-            Title = "选择应用背景图片",
-            Filter = "图片 (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
-            CheckFileExists = true,
-            Multiselect = false,
+            Owner = this,
         };
 
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
+        dialog.BackgroundImageSelected += path => ApplySelectedBackground(dialog, path);
+        dialog.BackgroundRemoved += () => RemoveBackground(dialog);
+        dialog.BackgroundVisibilityChanged += ApplyBackgroundVisibility;
+        dialog.ShowDialog();
+    }
 
-        if (!TryLoadBackgroundImage(dialog.FileName))
+    private void ApplySelectedBackground(BackgroundSettingsWindow dialog, string path)
+    {
+        if (!TryLoadBackgroundImage(path))
         {
             return;
         }
 
         applicationSettings = applicationSettings with
         {
-            BackgroundImagePath = dialog.FileName,
+            BackgroundImagePath = path,
         };
-        UpdateBackgroundControls();
+        dialog.SetBackgroundPath(path);
         TrySaveApplicationSettings();
         UpdateStatus("已应用本地背景图片");
     }
 
-    private void RemoveBackground_Click(object sender, RoutedEventArgs eventArgs)
+    private void RemoveBackground(BackgroundSettingsWindow dialog)
     {
         AppBackgroundImage.Source = null;
         applicationSettings = applicationSettings with { BackgroundImagePath = null };
-        UpdateBackgroundControls();
+        dialog.SetBackgroundPath(null);
         TrySaveApplicationSettings();
         UpdateStatus("已移除自定义背景，原图片未删除");
     }
 
-    private void BackgroundTransparencySlider_ValueChanged(
-        object sender,
-        RoutedPropertyChangedEventArgs<double> eventArgs)
+    private void ApplyBackgroundVisibility(double percentage)
     {
-        if (applyingAppearanceSettings || BackgroundTransparencyText is null)
-        {
-            return;
-        }
-
-        double opacity = 1 - (eventArgs.NewValue / 100);
+        // Bug fix: the slider is a visibility control. Its previous inverse
+        // mapping made 100% hide the image and 0% show it.
+        double opacity = BackgroundAppearanceScale.FromPercentage(percentage);
         AppBackgroundImage.Opacity = opacity;
         applicationSettings = applicationSettings with { BackgroundOpacity = opacity };
-        BackgroundTransparencyText.Text = $"透明度 {eventArgs.NewValue:0}%";
         ScheduleAppearanceSave();
     }
 
@@ -139,18 +118,6 @@ public partial class MainWindow
             UpdateStatus($"无法加载背景图片：{exception.Message}");
             return false;
         }
-    }
-
-    private void UpdateBackgroundControls()
-    {
-        bool hasBackground = AppBackgroundImage.Source is not null;
-        BackgroundTransparencySlider.IsEnabled = hasBackground;
-        RemoveBackgroundButton.IsEnabled = hasBackground;
-        BackgroundFileNameText.Text = hasBackground
-            ? System.IO.Path.GetFileName(applicationSettings.BackgroundImagePath)
-            : "尚未选择图片";
-        BackgroundTransparencyText.Text =
-            $"透明度 {(1 - applicationSettings.BackgroundOpacity) * 100:0}%";
     }
 
     private void ScheduleAppearanceSave()

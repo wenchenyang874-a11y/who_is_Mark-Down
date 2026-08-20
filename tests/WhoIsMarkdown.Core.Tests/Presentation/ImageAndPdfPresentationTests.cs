@@ -35,6 +35,204 @@ public sealed class ImageAndPdfPresentationTests
     }
 
     [Fact]
+    public void 自定义背景_覆盖编辑与预览区域且可见度语义同向()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string mainWindow = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml"));
+        string appearanceCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Appearance.cs"));
+        string mainWindowCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml.cs"));
+        string backgroundWindow = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "BackgroundSettingsWindow.xaml"));
+        string backgroundWindowCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "BackgroundSettingsWindow.xaml.cs"));
+        string previewStyle = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Resources",
+            "preview.css"));
+
+        Assert.Contains(
+            "AutomationProperties.Name=\"背景可见度\"",
+            backgroundWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ToolTip=\"0% 完全隐藏，100% 最清晰\"",
+            backgroundWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"EditorHost\" Grid.Column=\"0\" Background=\"#B3FFFFFF\"",
+            mainWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"PreviewHost\" Grid.Column=\"2\" Background=\"#B3FFFFFF\"",
+            mainWindow,
+            StringComparison.Ordinal);
+        XDocument xaml = XDocument.Parse(mainWindow);
+        XNamespace xNamespace = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement editor = Assert.Single(
+            xaml.Descendants(),
+            element =>
+                element.Name.LocalName == "TextEditor" &&
+                (string?)element.Attribute(xNamespace + "Name") == "Editor");
+        Assert.Equal("Transparent", (string?)editor.Attribute("Background"));
+        Assert.DoesNotContain(
+            "Background=\"#D9FFFFFF\"",
+            mainWindow,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "<Border Background=\"#62F4F5FA\"",
+            mainWindow,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "BackgroundAppearanceScale.FromPercentage(percentage)",
+            appearanceCode,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "1 - (eventArgs.NewValue / 100)",
+            appearanceCode,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "background: rgba(255, 255, 255, 0.25);",
+            previewStyle,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("BackgroundSettingsPopup", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("BackgroundSettingsPopup", appearanceCode, StringComparison.Ordinal);
+        Assert.Contains(
+            "BlurRadius=\"16\" Opacity=\"0.16\" ShadowDepth=\"3\"",
+            backgroundWindow,
+            StringComparison.Ordinal);
+        Assert.Contains("WindowStyle=\"None\"", backgroundWindow, StringComparison.Ordinal);
+        int selectHandlerStart = backgroundWindowCode.IndexOf(
+            "private void SelectBackground_Click",
+            StringComparison.Ordinal);
+        int selectHandlerEnd = backgroundWindowCode.IndexOf(
+            "private void RemoveBackground_Click",
+            StringComparison.Ordinal);
+        Assert.True(selectHandlerStart >= 0 && selectHandlerEnd > selectHandlerStart);
+        string selectHandler = backgroundWindowCode[selectHandlerStart..selectHandlerEnd];
+        Assert.Contains("dialog.ShowDialog(this)", selectHandler, StringComparison.Ordinal);
+        Assert.Contains("BackgroundImageSelected?.Invoke(dialog.FileName)", selectHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("Close()", selectHandler, StringComparison.Ordinal);
+        Assert.Contains(
+            ";component/Resources/preview.css",
+            mainWindowCode,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "typeof(MainWindow).Assembly.GetName().Name",
+            mainWindowCode,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 自定义背景_贯穿标题菜单侧栏工具栏和状态栏()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string mainWindow = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml"));
+        string chromeCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Chrome.cs"));
+        string commandsCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Commands.cs"));
+
+        XDocument xaml = XDocument.Parse(mainWindow);
+        XNamespace xNamespace = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement window = xaml.Root ?? throw new InvalidOperationException("主窗口 XAML 缺少根元素。");
+        Assert.Equal("None", (string?)window.Attribute("WindowStyle"));
+        Assert.Equal("Window_SourceInitialized", (string?)window.Attribute("SourceInitialized"));
+        Assert.Equal("True", (string?)window.Attribute("SnapsToDevicePixels"));
+        Assert.Equal("True", (string?)window.Attribute("UseLayoutRounding"));
+        Assert.Contains(
+            xaml.Descendants(),
+            element => element.Name.LocalName == "WindowChrome");
+
+        XElement titleText = Assert.Single(
+            xaml.Descendants(),
+            element => (string?)element.Attribute("Text") == "{Binding WindowTitle}");
+        Assert.Equal("Display", (string?)titleText.Attribute("TextOptions.TextFormattingMode"));
+        Assert.Equal("Grayscale", (string?)titleText.Attribute("TextOptions.TextRenderingMode"));
+
+        foreach (string elementName in new[]
+                 {
+                     "TitleBar",
+                     "TopMenu",
+                     "RecentPane",
+                     "MarkdownToolbarHost",
+                     "EditorHost",
+                     "PreviewHost",
+                     "StatusBar",
+                 })
+        {
+            XElement surface = Assert.Single(
+                xaml.Descendants(),
+                element => (string?)element.Attribute(xNamespace + "Name") == elementName);
+            Assert.Equal("#B3FFFFFF", (string?)surface.Attribute("Background"));
+        }
+
+        Assert.Contains("WindowState = WindowState.Minimized", chromeCode, StringComparison.Ordinal);
+        Assert.Contains("WindowState.Maximized", chromeCode, StringComparison.Ordinal);
+        Assert.Contains("Close();", chromeCode, StringComparison.Ordinal);
+        Assert.Contains("WindowMessageGetMinMaxInfo", chromeCode, StringComparison.Ordinal);
+        Assert.Contains("MonitorFromWindow", chromeCode, StringComparison.Ordinal);
+        Assert.Contains("monitorInfo.WorkArea", chromeCode, StringComparison.Ordinal);
+        Assert.Contains("DisposeWindowChrome();", commandsCode, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 自定义背景_代码块和表格使用分层半透明表面()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string previewStyle = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "Resources",
+            "preview.css"));
+
+        Assert.Contains(
+            "background: rgba(238, 241, 247, 0.72);",
+            previewStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "background: rgba(255, 255, 255, 0.22);",
+            previewStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "background: rgba(230, 234, 243, 0.78);",
+            previewStyle,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("background: #f7f8fb;", previewStyle, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("background: #f4f5fa;", previewStyle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void 图片设置_远程规则行_提供匹配方式下拉内容和删除操作()
     {
         string repositoryRoot = FindRepositoryRoot();
@@ -167,6 +365,13 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("rawCode.replace(/\\r?\\n$/, '')", previewCode, StringComparison.Ordinal);
         Assert.Contains(".wimd-code-copy-button", previewStyle, StringComparison.Ordinal);
         Assert.Contains(".wimd-code-block pre", previewStyle, StringComparison.Ordinal);
+        Assert.Contains("pre::-webkit-scrollbar-thumb", previewStyle, StringComparison.Ordinal);
+        Assert.Contains("border-radius: 999px;", previewStyle, StringComparison.Ordinal);
+        Assert.Contains("pre::-webkit-scrollbar-button", previewStyle, StringComparison.Ordinal);
+        Assert.DoesNotContain("scrollbar-width:", previewStyle, StringComparison.Ordinal);
+        Assert.Matches(
+            "pre::\\-webkit-scrollbar-button\\s*\\{[^}]*display:\\s*none;[^}]*width:\\s*0;[^}]*height:\\s*0;",
+            previewStyle);
         Assert.Matches(
             "@media print[\\s\\S]*\\.wimd-code-copy-button\\s*\\{\\s*display: none;\\s*\\}",
             previewStyle);

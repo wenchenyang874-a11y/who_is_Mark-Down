@@ -64,6 +64,7 @@ public partial class MainWindow
         CancelImageWork();
         CancelPreviewImageWork();
         DisposeAppearanceController();
+        DisposeWindowChrome();
         DisposeScrollSynchronization();
 
         if (previewService is not null)

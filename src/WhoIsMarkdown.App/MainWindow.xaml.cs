@@ -355,7 +355,14 @@ public partial class MainWindow : Window
 
     private static string ReadPreviewStyleSheet()
     {
-        Uri resourceUri = new("Resources/preview.css", UriKind.Relative);
+        // Bug fix: resolve the resource from WIMD's component assembly rather
+        // than the process entry assembly. This keeps preview initialization
+        // working when MainWindow is hosted by UI smoke-test executables.
+        string assemblyName = typeof(MainWindow).Assembly.GetName().Name
+            ?? throw new InvalidOperationException("无法确定预览资源程序集。");
+        Uri resourceUri = new(
+            $"/{assemblyName};component/Resources/preview.css",
+            UriKind.Relative);
         StreamResourceInfo? resource = Application.GetResourceStream(resourceUri);
         if (resource is null)
         {

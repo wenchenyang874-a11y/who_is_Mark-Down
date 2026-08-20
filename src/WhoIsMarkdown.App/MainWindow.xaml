@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:viewModels="clr-namespace:WhoIsMarkdown.App.ViewModels"
         xmlns:webView="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         x:Name="RootWindow"
@@ -13,28 +14,121 @@
         MinHeight="600"
         Background="#F4F5FA"
         FontFamily="Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True"
+        WindowStyle="None"
         WindowStartupLocation="CenterScreen"
+        SourceInitialized="Window_SourceInitialized"
         Loaded="Window_Loaded"
+        StateChanged="Window_StateChanged"
         PreviewKeyDown="MainWindow_PreviewKeyDown">
+    <shell:WindowChrome.WindowChrome>
+        <!-- The selected local image can only reach the title area when WIMD
+             owns the non-client chrome. Resize borders and caption dragging
+             remain delegated to WindowChrome for native window behavior. -->
+        <shell:WindowChrome CaptionHeight="34"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <Style x:Key="WindowCaptionButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#30384B" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="CaptionButtonBackground" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CaptionButtonBackground" Property="Background" Value="#18000000" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="CaptionButtonBackground" Property="Background" Value="#26000000" />
+                            </Trigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Close" />
+                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="CaptionButtonBackground" Property="Background" Value="#C42B1C" />
+                                <Setter Property="Foreground" Value="White" />
+                            </MultiDataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid>
+        <!-- Bug fix: one image spans the entire workspace. Editor and preview
+             surfaces provide their own translucent readability layer instead of
+             hiding the image behind stacked opaque cards. -->
         <Image x:Name="AppBackgroundImage"
                Stretch="UniformToFill"
                Opacity="0"
                RenderOptions.BitmapScalingMode="HighQuality" />
-        <Border Background="#62F4F5FA" />
 
         <Grid>
             <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Menu Grid.Row="0"
+            <Grid x:Name="TitleBar" Grid.Row="0" Background="#B3FFFFFF">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Image Width="18" Height="18" Margin="10,0,8,0" VerticalAlignment="Center" Source="Resources/app-icon.png" />
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           TextOptions.TextFormattingMode="Display"
+                           TextOptions.TextRenderingMode="Grayscale"
+                           Text="{Binding WindowTitle}"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button AutomationProperties.Name="最小化"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource WindowCaptionButtonStyle}"
+                            Content="&#xE921;"
+                            Click="MinimizeWindow_Click" />
+                    <Button AutomationProperties.Name="最大化或还原"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource WindowCaptionButtonStyle}"
+                            Click="MaximizeRestoreWindow_Click">
+                        <TextBlock x:Name="MaximizeRestoreGlyph" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE922;" />
+                    </Button>
+                    <Button AutomationProperties.Name="关闭"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource WindowCaptionButtonStyle}"
+                            Tag="Close"
+                            Content="&#xE8BB;"
+                            Click="CloseWindow_Click" />
+                </StackPanel>
+            </Grid>
+
+            <Menu x:Name="TopMenu"
+                  Grid.Row="1"
                   Height="30"
                   Padding="8,0"
                   Foreground="{StaticResource TextPrimaryBrush}"
-                  Background="#F8FFFFFF">
+                  Background="#B3FFFFFF">
                 <Menu.Resources>
                     <!-- Bug fix: the Windows light theme can otherwise resolve the
                          top-level MenuItem foreground as transparent. -->
@@ -157,14 +251,14 @@
                 </MenuItem>
             </Menu>
 
-            <Grid Grid.Row="1" Margin="8,6,8,6">
+            <Grid Grid.Row="2" Margin="8,6,8,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="RecentPaneColumn" Width="252" />
                     <ColumnDefinition x:Name="RecentPaneGutterColumn" Width="6" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border x:Name="RecentPane" Grid.Column="0" Style="{StaticResource SurfaceCardStyle}">
+                <Border x:Name="RecentPane" Grid.Column="0" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}">
                     <Grid>
                         <Grid x:Name="RecentPaneContent">
                             <Grid.RowDefinitions>
@@ -392,7 +486,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Style="{StaticResource SurfaceCardStyle}">
+                    <Border x:Name="MarkdownToolbarHost" Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                             <StackPanel x:Name="MarkdownToolbar" Orientation="Horizontal">
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H1" ToolTip="一级标题 (Ctrl+1)" Tag="1" Click="Heading_Click" />
@@ -426,19 +520,19 @@
                             <ColumnDefinition x:Name="PreviewColumn" Width="*" MinWidth="0" />
                         </Grid.ColumnDefinitions>
 
-                        <Border x:Name="EditorHost" Grid.Column="0" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
+                        <Border x:Name="EditorHost" Grid.Column="0" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="34" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <Border Padding="12,0" BorderBrush="#E7EAF1" BorderThickness="0,0,0,1">
+                                <Border Padding="12,0" Background="Transparent" BorderBrush="#E7EAF1" BorderThickness="0,0,0,1">
                                     <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                 </Border>
                                 <avalonEdit:TextEditor x:Name="Editor"
                                                        Grid.Row="1"
                                                        Padding="14,10"
-                                                       Background="#EFFFFFFF"
+                                                       Background="Transparent"
                                                        Foreground="#1A2235"
                                                        FontFamily="Cascadia Mono, Consolas"
                                                        FontSize="15"
@@ -452,13 +546,13 @@
 
                         <GridSplitter x:Name="WorkspaceSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" />
 
-                        <Border x:Name="PreviewHost" Grid.Column="2" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
+                        <Border x:Name="PreviewHost" Grid.Column="2" Background="#B3FFFFFF" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="34" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <Border Padding="12,0" BorderBrush="#E7EAF1" BorderThickness="0,0,0,1">
+                                <Border Padding="12,0" Background="Transparent" BorderBrush="#E7EAF1" BorderThickness="0,0,0,1">
                                     <Grid>
                                         <TextBlock VerticalAlignment="Center" Style="{StaticResource PanelTitleTextStyle}" Text="实时预览" />
                                         <Border HorizontalAlignment="Right" VerticalAlignment="Center" Padding="7,2" Background="#E5F8F0" CornerRadius="7">
@@ -473,7 +567,7 @@
                 </Grid>
             </Grid>
 
-            <Border Grid.Row="2" Padding="10,4" Background="#F8FFFFFF" BorderBrush="#DDE2EC" BorderThickness="0,1,0,0">
+            <Border x:Name="StatusBar" Grid.Row="3" Padding="10,4" Background="#B3FFFFFF" BorderBrush="#DDE2EC" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -489,23 +583,5 @@
             </Border>
         </Grid>
 
-        <Popup x:Name="BackgroundSettingsPopup" Placement="Center" PlacementTarget="{Binding ElementName=RootWindow}" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-            <Border Width="310" Padding="18" Background="#FFFCFD" BorderBrush="#D8DDE8" BorderThickness="1" CornerRadius="14">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="24" Opacity="0.18" ShadowDepth="5" />
-                </Border.Effect>
-                <StackPanel>
-                    <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="工作区背景" />
-                    <TextBlock Margin="0,5,0,14" Foreground="{StaticResource TextSecondaryBrush}" Text="图片仅从本机读取，不会上传。" />
-                    <TextBlock x:Name="BackgroundFileNameText" Margin="0,0,0,10" TextTrimming="CharacterEllipsis" Text="尚未选择图片" />
-                    <StackPanel Orientation="Horizontal">
-                        <Button Style="{StaticResource ToolbarButtonStyle}" Content="选择图片" Click="SelectBackground_Click" />
-                        <Button x:Name="RemoveBackgroundButton" Style="{StaticResource ToolbarButtonStyle}" Content="移除" Click="RemoveBackground_Click" />
-                    </StackPanel>
-                    <TextBlock x:Name="BackgroundTransparencyText" Margin="0,14,0,5" Foreground="{StaticResource TextSecondaryBrush}" Text="透明度 82%" />
-                    <Slider x:Name="BackgroundTransparencySlider" Minimum="0" Maximum="100" TickFrequency="5" Value="82" ValueChanged="BackgroundTransparencySlider_ValueChanged" />
-                </StackPanel>
-            </Border>
-        </Popup>
     </Grid>
 </Window>
