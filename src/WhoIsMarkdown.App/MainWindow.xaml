@@ -579,11 +579,22 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Text="准备就绪" />
                     <Border Grid.Column="1" Width="1" Height="12" Margin="10,0" Background="#D9DDE6" />
                     <TextBlock x:Name="PathText" Grid.Column="2" VerticalAlignment="Center" Foreground="#858C9E" Text="未保存" TextTrimming="CharacterEllipsis" />
-                    <TextBlock x:Name="CaretText" Grid.Column="3" Margin="14,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Text="行 1，列 1" />
+                    <TextBlock x:Name="PerformanceText"
+                               Grid.Column="3"
+                               Margin="14,0,0,0"
+                               VerticalAlignment="Center"
+                               AutomationProperties.Name="当前 WIMD 性能占用"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Text="CPU 0.0%  ·  内存 --"
+                               ToolTip="当前窗口所属的 WIMD 主进程；CPU 按所有逻辑处理器归一化，内存为工作集，每秒刷新。不包含 WebView2 子进程。" />
+                    <Border Grid.Column="4" Width="1" Height="12" Margin="10,0" Background="{DynamicResource BorderBrush}" />
+                    <TextBlock x:Name="CaretText" Grid.Column="5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Text="行 1，列 1" />
                 </Grid>
             </Border>
         </Grid>

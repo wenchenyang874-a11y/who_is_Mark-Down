@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeAppearanceController();
+        InitializePerformanceMonitor();
         InitializeScrollSynchronization();
         DataContext = document;
         document.StartNew(untitledCounter);

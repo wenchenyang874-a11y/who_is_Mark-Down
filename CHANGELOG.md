@@ -2,6 +2,14 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
+## [未发布]
+
+## [1.7.1] - 2026-08-24
+
+### 新增
+
+- 底部状态栏新增当前 WIMD 主进程的 CPU 与工作集内存显示，每秒刷新；提示信息明确说明不包含 WebView2 独立子进程。
+
 ## [1.7.0] - 2026-08-20
 
 ### 新增
@@ -189,7 +197,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.0...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.2...v1.6.3
