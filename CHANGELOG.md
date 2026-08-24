@@ -4,6 +4,12 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.2] - 2026-08-24
+
+### 改进
+
+- 当前运行期间切换已有最近文件时只更新最后打开时间，不再实时移动列表项；WIMD 下一次启动时才按最新状态重新排序，避免点击目标在操作过程中跳动。
+
 ## [1.7.1] - 2026-08-24
 
 ### 新增
@@ -197,7 +203,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.1...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.3...v1.6.4

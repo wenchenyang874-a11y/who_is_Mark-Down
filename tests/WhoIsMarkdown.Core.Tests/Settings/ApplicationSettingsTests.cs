@@ -5,25 +5,25 @@ namespace WhoIsMarkdown.Core.Tests.Settings;
 public sealed class ApplicationSettingsTests
 {
     [Fact]
-    public void RecordRecentFile_WhenPathAlreadyExists_MovesItToFrontWithoutDuplicates()
+    public void RecordRecentFile_WhenPathAlreadyExists_UpdatesTimestampWithoutReorderingSession()
     {
         string firstPath = System.IO.Path.GetFullPath("first.md");
         string secondPath = System.IO.Path.GetFullPath("second.md");
+        DateTimeOffset reopenedAt = new(2026, 1, 3, 0, 0, 0, TimeSpan.Zero);
         ApplicationSettings settings = new()
         {
             RecentFiles =
             [
-                new(firstPath, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)),
-                new(secondPath, new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeSpan.Zero)),
+                new(firstPath, new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeSpan.Zero)),
+                new(secondPath, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)),
             ],
         };
 
-        ApplicationSettings result = settings.RecordRecentFile(
-            firstPath,
-            new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
+        ApplicationSettings result = settings.RecordRecentFile(secondPath, reopenedAt);
 
         Assert.Equal([firstPath, secondPath], result.RecentFiles.Select(entry => entry.Path));
         Assert.Equal(2, result.RecentFiles.Count);
+        Assert.Equal(reopenedAt, result.RecentFiles[1].LastOpenedUtc);
     }
 
     [Fact]

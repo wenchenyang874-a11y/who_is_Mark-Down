@@ -74,7 +74,7 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
             {
                 Directory.CreateDirectory(directory);
                 byte[] json = JsonSerializer.SerializeToUtf8Bytes(
-                    settings.Normalize(),
+                    settings.NormalizeForPersistence(),
                     SerializerOptions);
 
                 using (FileStream stream = new(

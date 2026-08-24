@@ -28,6 +28,20 @@ public sealed record ApplicationSettings
 
     public ApplicationSettings Normalize()
     {
+        return Normalize(sortRecentFiles: true);
+    }
+
+    /// <summary>
+    /// Normalizes persisted values without changing the current session's recent-file order.
+    /// The next application load calls <see cref="Normalize()"/> and applies the latest order.
+    /// </summary>
+    internal ApplicationSettings NormalizeForPersistence()
+    {
+        return Normalize(sortRecentFiles: false);
+    }
+
+    private ApplicationSettings Normalize(bool sortRecentFiles)
+    {
         List<RecentFileEntry> recentFiles = [];
         HashSet<string> knownPaths = new(StringComparer.OrdinalIgnoreCase);
 
@@ -42,8 +56,10 @@ public sealed record ApplicationSettings
             recentFiles.Add(new RecentFileEntry(normalizedPath, entry.LastOpenedUtc));
         }
 
-        IReadOnlyList<RecentFileEntry> normalizedRecentFiles = recentFiles
-            .OrderByDescending(entry => entry.LastOpenedUtc)
+        IEnumerable<RecentFileEntry> normalizedRecentFileSequence = sortRecentFiles
+            ? recentFiles.OrderByDescending(entry => entry.LastOpenedUtc)
+            : recentFiles;
+        IReadOnlyList<RecentFileEntry> normalizedRecentFiles = normalizedRecentFileSequence
             .Take(MaximumRecentFiles)
             .ToArray();
 
@@ -75,14 +91,24 @@ public sealed record ApplicationSettings
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         string normalizedPath = System.IO.Path.GetFullPath(path);
-        ApplicationSettings normalizedSettings = Normalize();
+        ApplicationSettings normalizedSettings = NormalizeForPersistence();
+        List<RecentFileEntry> updatedEntries = [.. normalizedSettings.RecentFiles];
+        int existingIndex = updatedEntries.FindIndex(
+            entry => string.Equals(entry.Path, normalizedPath, StringComparison.OrdinalIgnoreCase));
 
-        RecentFileEntry[] updatedEntries =
-        [
-            new(normalizedPath, openedAtUtc),
-            .. normalizedSettings.RecentFiles.Where(
-                entry => !string.Equals(entry.Path, normalizedPath, StringComparison.OrdinalIgnoreCase)),
-        ];
+        // Keep existing items at their current indices while WIMD is running. Moving
+        // the clicked item immediately made the recent-file targets jump under the
+        // pointer. The refreshed timestamp is sorted only when settings are loaded
+        // during the next application startup. Brand-new paths still appear at the
+        // front so users can immediately see that the file was recorded.
+        if (existingIndex >= 0)
+        {
+            updatedEntries[existingIndex] = new RecentFileEntry(normalizedPath, openedAtUtc);
+        }
+        else
+        {
+            updatedEntries.Insert(0, new RecentFileEntry(normalizedPath, openedAtUtc));
+        }
 
         return normalizedSettings with
         {
@@ -94,7 +120,7 @@ public sealed record ApplicationSettings
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         string normalizedPath = System.IO.Path.GetFullPath(path);
-        ApplicationSettings normalizedSettings = Normalize();
+        ApplicationSettings normalizedSettings = NormalizeForPersistence();
 
         return normalizedSettings with
         {
@@ -111,7 +137,7 @@ public sealed record ApplicationSettings
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         string normalizedPath = System.IO.Path.GetFullPath(path);
-        ApplicationSettings normalizedSettings = Normalize();
+        ApplicationSettings normalizedSettings = NormalizeForPersistence();
 
         return normalizedSettings with
         {
@@ -127,7 +153,7 @@ public sealed record ApplicationSettings
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         string normalizedSource = System.IO.Path.GetFullPath(sourcePath);
         string normalizedTarget = System.IO.Path.GetFullPath(targetPath);
-        ApplicationSettings normalizedSettings = Normalize();
+        ApplicationSettings normalizedSettings = NormalizeForPersistence();
 
         RecentFileEntry[] relocatedEntries = normalizedSettings.RecentFiles
             .Select(entry =>
@@ -145,7 +171,8 @@ public sealed record ApplicationSettings
             })
             .ToArray();
 
-        return (normalizedSettings with { RecentFiles = relocatedEntries }).Normalize();
+        return (normalizedSettings with { RecentFiles = relocatedEntries })
+            .NormalizeForPersistence();
     }
 
     private static string? GetRelativePathWhenContained(string candidatePath, string containerPath)

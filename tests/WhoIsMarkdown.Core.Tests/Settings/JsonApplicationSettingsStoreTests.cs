@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.Core.Tests.Settings;
@@ -74,6 +75,49 @@ public sealed class JsonApplicationSettingsStoreTests
         Assert.Empty(Directory.EnumerateFiles(
             System.IO.Path.GetDirectoryName(settingsPath)!,
             ".settings.json.*.tmp"));
+    }
+
+    [Fact]
+    public void SaveThenLoad_WhenExistingRecentFileIsReopened_SortsOnlyOnNextLoad()
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string settingsPath = System.IO.Path.Combine(temporaryDirectory.Path, "settings.json");
+        string firstPath = System.IO.Path.Combine(temporaryDirectory.Path, "first.md");
+        string secondPath = System.IO.Path.Combine(temporaryDirectory.Path, "second.md");
+        JsonApplicationSettingsStore store = new(settingsPath);
+        ApplicationSettings settings = new()
+        {
+            RecentFiles =
+            [
+                new(firstPath, new DateTimeOffset(2026, 8, 24, 8, 0, 0, TimeSpan.Zero)),
+                new(secondPath, new DateTimeOffset(2026, 8, 24, 7, 0, 0, TimeSpan.Zero)),
+            ],
+        };
+
+        ApplicationSettings currentSession = settings.RecordRecentFile(
+            secondPath,
+            new DateTimeOffset(2026, 8, 24, 9, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(
+            [System.IO.Path.GetFullPath(firstPath), System.IO.Path.GetFullPath(secondPath)],
+            currentSession.RecentFiles.Select(entry => entry.Path));
+
+        store.Save(currentSession);
+        using JsonDocument persistedSettings = JsonDocument.Parse(File.ReadAllText(settingsPath));
+        string[] persistedPaths = persistedSettings.RootElement
+            .GetProperty(nameof(ApplicationSettings.RecentFiles))
+            .EnumerateArray()
+            .Select(entry => entry.GetProperty(nameof(RecentFileEntry.Path)).GetString()!)
+            .ToArray();
+        Assert.Equal(
+            [System.IO.Path.GetFullPath(firstPath), System.IO.Path.GetFullPath(secondPath)],
+            persistedPaths);
+
+        ApplicationSettings nextSession = store.Load();
+
+        Assert.Equal(
+            [System.IO.Path.GetFullPath(secondPath), System.IO.Path.GetFullPath(firstPath)],
+            nextSession.RecentFiles.Select(entry => entry.Path));
     }
 
     [Fact]
