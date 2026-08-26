@@ -1,7 +1,6 @@
 <Application x:Class="WhoIsMarkdown.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml"
              ThemeMode="System">
     <Application.Resources>
         <SolidColorBrush x:Key="AccentBrush" Color="#5B5CE2" />
@@ -89,6 +88,12 @@
             <Setter Property="Margin" Value="0" />
             <Setter Property="Padding" Value="10,9" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
     </Application.Resources>
 </Application>

@@ -197,7 +197,7 @@ public partial class MainWindow
         RecentFiles.Clear();
         foreach (RecentFileEntry entry in applicationSettings.RecentFiles)
         {
-            RecentFiles.Add(new RecentFileItemViewModel(entry));
+            RecentFiles.Add(new RecentFileItemViewModel(entry, document.FilePath));
         }
 
         RecentFilesEmptyState.Visibility = RecentFiles.Count == 0

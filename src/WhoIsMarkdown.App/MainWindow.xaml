@@ -294,10 +294,11 @@
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <Button Grid.Column="0" Tag="{Binding Path}" ToolTip="{Binding Path}" Style="{StaticResource RecentOpenButtonStyle}" Click="OpenRecentFile_Click">
+                                                    <Button Grid.Column="0" AutomationProperties.Name="{Binding DisplayName}" Tag="{Binding Path}" ToolTip="{Binding Path}" Style="{StaticResource RecentOpenButtonStyle}" Click="OpenRecentFile_Click">
                                                         <Button.ContextMenu>
                                                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                                                 <MenuItem Header="打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFile_Click" />
+                                                                <MenuItem Header="在新窗口中打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFileInNewWindow_Click" />
                                                                 <MenuItem Header="在文件资源管理器中显示" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="RevealRecentFile_Click" />
                                                                 <Separator />
                                                                 <MenuItem Header="复制文件路径" Tag="{Binding Path}" Click="CopyRecentFilePath_Click" />
@@ -308,7 +309,7 @@
                                                             </ContextMenu>
                                                         </Button.ContextMenu>
                                                         <StackPanel HorizontalAlignment="Stretch">
-                                                            <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock x:Name="RecentFileNameText" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="#9299AA" Text="{Binding LastOpenedDisplay}" />
                                                         </StackPanel>
@@ -317,6 +318,11 @@
                                                         <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE711;" />
                                                     </Button>
                                                 </Grid>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                        <Setter TargetName="RecentFileNameText" Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -441,6 +447,7 @@
                                                 <Border.ContextMenu>
                                                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                                         <MenuItem Header="打开" Tag="{Binding}" IsEnabled="{Binding IsFile}" Click="OpenWorkspaceEntry_Click" />
+                                                        <MenuItem Header="在新窗口中打开" Tag="{Binding}" IsEnabled="{Binding IsFile}" Click="OpenWorkspaceEntryInNewWindow_Click" />
                                                         <Separator />
                                                         <MenuItem Header="新建 Markdown 文件" Tag="{Binding}" IsEnabled="{Binding IsDirectory}" Click="NewWorkspaceFile_Click" />
                                                         <MenuItem Header="新建文件夹" Tag="{Binding}" IsEnabled="{Binding IsDirectory}" Click="NewWorkspaceDirectory_Click" />

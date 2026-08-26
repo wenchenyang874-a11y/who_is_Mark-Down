@@ -1,5 +1,6 @@
 using WhoIsMarkdown.App.Infrastructure;
 using WhoIsMarkdown.Core.Documents;
+using WhoIsMarkdown.Core.Lifecycle;
 
 namespace WhoIsMarkdown.App.ViewModels;
 
@@ -56,6 +57,45 @@ public sealed class DocumentEditorViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(document);
         ApplyDocument(document.Text, document.Path, document.HasUtf8Bom, document.LineEnding, document.Stamp);
+    }
+
+    public UpdateRestartWindowState AddDocumentRecoveryTo(UpdateRestartWindowState windowState)
+    {
+        ArgumentNullException.ThrowIfNull(windowState);
+        bool includeContent = IsDirty || filePath is null;
+        return windowState with
+        {
+            DocumentPath = filePath,
+            DocumentText = includeContent ? text : null,
+            SavedDocumentText = includeContent ? savedText : null,
+            UntitledDisplayName = untitledName,
+            HasUtf8Bom = hasUtf8Bom,
+            LineEnding = lineEnding,
+            DocumentStamp = stamp,
+        };
+    }
+
+    public void RestoreAfterUpdate(UpdateRestartWindowState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        UpdateRestartWindowState normalized = state.Normalize();
+        if (normalized.DocumentText is null)
+        {
+            throw new InvalidOperationException("恢复状态不包含文档正文。");
+        }
+
+        text = normalized.DocumentText;
+        savedText = normalized.SavedDocumentText ?? normalized.DocumentText;
+        filePath = normalized.DocumentPath;
+        untitledName = normalized.UntitledDisplayName;
+        hasUtf8Bom = normalized.HasUtf8Bom;
+        lineEnding = normalized.LineEnding;
+        stamp = normalized.DocumentStamp;
+
+        OnPropertyChanged(nameof(Text));
+        NotifyDocumentMetadataChanged();
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(WindowTitle));
     }
 
     public DocumentWriteRequest CreateWriteRequest(string path)

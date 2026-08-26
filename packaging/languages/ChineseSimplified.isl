@@ -246,10 +246,10 @@ WizardPreparing=正在准备安装
 PreparingDesc=安装程序正在准备安装 [name] 到您的计算机。
 PreviousInstallNotCompleted=先前的程序安装或卸载未完成，需要您重启计算机以完成该安装。%n%n在重启计算机后，再次运行安装程序以完成 [name] 的安装。
 CannotContinue=安装程序不能继续。请点击“取消”退出。
-ApplicationsFound=以下应用程序正在使用将由安装程序更新的文件。建议您允许安装程序自动关闭这些应用程序。
-ApplicationsFound2=以下应用程序正在使用将由安装程序更新的文件。建议您允许安装程序自动关闭这些应用程序。安装完成后，安装程序将尝试重新启动这些应用程序。
-CloseApplications=自动关闭应用程序(&A)
-DontCloseApplications=不要关闭应用程序(&D)
+ApplicationsFound=以下 WIMD 进程正在使用需要更新的文件。请选择“关闭 WIMD 并安装”。支持恢复的版本会先把未保存正文写入本机临时恢复区；安装完成页面可选择重新打开并恢复窗口。
+ApplicationsFound2=以下 WIMD 进程正在使用需要更新的文件。请选择“关闭 WIMD 并安装”。未保存正文会先写入本机临时恢复区；安装完成页面可选择重新打开并恢复窗口。
+CloseApplications=关闭 WIMD 并安装(&A)
+DontCloseApplications=暂不关闭 WIMD(&D)
 ErrorCloseApplications=安装程序无法自动关闭所有应用程序。建议您在继续之前，关闭所有在使用需要由安装程序更新的文件的应用程序。
 PrepareToInstallNeedsRestart=安装程序必须重启您的计算机。计算机重启后，请再次运行安装程序以完成 [name] 的安装。%n%n要立即重启吗？
 

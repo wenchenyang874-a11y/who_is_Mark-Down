@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.App.ViewModels;
 using WhoIsMarkdown.Core.Documents;
+using WhoIsMarkdown.Core.Lifecycle;
 using WhoIsMarkdown.Core.Markdown;
 
 namespace WhoIsMarkdown.App;
@@ -36,8 +37,23 @@ public partial class MainWindow : Window
     private bool windowClosed;
 
     public MainWindow()
+        : this(
+            state: null,
+            new UpdateRestartSessionStore(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WIMD")))
     {
+    }
+
+    internal MainWindow(
+        UpdateRestartWindowState? state,
+        UpdateRestartSessionStore updateRestartSessionStore)
+    {
+        restoredWindowState = state?.Normalize();
+        this.updateRestartSessionStore = updateRestartSessionStore
+            ?? throw new ArgumentNullException(nameof(updateRestartSessionStore));
         InitializeComponent();
+        ApplyRestoredWindowPlacement();
         InitializeAppearanceController();
         InitializePerformanceMonitor();
         InitializeScrollSynchronization();
@@ -49,17 +65,38 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
         LoadApplicationSettings();
-        string? startupWorkspacePath = GetStartupWorkspacePath();
+        string? startupWorkspacePath = restoredWindowState is null
+            ? GetStartupWorkspacePath()
+            : restoredWindowState.WorkspacePath;
         if (startupWorkspacePath is not null)
         {
             await OpenWorkspaceAsync(startupWorkspacePath);
         }
 
-        string? startupDocumentPath = GetStartupDocumentPath();
-        if (startupDocumentPath is not null)
+        if (restoredWindowState?.DocumentText is not null)
         {
-            await OpenDocumentAsync(startupDocumentPath);
+            document.RestoreAfterUpdate(restoredWindowState);
+            ApplyDocumentToEditor();
+            if (restoredWindowState.DocumentPath is { } recoveredPath
+                && File.Exists(recoveredPath))
+            {
+                RecordRecentFile(recoveredPath);
+            }
+
+            UpdateStatus(document.IsDirty ? "已恢复安装前未保存的修改" : "已恢复安装前窗口");
         }
+        else
+        {
+            string? startupDocumentPath = restoredWindowState is null
+                ? GetStartupDocumentPath()
+                : restoredWindowState.DocumentPath;
+            if (startupDocumentPath is not null && File.Exists(startupDocumentPath))
+            {
+                await OpenDocumentAsync(startupDocumentPath);
+            }
+        }
+
+        RestoreWindowInteractionState();
 
         try
         {
@@ -108,6 +145,7 @@ public partial class MainWindow : Window
 
         document.StartNew(++untitledCounter);
         ApplyDocumentToEditor();
+        RefreshRecentFilesView();
         UpdateStatus("已新建文档");
     }
 

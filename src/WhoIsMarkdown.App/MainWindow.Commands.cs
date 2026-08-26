@@ -29,6 +29,15 @@ public partial class MainWindow
             return;
         }
 
+        // Installer-triggered shutdown uses a one-time local snapshot, including
+        // dirty text, so it must not show the ordinary discard/save prompt.
+        if (TryPersistUpdateRestartWindowState())
+        {
+            closeApproved = true;
+            CancelPreviewWork();
+            return;
+        }
+
         if (closeApproved || !document.IsDirty)
         {
             closeApproved = true;

@@ -4,6 +4,24 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.4] - 2026-08-26
+
+### 新增
+
+- 从 WIMD v1.7.4 起，覆盖更新检测到正在运行的 WIMD 时会先说明恢复流程，并在关闭窗口前把未保存正文、文件/工作区路径、窗口位置、视图模式和光标位置写入当前用户的临时恢复区；安装完成页默认勾选“重新打开并恢复 WIMD 窗口”，恢复后的正文仍保持未保存状态，不会自动覆盖原文件。该机制仅响应安装器的一次性恢复请求，正常退出仍显示未保存确认。
+- “最近打开”和文件夹工作区的文件右键菜单新增“在新窗口中打开”，使用独立 WIMD 进程打开目标 Markdown 文件，不切换或覆盖当前窗口的编辑状态。
+
+### 安全与稳定性
+
+- 更新恢复数据使用短时一次性请求，仅保存在 `%LocalAppData%\WIMD\UpdateRestart`，恢复后立即清理；如果安装完成时不立即重新打开，数据保留到下一次启动再恢复。
+- 修复点击“关闭并安装”确认后，Inno Setup 因向日期函数的 `Char` 分隔符传入空字符串而弹出 `Type Mismatch`、无法继续安装的问题；同时避免向 `AnsiString` 文件接口传入 Unicode 字符串，恢复请求统一写为无 BOM 的 UTF-8。
+
+## [1.7.3] - 2026-08-26
+
+### 改进
+
+- “最近打开”侧栏使用当前主题的选中色、强调色边框和文件名强调色高亮正在编辑的文件；切换文档时高亮同步转移，新建无标题文档时清除高亮，同时保持会话内列表顺序稳定。
+
 ## [1.7.2] - 2026-08-24
 
 ### 改进
@@ -203,7 +221,9 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.2...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.4...HEAD
+[1.7.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.3...v1.7.4
+[1.7.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.6.4...v1.7.0

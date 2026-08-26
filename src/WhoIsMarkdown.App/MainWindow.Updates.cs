@@ -131,20 +131,15 @@ public partial class MainWindow
             return;
         }
 
-        if (!await ConfirmDiscardOrSaveAsync())
-        {
-            UpdateStatus("安装包已校验，保存当前文档后可重新检查更新并安装");
-            return;
-        }
-
         try
         {
             Process.Start(new ProcessStartInfo(dialog.InstallerPath)
             {
                 UseShellExecute = true,
             });
-            closeApproved = true;
-            Close();
+            // The installer must initiate shutdown after creating the recovery
+            // request. Closing here would bypass dirty-document hot-exit capture.
+            UpdateStatus("安装程序已启动；请在安装程序中选择关闭 WIMD 并安装");
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
