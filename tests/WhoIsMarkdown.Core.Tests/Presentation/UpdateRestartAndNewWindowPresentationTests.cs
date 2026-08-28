@@ -104,6 +104,33 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
         Assert.Contains("UseShellExecute = false", launcher, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Windows资源管理器_文件夹右键菜单_使用带引号的路径启动工作区()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string installer = File.ReadAllText(Path.Combine(repositoryRoot, "packaging", "WIMD.iss"));
+        string mainWindow = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml.cs"));
+
+        Assert.Contains(
+            "Subkey: \"Software\\Classes\\Directory\\shell\\WIMD\"; ValueType: string; ValueData: \"用 WIMD 打开\"; Flags: uninsdeletekey",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Subkey: \"Software\\Classes\\Directory\\shell\\WIMD\"; ValueType: string; ValueName: \"Icon\"; ValueData: \"{app}\\{#MyAppExeName},0\"",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Subkey: \"Software\\Classes\\Directory\\shell\\WIMD\\command\"; ValueType: string; ValueData: \"\"\"{app}\\{#MyAppExeName}\"\" \"\"%1\"\"\"",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains("GetStartupWorkspacePath()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("FirstOrDefault(Directory.Exists)", mainWindow, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

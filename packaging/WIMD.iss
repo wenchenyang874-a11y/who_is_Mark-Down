@@ -61,6 +61,9 @@ Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\WIMD\comm
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\WIMD"; ValueType: string; ValueData: "用 WIMD 打开"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\WIMD"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName},0"
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\WIMD\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\WIMD"; ValueType: string; ValueData: "用 WIMD 打开"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\WIMD"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName},0"
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\WIMD\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 
 [Icons]
 Name: "{autoprograms}\WIMD"; Filename: "{app}\{#MyAppExeName}"

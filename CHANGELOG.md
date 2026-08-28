@@ -4,6 +4,12 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.5] - 2026-08-28
+
+### 新增
+
+- Windows 文件资源管理器的文件夹右键菜单新增“用 WIMD 打开”；WIMD 以该文件夹启动并直接进入工作区模式，安装器卸载时同步移除对应右键菜单。Windows 11 中该静态菜单可从“显示更多选项”访问。
+
 ## [1.7.4] - 2026-08-26
 
 ### 新增
@@ -221,7 +227,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.4...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.5...HEAD
+[1.7.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.4...v1.7.5
 [1.7.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.1...v1.7.2
