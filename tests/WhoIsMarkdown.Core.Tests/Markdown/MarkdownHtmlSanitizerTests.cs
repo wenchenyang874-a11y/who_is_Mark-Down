@@ -84,4 +84,22 @@ public sealed class MarkdownHtmlSanitizerTests
         Assert.DoesNotContain("href=", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("不要打开", html, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RenderBody_Mermaid类_只允许用于图表代码块()
+    {
+        const string markdown = """
+            ```mermaid
+            flowchart LR
+              A --> B
+            ```
+
+            <div class="mermaid">不应成为图表</div>
+            """;
+
+        string html = renderer.RenderBody(markdown);
+
+        Assert.Matches("<pre[^>]*class=\"mermaid\"", html);
+        Assert.DoesNotContain("<div class=\"mermaid\"", html, StringComparison.Ordinal);
+    }
 }

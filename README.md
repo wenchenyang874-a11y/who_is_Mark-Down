@@ -39,6 +39,7 @@
 - **高效编辑**：Markdown 快捷工具条、可自定义快捷键、粗体/斜体/删除线切换取消，以及可选择行列数的表格插入。
 - **交互任务**：已完成任务以绿色显示，可直接在预览区点击复选框并同步修改 Markdown 状态。
 - **代码块复制**：预览区代码块右上角提供复制按钮，一键复制纯代码并显示成功或失败反馈。
+- **Mermaid 图表**：离线渲染 `mermaid` 围栏中的流程图、时序图等常用图表；单击图表可进入独立查看器缩放、拖动或另存为 SVG，无需 CDN，语法错误会在原位置显示说明而不会清空预览。
 - **本地图片**：安全显示文档目录内的 PNG、JPEG、GIF、BMP 和 WebP 相对路径图片。
 - **独立图片查看器**：单击预览图片后在单独窗口中打开，可最小化、最大化和拖动窗口；支持滚轮缩放、左键平移、100%、适应窗口和安全另存为。
 - **截图与图床**：直接粘贴微信等截图，可保存到可配置的本地目录或由用户明确上传到 ImgBB。
@@ -85,7 +86,7 @@
 
 ## 开发
 
-技术栈：C#、.NET 10、WPF、AvalonEdit、Markdig、WebView2、xUnit、Inno Setup。
+技术栈：C#、.NET 10、WPF、AvalonEdit、Markdig、Mermaid、WebView2、xUnit、Inno Setup。
 
 ```powershell
 dotnet restore --locked-mode
@@ -101,4 +102,4 @@ $releaseVersion = Read-Host '请输入三段式版本号（例如 1.2.3）'
 
 ## 版本与许可
 
-版本变化见 [CHANGELOG.md](./CHANGELOG.md)。本项目采用 [Apache License 2.0](./LICENSE) 开源许可。
+版本变化见 [CHANGELOG.md](./CHANGELOG.md)。本项目采用 [Apache License 2.0](./LICENSE) 开源许可，内置组件的许可信息见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)。

@@ -4,6 +4,17 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.6] - 2026-08-31
+
+### 新增
+
+- 支持离线渲染以 `mermaid` 标记的围栏代码块，包括流程图、时序图等 Mermaid 语法；首次打开、正文增量更新与 PDF 导出都会等待图表渲染完成，语法错误在原位置显示可展开的源码和简短说明。单击已渲染图表可复用独立图片查看器进行缩放、拖动和另存为 SVG。
+
+### 安全与稳定性
+
+- 固定使用修复已知 CSS 注入问题的 Mermaid 11.16.1；采用严格安全级别并锁定安全配置，限制单图源码长度、单文档图表数和边数。生成的 SVG 会移除主动及外部内容，再作为惰性图片隔离显示，Markdown 页面仍保持 `script-src 'none'` 且不依赖 CDN。
+- 新增第三方组件许可与来源校验记录，安装目录同步附带 `THIRD-PARTY-NOTICES.md`。
+
 ## [1.7.5] - 2026-08-28
 
 ### 新增
@@ -227,7 +238,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.5...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.6...HEAD
+[1.7.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.5...v1.7.6
 [1.7.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.4...v1.7.5
 [1.7.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.2...v1.7.3

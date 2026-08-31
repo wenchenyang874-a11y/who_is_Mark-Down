@@ -45,7 +45,8 @@ public sealed class PreviewWebViewService : IDisposable
             window.chrome.webview.postMessage({
               type: 'open-preview-image',
               source,
-              alternativeText: image.alt || ''
+              alternativeText: image.alt || '',
+              generatedDiagram: image.dataset.wimdGeneratedDiagram === 'true'
             });
           };
 
@@ -125,7 +126,11 @@ public sealed class PreviewWebViewService : IDisposable
             if (!preview) return;
             preview.querySelectorAll('pre').forEach(block => {
               const code = block.querySelector(':scope > code') || block.querySelector('code');
-              if (!code || !code.textContent?.trim() || block.parentElement?.classList.contains('wimd-code-block')) return;
+              if (!code
+                  || block.classList.contains('mermaid')
+                  || code.classList.contains('language-mermaid')
+                  || !code.textContent?.trim()
+                  || block.parentElement?.classList.contains('wimd-code-block')) return;
 
               // Keep the button outside the horizontally scrolling pre element so
               // it remains pinned to the visible top-right corner.
@@ -183,6 +188,7 @@ public sealed class PreviewWebViewService : IDisposable
 
           document.addEventListener('DOMContentLoaded', prepareCodeBlocks, { once: true });
           document.addEventListener('wimd:preview-updated', prepareCodeBlocks);
+          document.addEventListener('wimd:mermaid-rendered', prepareCodeBlocks);
         })();
         """;
 
@@ -267,6 +273,7 @@ public sealed class PreviewWebViewService : IDisposable
 
     private readonly WebView2 webView;
     private readonly IClipboardTextService clipboardTextService;
+    private readonly string mermaidScript;
     private readonly PreviewNavigationGate navigationGate = new();
     private readonly PreviewResourceMappingState resourceMappingState = new();
     private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
@@ -281,11 +288,13 @@ public sealed class PreviewWebViewService : IDisposable
 
     public PreviewWebViewService(
         WebView2 webView,
-        IClipboardTextService clipboardTextService)
+        IClipboardTextService clipboardTextService,
+        string mermaidLibraryScript)
     {
         this.webView = webView ?? throw new ArgumentNullException(nameof(webView));
         this.clipboardTextService = clipboardTextService
             ?? throw new ArgumentNullException(nameof(clipboardTextService));
+        mermaidScript = MermaidPreviewScript.Build(mermaidLibraryScript);
         this.webView.DefaultBackgroundColor = Color.Transparent;
     }
 
@@ -331,6 +340,7 @@ public sealed class PreviewWebViewService : IDisposable
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsWebMessageEnabled = true;
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(mermaidScript).ConfigureAwait(true);
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ScrollReportingScript).ConfigureAwait(true);
         await core.AddScriptToExecuteOnDocumentCreatedAsync(ImageInteractionScript).ConfigureAwait(true);
         await core.AddScriptToExecuteOnDocumentCreatedAsync(CodeBlockCopyScript).ConfigureAwait(true);
@@ -382,8 +392,10 @@ public sealed class PreviewWebViewService : IDisposable
             throw new InvalidOperationException("预览组件尚未初始化。");
         }
 
-        // Remote images can finish after the DOM update. Bound the wait so a dead
-        // image host cannot make PDF export hang indefinitely.
+        await WaitForMermaidRenderingAsync().WaitAsync(cancellationToken).ConfigureAwait(true);
+
+        // Remote images and generated Mermaid image surfaces can finish after the
+        // DOM update. Bound the wait so a dead image host cannot hang PDF export.
         await core.ExecuteScriptAsync("""
             (async () => {
               const pending = [...document.images]
@@ -636,7 +648,34 @@ public sealed class PreviewWebViewService : IDisposable
 
         string result = await core.ExecuteScriptAsync(PreviewUpdateScriptBuilder.Build(bodyHtml))
             .ConfigureAwait(true);
-        return string.Equals(result, "true", StringComparison.Ordinal);
+        if (!string.Equals(result, "true", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        await WaitForMermaidRenderingAsync().ConfigureAwait(true);
+        return true;
+    }
+
+    private async Task WaitForMermaidRenderingAsync()
+    {
+        if (core is null)
+        {
+            return;
+        }
+
+        // Host rendering is bounded so malformed or unexpectedly expensive diagrams
+        // cannot permanently block typing, view switching, or PDF export.
+        await core.ExecuteScriptAsync("""
+            (async () => {
+              if (!window.wimdMermaid) return true;
+              await Promise.race([
+                window.wimdMermaid.whenIdle(),
+                new Promise(resolve => setTimeout(resolve, 8000))
+              ]);
+              return true;
+            })();
+            """).ConfigureAwait(true);
     }
 
     private async Task ExecuteHostScriptAsync(string script)
@@ -738,6 +777,7 @@ public sealed class PreviewWebViewService : IDisposable
 
         try
         {
+            await WaitForMermaidRenderingAsync().ConfigureAwait(true);
             if (pendingPreview is not null)
             {
                 await ProcessPreviewQueueAsync().ConfigureAwait(true);
@@ -905,9 +945,16 @@ public sealed class PreviewWebViewService : IDisposable
             out JsonElement alternativeTextElement)
             ? alternativeTextElement.GetString()
             : null;
+        bool isGeneratedDiagram = root.TryGetProperty(
+            "generatedDiagram",
+            out JsonElement generatedDiagramElement)
+            && generatedDiagramElement.ValueKind is JsonValueKind.True;
         PreviewImageOpenRequested?.Invoke(
             this,
-            new PreviewImageOpenRequestedEventArgs(source, alternativeText));
+            new PreviewImageOpenRequestedEventArgs(
+                source,
+                alternativeText,
+                isGeneratedDiagram));
     }
 
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs eventArgs)

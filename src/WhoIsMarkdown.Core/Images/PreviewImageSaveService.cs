@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using WhoIsMarkdown.Core.Markdown;
 
 namespace WhoIsMarkdown.Core.Images;
@@ -87,6 +90,33 @@ public sealed class PreviewImageSaveService : IDisposable
             extension,
             CreateSuggestedFileName(sourceName, alternativeText, extension),
             remoteImagePolicy);
+    }
+
+    /// <summary>
+    /// Accepts only the base64 SVG emitted by WIMD's trusted Mermaid bridge. This
+    /// path is deliberately separate from Resolve so Markdown-authored SVG data
+    /// URIs and local SVG files remain blocked.
+    /// </summary>
+    public PreviewImageSaveSource ResolveGeneratedSvgDataUri(
+        string source,
+        string? alternativeText)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(source);
+        const string header = "data:image/svg+xml;base64,";
+        if (!source.StartsWith(header, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new PreviewImageSaveException("生成的 Mermaid 图表数据格式无效。");
+        }
+
+        string payload = source[header.Length..];
+        byte[] bytes = DecodeDataUriBytes(payload);
+        ValidateGeneratedSvg(bytes);
+        return new PreviewImageSaveSource(
+            PreviewImageSourceKind.GeneratedSvg,
+            payload,
+            ".svg",
+            CreateSuggestedFileName(null, alternativeText ?? "Mermaid 图表", ".svg"));
     }
 
     public async Task<bool> SaveAsync(
@@ -184,14 +214,15 @@ public sealed class PreviewImageSaveService : IDisposable
         return new PreparedPreviewImage(
             targetPath,
             source.Extension,
-            source.SuggestedFileName);
+            source.SuggestedFileName,
+            source.Kind is PreviewImageSourceKind.GeneratedSvg);
     }
 
     /// <summary>
     /// Saves a prepared viewer image through the same extension, size and atomic
     /// replacement checks used for direct preview saves.
     /// </summary>
-    public Task<bool> SavePreparedAsync(
+    public async Task<bool> SavePreparedAsync(
         PreparedPreviewImage preparedImage,
         string targetPath,
         CancellationToken cancellationToken = default)
@@ -212,7 +243,19 @@ public sealed class PreviewImageSaveService : IDisposable
             throw new PreviewImageSaveException("预览图片为空或超过 32 MB，无法保存。");
         }
 
-        string extension = ValidateExtension(Path.GetExtension(preparedPath));
+        string extension;
+        if (preparedImage.IsGeneratedSvg)
+        {
+            extension = Path.GetExtension(preparedPath).Equals(".svg", StringComparison.OrdinalIgnoreCase)
+                ? ".svg"
+                : throw new PreviewImageSaveException("图片查看器中的 Mermaid 图表类型已改变。");
+            ValidateGeneratedSvg(await File.ReadAllBytesAsync(preparedPath, cancellationToken)
+                .ConfigureAwait(false));
+        }
+        else
+        {
+            extension = ValidateExtension(Path.GetExtension(preparedPath));
+        }
         if (!extension.Equals(preparedImage.Extension, StringComparison.OrdinalIgnoreCase))
         {
             throw new PreviewImageSaveException("图片查看器中的临时图片类型已改变。");
@@ -223,7 +266,7 @@ public sealed class PreviewImageSaveService : IDisposable
             preparedPath,
             extension,
             preparedImage.SuggestedFileName);
-        return SaveAsync(source, targetPath, cancellationToken);
+        return await SaveAsync(source, targetPath, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -360,6 +403,7 @@ public sealed class PreviewImageSaveService : IDisposable
                 break;
 
             case PreviewImageSourceKind.DataUri:
+            case PreviewImageSourceKind.GeneratedSvg:
                 await WriteDataUriAsync(source.Value, destination, cancellationToken).ConfigureAwait(false);
                 break;
 
@@ -377,22 +421,126 @@ public sealed class PreviewImageSaveService : IDisposable
         Stream destination,
         CancellationToken cancellationToken)
     {
-        byte[] bytes;
+        byte[] bytes = DecodeDataUriBytes(payload);
+
+        await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static byte[] DecodeDataUriBytes(string payload)
+    {
+        long estimatedBytes = ((long)payload.Length + 3) / 4 * 3;
+        if (payload.Length == 0 || estimatedBytes > MaximumImageBytes)
+        {
+            throw new PreviewImageSaveException("预览图片为空或超过 32 MB，无法保存。");
+        }
+
         try
         {
-            bytes = Convert.FromBase64String(payload);
+            byte[] bytes = Convert.FromBase64String(payload);
+            if (bytes.Length == 0 || bytes.LongLength > MaximumImageBytes)
+            {
+                throw new PreviewImageSaveException("预览图片为空或超过 32 MB，无法保存。");
+            }
+
+            return bytes;
         }
         catch (FormatException exception)
         {
             throw new PreviewImageSaveException("内嵌图片的 Base64 数据无效。", exception);
         }
+    }
 
-        if (bytes.Length == 0 || bytes.LongLength > MaximumImageBytes)
+    private static void ValidateGeneratedSvg(byte[] bytes)
+    {
+        try
         {
-            throw new PreviewImageSaveException("预览图片为空或超过 32 MB，无法保存。");
+            XmlReaderSettings settings = new()
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaximumImageBytes,
+            };
+            using MemoryStream stream = new(bytes, writable: false);
+            using XmlReader reader = XmlReader.Create(stream, settings);
+            XDocument document = XDocument.Load(reader, LoadOptions.None);
+            XElement root = document.Root
+                ?? throw new PreviewImageSaveException("生成的 Mermaid SVG 缺少根元素。");
+            if (!root.Name.LocalName.Equals("svg", StringComparison.OrdinalIgnoreCase)
+                || root.Name.NamespaceName != "http://www.w3.org/2000/svg")
+            {
+                throw new PreviewImageSaveException("生成的 Mermaid 图表不是有效的 SVG。");
+            }
+
+            HashSet<string> blockedElements = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "script", "foreignObject", "iframe", "object", "embed", "image", "audio",
+                "video", "link", "meta",
+            };
+            foreach (XElement element in root.DescendantsAndSelf())
+            {
+                if (blockedElements.Contains(element.Name.LocalName))
+                {
+                    throw new PreviewImageSaveException("生成的 Mermaid SVG 包含不安全元素。");
+                }
+
+                foreach (XAttribute attribute in element.Attributes())
+                {
+                    string name = attribute.Name.LocalName;
+                    string value = attribute.Value.Trim();
+                    if (name.StartsWith("on", StringComparison.OrdinalIgnoreCase)
+                        || name.Equals("src", StringComparison.OrdinalIgnoreCase)
+                        || ((name.Equals("href", StringComparison.OrdinalIgnoreCase)
+                                || name.Equals("xlink:href", StringComparison.OrdinalIgnoreCase))
+                            && !value.StartsWith('#'))
+                        || (name.Equals("style", StringComparison.OrdinalIgnoreCase)
+                            && HasUnsafeSvgCss(value)))
+                    {
+                        throw new PreviewImageSaveException("生成的 Mermaid SVG 包含不安全属性。");
+                    }
+                }
+
+                if (element.Name.LocalName.Equals("style", StringComparison.OrdinalIgnoreCase)
+                    && HasUnsafeSvgCss(element.Value))
+                {
+                    throw new PreviewImageSaveException("生成的 Mermaid SVG 包含不安全样式。");
+                }
+            }
+        }
+        catch (PreviewImageSaveException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is XmlException or InvalidOperationException)
+        {
+            throw new PreviewImageSaveException("生成的 Mermaid SVG 无法通过安全校验。", exception);
+        }
+    }
+
+    private static bool HasUnsafeSvgCss(string value)
+    {
+        if (Regex.IsMatch(
+                value,
+                "@import|expression\\s*\\(|javascript\\s*:|data\\s*:|https?\\s*:",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                TimeSpan.FromMilliseconds(50)))
+        {
+            return true;
         }
 
-        await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        foreach (Match match in Regex.Matches(
+                     value,
+                     "url\\s*\\(([^)]*)\\)",
+                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                     TimeSpan.FromMilliseconds(50)))
+        {
+            string target = match.Groups[1].Value.Trim().Trim('\'', '"');
+            if (!target.StartsWith('#'))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task DownloadRemoteAsync(

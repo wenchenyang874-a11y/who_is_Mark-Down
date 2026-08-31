@@ -1,0 +1,2 @@
+# Preserve the exact audited bytes of the pinned third-party Mermaid bundle.
+src/WhoIsMarkdown.App/Resources/mermaid.min.js -text -whitespace

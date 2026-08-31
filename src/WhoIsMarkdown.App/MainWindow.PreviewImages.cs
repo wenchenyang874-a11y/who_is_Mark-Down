@@ -35,11 +35,15 @@ public partial class MainWindow
 
         try
         {
-            PreviewImageSaveSource source = previewImageSaveService.Resolve(
-                eventArgs.Source,
-                document.FilePath,
-                eventArgs.AlternativeText,
-                CreateRemoteImagePolicy());
+            PreviewImageSaveSource source = eventArgs.IsGeneratedDiagram
+                ? previewImageSaveService.ResolveGeneratedSvgDataUri(
+                    eventArgs.Source,
+                    eventArgs.AlternativeText)
+                : previewImageSaveService.Resolve(
+                    eventArgs.Source,
+                    document.FilePath,
+                    eventArgs.AlternativeText,
+                    CreateRemoteImagePolicy());
             cacheDirectory = Path.Combine(GetPreviewImageCacheRoot(), Guid.NewGuid().ToString("N"));
             UpdateStatus(source.RequiresNetwork ? "正在下载图片并打开查看器…" : "正在打开图片查看器…");
             PreparedPreviewImage preparedImage = await previewImageSaveService.PrepareAsync(

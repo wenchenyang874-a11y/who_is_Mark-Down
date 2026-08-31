@@ -100,8 +100,16 @@ public partial class MainWindow : Window
 
         try
         {
-            previewStyleSheet = ReadPreviewStyleSheet();
-            previewService = new PreviewWebViewService(Preview, clipboardTextService);
+            previewStyleSheet = ReadComponentTextResource(
+                "preview.css",
+                "找不到预览样式资源。");
+            string mermaidLibraryScript = ReadComponentTextResource(
+                "mermaid.min.js",
+                "找不到 Mermaid 离线渲染资源。");
+            previewService = new PreviewWebViewService(
+                Preview,
+                clipboardTextService,
+                mermaidLibraryScript);
             previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
             previewService.PreviewImageOpenRequested += PreviewService_PreviewImageOpenRequested;
@@ -397,7 +405,7 @@ public partial class MainWindow : Window
         previewCancellation = null;
     }
 
-    private static string ReadPreviewStyleSheet()
+    private static string ReadComponentTextResource(string fileName, string missingMessage)
     {
         // Bug fix: resolve the resource from WIMD's component assembly rather
         // than the process entry assembly. This keeps preview initialization
@@ -405,12 +413,12 @@ public partial class MainWindow : Window
         string assemblyName = typeof(MainWindow).Assembly.GetName().Name
             ?? throw new InvalidOperationException("无法确定预览资源程序集。");
         Uri resourceUri = new(
-            $"/{assemblyName};component/Resources/preview.css",
+            $"/{assemblyName};component/Resources/{fileName}",
             UriKind.Relative);
         StreamResourceInfo? resource = Application.GetResourceStream(resourceUri);
         if (resource is null)
         {
-            throw new InvalidOperationException("找不到预览样式资源。");
+            throw new InvalidOperationException(missingMessage);
         }
 
         using StreamReader reader = new(resource.Stream);

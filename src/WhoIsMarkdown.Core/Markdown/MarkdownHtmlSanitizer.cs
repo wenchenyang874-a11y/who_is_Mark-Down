@@ -28,7 +28,8 @@ public sealed class MarkdownHtmlSanitizer
 
     private static readonly HashSet<string> KnownClasses = new(StringComparer.Ordinal)
     {
-        "contains-task-list", "footnote-backref", "footnote-ref", "footnotes", "math", "task-list-item",
+        "contains-task-list", "footnote-backref", "footnote-ref", "footnotes", "math", "mermaid",
+        "task-list-item",
     };
 
     private readonly HtmlSanitizer sanitizer;
@@ -115,7 +116,7 @@ public sealed class MarkdownHtmlSanitizer
 
         string[] safeClasses = value
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-            .Where(IsSafeClass)
+            .Where(candidate => IsSafeClass(element.LocalName, candidate))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         if (safeClasses.Length == 0)
@@ -127,8 +128,13 @@ public sealed class MarkdownHtmlSanitizer
         element.SetAttribute("class", string.Join(' ', safeClasses));
     }
 
-    private static bool IsSafeClass(string value)
+    private static bool IsSafeClass(string tag, string value)
     {
+        if (string.Equals(value, "mermaid", StringComparison.Ordinal))
+        {
+            return string.Equals(tag, "pre", StringComparison.OrdinalIgnoreCase);
+        }
+
         if (KnownClasses.Contains(value))
         {
             return true;

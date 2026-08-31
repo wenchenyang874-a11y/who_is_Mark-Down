@@ -363,6 +363,82 @@ img {
   outline-offset: 4px;
 }
 
+.wimd-mermaid-diagram {
+  margin: 1.15em 0;
+}
+
+.wimd-mermaid-surface {
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 18px;
+  border: 1px solid var(--wimd-border, rgba(184, 193, 211, 0.76));
+  border-radius: 10px;
+  background: var(--wimd-code-bg, rgba(238, 241, 247, 0.56));
+}
+
+.wimd-mermaid-image {
+  display: block;
+  width: 100%;
+  min-width: 360px;
+  margin: 0 auto;
+  border-radius: 0;
+  cursor: zoom-in;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.wimd-mermaid-surface::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.wimd-mermaid-surface::-webkit-scrollbar-track,
+.wimd-mermaid-surface::-webkit-scrollbar-corner {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.wimd-mermaid-surface::-webkit-scrollbar-thumb {
+  min-width: 36px;
+  min-height: 36px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--wimd-scroll-thumb, rgba(89, 97, 117, 0.58));
+  background-clip: padding-box;
+}
+
+.wimd-mermaid-surface::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.wimd-mermaid-error {
+  margin: 1em 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(190, 86, 96, 0.48);
+  border-radius: 10px;
+  color: var(--wimd-text, #20283a);
+  background: rgba(255, 243, 244, 0.82);
+}
+
+.wimd-mermaid-error > strong {
+  color: #a63f49;
+}
+
+.wimd-mermaid-error > p {
+  margin: 0.35em 0 0.6em;
+  color: var(--wimd-secondary, #71798c);
+}
+
+.wimd-mermaid-error summary {
+  cursor: pointer;
+}
+
+.wimd-mermaid-error pre {
+  margin-bottom: 0;
+}
+
 hr {
   height: 1px;
   margin: 2em 0;
@@ -419,5 +495,10 @@ hr {
 
   .wimd-code-copy-button {
     display: none;
+  }
+
+  .wimd-mermaid-surface {
+    overflow: visible;
+    background: #ffffff;
   }
 }

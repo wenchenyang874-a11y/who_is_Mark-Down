@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using WhoIsMarkdown.Core.Images;
 using WhoIsMarkdown.Core.Markdown;
 using WhoIsMarkdown.Core.Settings;
@@ -116,6 +117,70 @@ public sealed class PreviewImageSaveServiceTests
         Assert.Equal(expected, await File.ReadAllBytesAsync(
             target,
             TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Mermaid图表_安全Svg_可在查看器缓存并另存矢量文件()
+    {
+        using TemporaryDirectory temporary = new();
+        const string svg = """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
+              <style>#node { fill: #eef0fa; } #arrow { marker-end: url(#tip); }</style>
+              <defs><marker id="tip"><path d="M0 0L4 2L0 4Z" /></marker></defs>
+              <rect id="node" width="80" height="30" />
+              <path id="arrow" d="M80 15L110 15" />
+            </svg>
+            """;
+        string dataUri = $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(svg))}";
+        using PreviewImageSaveService service = new(new RecordingHandler(
+            _ => throw new InvalidOperationException("生成的 SVG 不应联网")));
+
+        PreviewImageSaveSource source = service.ResolveGeneratedSvgDataUri(dataUri, "训练流程");
+        PreparedPreviewImage prepared = await service.PrepareAsync(
+            source,
+            Path.Combine(temporary.Path, "cache"),
+            TestContext.Current.CancellationToken);
+        string target = Path.Combine(temporary.Path, "训练流程.svg");
+        bool saved = await service.SavePreparedAsync(
+            prepared,
+            target,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(saved);
+        Assert.Equal(".svg", prepared.Extension);
+        Assert.Equal("训练流程.svg", prepared.SuggestedFileName);
+        Assert.Equal(svg, await File.ReadAllTextAsync(
+            target,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void Mermaid图表_含脚本的Svg_拒绝进入查看器()
+    {
+        const string unsafeSvg =
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>";
+        string dataUri = $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(unsafeSvg))}";
+        using PreviewImageSaveService service = new(new RecordingHandler(
+            _ => throw new InvalidOperationException("生成的 SVG 不应联网")));
+
+        PreviewImageSaveException exception = Assert.Throws<PreviewImageSaveException>(() =>
+            service.ResolveGeneratedSvgDataUri(dataUri, null));
+
+        Assert.Contains("不安全元素", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 普通图片解析_用户提供Svg数据_仍然拒绝()
+    {
+        const string dataUri = "data:image/svg+xml;base64,PHN2Zy8+";
+        using PreviewImageSaveService service = new(new RecordingHandler(
+            _ => throw new InvalidOperationException("不应联网")));
+
+        Assert.Throws<PreviewImageSaveException>(() => service.Resolve(
+            dataUri,
+            null,
+            null,
+            RemoteImagePolicy.BlockAll));
     }
 
     [Fact]

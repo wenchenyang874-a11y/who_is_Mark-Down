@@ -39,5 +39,6 @@ internal enum PreviewImageSourceKind
 {
     LocalFile,
     DataUri,
+    GeneratedSvg,
     RemoteHttps,
 }

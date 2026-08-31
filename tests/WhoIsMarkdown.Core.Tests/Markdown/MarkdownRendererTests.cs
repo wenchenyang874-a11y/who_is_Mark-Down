@@ -52,6 +52,25 @@ public sealed class MarkdownRendererTests
     }
 
     [Fact]
+    public void RenderBody_Mermaid围栏_保留语言标记和源码行锚点()
+    {
+        const string markdown = """
+            ## 流程
+
+            ```mermaid
+            flowchart LR
+              A[开始] --> B[完成]
+            ```
+            """;
+
+        string html = renderer.RenderBody(markdown);
+
+        Assert.Contains("class=\"mermaid\"", html, StringComparison.Ordinal);
+        Assert.Contains("flowchart LR", html, StringComparison.Ordinal);
+        Assert.Contains("pragma-line-2", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RenderBody_TaskItems_PreservePerItemSourceLineAnchors()
     {
         string html = renderer.RenderBody("- [ ] 第一项\n- [x] 第二项");

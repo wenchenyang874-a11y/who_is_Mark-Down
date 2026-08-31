@@ -132,10 +132,8 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("dialog.ShowDialog(this)", selectHandler, StringComparison.Ordinal);
         Assert.Contains("BackgroundImageSelected?.Invoke(dialog.FileName)", selectHandler, StringComparison.Ordinal);
         Assert.DoesNotContain("Close()", selectHandler, StringComparison.Ordinal);
-        Assert.Contains(
-            ";component/Resources/preview.css",
-            mainWindowCode,
-            StringComparison.Ordinal);
+        Assert.Contains("ReadComponentTextResource", mainWindowCode, StringComparison.Ordinal);
+        Assert.Contains("\"preview.css\"", mainWindowCode, StringComparison.Ordinal);
         Assert.Contains(
             "typeof(MainWindow).Assembly.GetName().Name",
             mainWindowCode,

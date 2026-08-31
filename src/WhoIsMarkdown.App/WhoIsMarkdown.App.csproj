@@ -10,9 +10,9 @@
     <Product>WIMD</Product>
     <AssemblyTitle>WIMD</AssemblyTitle>
     <Description>Offline-first Markdown editor with real-time preview.</Description>
-    <Version>1.7.5</Version>
-    <FileVersion>1.7.5.0</FileVersion>
-    <AssemblyVersion>1.7.5.0</AssemblyVersion>
+    <Version>1.7.6</Version>
+    <FileVersion>1.7.6.0</FileVersion>
+    <AssemblyVersion>1.7.6.0</AssemblyVersion>
     <ApplicationIcon Condition="Exists('..\..\assets\app.ico')">..\..\assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -22,6 +22,8 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\preview.css" />
+    <Resource Include="Resources\mermaid.min.js" />
     <Resource Include="..\..\assets\app-icon.png" Link="Resources\app-icon.png" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

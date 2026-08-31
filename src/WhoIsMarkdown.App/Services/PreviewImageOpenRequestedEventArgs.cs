@@ -6,14 +6,20 @@ namespace WhoIsMarkdown.App.Services;
 /// </summary>
 public sealed class PreviewImageOpenRequestedEventArgs : EventArgs
 {
-    public PreviewImageOpenRequestedEventArgs(string source, string? alternativeText)
+    public PreviewImageOpenRequestedEventArgs(
+        string source,
+        string? alternativeText,
+        bool isGeneratedDiagram = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
         Source = source;
         AlternativeText = alternativeText;
+        IsGeneratedDiagram = isGeneratedDiagram;
     }
 
     public string? AlternativeText { get; }
+
+    public bool IsGeneratedDiagram { get; }
 
     public string Source { get; }
 }

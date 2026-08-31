@@ -6,11 +6,16 @@ namespace WhoIsMarkdown.Core.Images;
 /// </summary>
 public sealed class PreparedPreviewImage
 {
-    internal PreparedPreviewImage(string filePath, string extension, string suggestedFileName)
+    internal PreparedPreviewImage(
+        string filePath,
+        string extension,
+        string suggestedFileName,
+        bool isGeneratedSvg = false)
     {
         FilePath = filePath;
         Extension = extension;
         SuggestedFileName = suggestedFileName;
+        IsGeneratedSvg = isGeneratedSvg;
     }
 
     public string Extension { get; }
@@ -18,4 +23,6 @@ public sealed class PreparedPreviewImage
     public string FilePath { get; }
 
     public string SuggestedFileName { get; }
+
+    internal bool IsGeneratedSvg { get; }
 }
