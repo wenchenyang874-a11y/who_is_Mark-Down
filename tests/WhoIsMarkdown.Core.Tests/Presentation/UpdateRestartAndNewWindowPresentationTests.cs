@@ -30,6 +30,26 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
     }
 
     [Fact]
+    public void 安装更新_Wimd正在运行_只显示内置关闭应用确认()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string installer = File.ReadAllText(Path.Combine(repositoryRoot, "packaging", "WIMD.iss"));
+        string language = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "packaging",
+            "languages",
+            "ChineseSimplified.isl"));
+
+        Assert.Contains("function PrepareToInstall(var NeedsRestart: Boolean): String;", installer, StringComparison.Ordinal);
+        Assert.Contains("WriteRestartRequest('capture')", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("function ConfirmCloseAndInstall", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("function NextButtonClick", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("“关闭并安装”说明", installer, StringComparison.Ordinal);
+        Assert.Contains("选择“关闭 WIMD 并安装”后", language, StringComparison.Ordinal);
+        Assert.Contains("重新打开并恢复 WIMD 窗口", language, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 安装更新_未保存正文先写入临时恢复区且恢复后仍为未保存()
     {
         string repositoryRoot = FindRepositoryRoot();

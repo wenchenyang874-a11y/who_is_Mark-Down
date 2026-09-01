@@ -161,37 +161,20 @@ begin
       False);
 end;
 
-function ConfirmCloseAndInstall: Boolean;
-var
-  Prompt: string;
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  Prompt :=
-    '“关闭并安装”说明' + #13#10 + #13#10 +
-    '安装程序检测到 WIMD 正在运行。继续后将：' + #13#10 +
-    '1. 把各窗口尚未保存的 Markdown 正文写入当前用户的临时恢复区；' + #13#10 +
-    '2. 关闭 WIMD 并覆盖安装；' + #13#10 +
-    '3. 在安装完成页面默认勾选“重新打开并恢复 WIMD 窗口”。' + #13#10 + #13#10 +
-    '恢复后，未保存的文档仍保持“未保存”状态，不会自动覆盖原文件。' + #13#10 +
-    '如果取消完成页勾选，恢复数据会保留到下次启动 WIMD。' + #13#10 + #13#10 +
-    '点击“确定”继续关闭并安装，或点击“取消”返回。';
-  Result := MsgBox(Prompt, mbConfirmation, MB_OKCANCEL) = IDOK;
-end;
-
-function NextButtonClick(CurPageID: Integer): Boolean;
-begin
-  Result := True;
-  if (CurPageID <> wpReady) or RestartRequestCreated then
+  Result := '';
+  NeedsRestart := False;
+  if RestartRequestCreated then
     Exit;
 
   if not CheckForMutexes(WimdRunningMutexName) then
     Exit;
 
-  if not ConfirmCloseAndInstall then
-  begin
-    Result := False;
-    Exit;
-  end;
-
+  { Bug fix: CloseApplications already owns the single interactive choice on
+    Inno Setup's Preparing to Install page. Prepare the capture request here,
+    immediately before Restart Manager checks and closes WIMD, without showing
+    a second custom confirmation dialog for the same operation. }
   RestartRequestToken :=
     { Pascal Script expects Char separators here. Empty strings compile but
       raise Type Mismatch only after the close-and-install confirmation. }
@@ -199,15 +182,9 @@ begin
     IntToStr(Random(1000000000));
   RestartRequestCreated := WriteRestartRequest('capture');
   if not RestartRequestCreated then
-  begin
-    MsgBox(
-      '无法创建 WIMD 临时恢复区。为避免丢失未保存的文档，安装已暂停。' +
-      '' + #13#10 + #13#10 +
-      '请先在 WIMD 中手动保存文档，然后重试。',
-      mbError,
-      MB_OK);
-    Result := False;
-  end;
+    Result :=
+      '无法创建 WIMD 临时恢复区。为避免丢失未保存的文档，安装已暂停。' + #13#10 + #13#10 +
+      '请先在 WIMD 中手动保存文档，然后重试。';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

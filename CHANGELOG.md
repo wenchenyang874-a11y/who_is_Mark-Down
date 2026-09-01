@@ -4,6 +4,12 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.9] - 2026-09-01
+
+### 修复
+
+- 修复升级安装时先显示自定义“关闭并安装”弹窗、随后又显示 Inno Setup 内置“WIMD 正在运行”页面的重复确认；现在只保留内置关闭应用页面，并在同一处完整说明未保存文档临时恢复和安装后重新打开机制。
+
 ## [1.7.8] - 2026-09-01
 
 ### 新增
@@ -251,7 +257,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.8...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.9...HEAD
+[1.7.9]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.8...v1.7.9
 [1.7.8]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.6...v1.7.8
 [1.7.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.5...v1.7.6
 [1.7.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.4...v1.7.5
