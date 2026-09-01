@@ -15,7 +15,7 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
     private const string InertPixel =
         "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 
-    private static readonly HashSet<string> SupportedExtensions = new(
+    private static readonly HashSet<string> SupportedLocalExtensions = new(
         StringComparer.OrdinalIgnoreCase)
     {
         ".png",
@@ -24,7 +24,12 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
         ".gif",
         ".bmp",
         ".webp",
+        ".svg",
     };
+
+    private static readonly HashSet<string> SupportedRemoteExtensions = new(
+        SupportedLocalExtensions.Where(extension => extension != ".svg"),
+        StringComparer.OrdinalIgnoreCase);
 
     private static readonly string[] SupportedDataImagePrefixes =
     [
@@ -79,7 +84,7 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
             && !absoluteUri.IsFile)
         {
             return remoteImagePolicy.Allows(absoluteUri)
-                && SupportedExtensions.Contains(Path.GetExtension(absoluteUri.AbsolutePath))
+                && SupportedRemoteExtensions.Contains(Path.GetExtension(absoluteUri.AbsolutePath))
                 ? WebUtility.HtmlEncode(absoluteUri.AbsoluteUri)
                 : InertPixel;
         }
@@ -97,7 +102,7 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
                 : Path.GetFullPath(pathPart, documentDirectory);
 
             if (!IsWithinDirectory(candidate, documentDirectory)
-                || !SupportedExtensions.Contains(Path.GetExtension(candidate)))
+                || !SupportedLocalExtensions.Contains(Path.GetExtension(candidate)))
             {
                 return InertPixel;
             }
@@ -109,6 +114,9 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                     StringSplitOptions.RemoveEmptyEntries)
                     .Select(Uri.EscapeDataString));
+            // Local SVG remains confined to the virtual host and is requested only
+            // as an <img>. PreviewWebViewService intercepts that image request and
+            // returns sanitized static bytes; remote and data SVG stay blocked.
             return $"https://{VirtualHostName}/{escapedPath}";
         }
         catch (Exception exception) when (exception is ArgumentException

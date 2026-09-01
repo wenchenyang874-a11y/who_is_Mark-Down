@@ -1,3 +1,4 @@
+using System.Text;
 using WhoIsMarkdown.Core.Images;
 
 namespace WhoIsMarkdown.Core.Tests.Images;
@@ -66,5 +67,38 @@ public sealed class LocalImageStorageServiceTests
         Assert.Empty(Directory.GetFiles(
             Path.GetDirectoryName(image.FilePath)!,
             ".wimd-image-*.tmp"));
+    }
+
+    [Fact]
+    public async Task 保存Svg_含活动内容_只落盘安全静态副本()
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string documentPath = Path.Combine(temporaryDirectory.Path, "说明.md");
+        string sourcePath = Path.Combine(temporaryDirectory.Path, "流程图.svg");
+        const string svg = """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40">
+              <script>alert(1)</script>
+              <rect width="80" height="40" onmouseover="alert(2)" />
+            </svg>
+            """;
+        await File.WriteAllTextAsync(
+            sourcePath,
+            svg,
+            Encoding.UTF8,
+            TestContext.Current.CancellationToken);
+
+        StoredLocalImage image = await LocalImageStorageService.StoreFileAsync(
+            documentPath,
+            "./img/",
+            sourcePath,
+            TestContext.Current.CancellationToken);
+        string stored = await File.ReadAllTextAsync(
+            image.FilePath,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("./img/流程图.svg", image.MarkdownPath);
+        Assert.DoesNotContain("script", stored, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("onmouseover", stored, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<rect", stored, StringComparison.Ordinal);
     }
 }

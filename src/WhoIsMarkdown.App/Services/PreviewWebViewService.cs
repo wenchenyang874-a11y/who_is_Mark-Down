@@ -5,6 +5,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using WhoIsMarkdown.Core.Images;
 using WhoIsMarkdown.Core.Markdown;
 using WhoIsMarkdown.Core.Security;
 
@@ -17,6 +18,9 @@ namespace WhoIsMarkdown.App.Services;
 /// </summary>
 public sealed class PreviewWebViewService : IDisposable
 {
+    private const string DocumentImageResourcePattern =
+        "https://wimd-document.invalid/*";
+
     private const string ScrollReportingScript = """
         (() => {
           let scheduled = false;
@@ -349,6 +353,10 @@ public sealed class PreviewWebViewService : IDisposable
         core.NavigationCompleted += OnNavigationCompleted;
         core.NewWindowRequested += OnNewWindowRequested;
         core.WebMessageReceived += OnWebMessageReceived;
+        core.AddWebResourceRequestedFilter(
+            DocumentImageResourcePattern,
+            CoreWebView2WebResourceContext.Image);
+        core.WebResourceRequested += OnWebResourceRequested;
         initialized = true;
     }
 
@@ -548,6 +556,10 @@ public sealed class PreviewWebViewService : IDisposable
             core.NavigationCompleted -= OnNavigationCompleted;
             core.NewWindowRequested -= OnNewWindowRequested;
             core.WebMessageReceived -= OnWebMessageReceived;
+            core.WebResourceRequested -= OnWebResourceRequested;
+            core.RemoveWebResourceRequestedFilter(
+                DocumentImageResourcePattern,
+                CoreWebView2WebResourceContext.Image);
             core.ClearVirtualHostNameToFolderMapping(LocalImageUrlResolver.VirtualHostName);
             core = null;
         }
@@ -718,6 +730,116 @@ public sealed class PreviewWebViewService : IDisposable
             update.DirectoryPath,
             CoreWebView2HostResourceAccessKind.DenyCors);
         return true;
+    }
+
+    /// <summary>
+    /// Bug fix and security boundary: virtual-host mapping would otherwise expose
+    /// the original SVG bytes directly. Intercept only SVG image requests and
+    /// replace them with a bounded static-profile document; raster files continue
+    /// through WebView2's existing read-only folder mapping without extra copies.
+    /// </summary>
+    private async void OnWebResourceRequested(
+        object? sender,
+        CoreWebView2WebResourceRequestedEventArgs eventArgs)
+    {
+        if (!Uri.TryCreate(eventArgs.Request.Uri, UriKind.Absolute, out Uri? uri)
+            || !uri.IdnHost.Equals(
+                LocalImageUrlResolver.VirtualHostName,
+                StringComparison.OrdinalIgnoreCase)
+            || !Path.GetExtension(uri.AbsolutePath).Equals(
+                ".svg",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        CoreWebView2Deferral deferral = eventArgs.GetDeferral();
+        try
+        {
+            string filePath = ResolveLocalSvgPath(
+                uri,
+                resourceMappingState.DirectoryPath);
+            SafeSvgSanitizationResult safeSvg = await SafeSvgSanitizer.SanitizeFileAsync(filePath);
+            MemoryStream content = new(safeSvg.Bytes, writable: false);
+            eventArgs.Response = core?.Environment.CreateWebResourceResponse(
+                content,
+                200,
+                "OK",
+                "Content-Type: image/svg+xml; charset=utf-8\r\n"
+                    + "Cache-Control: no-store\r\n"
+                    + "X-Content-Type-Options: nosniff");
+        }
+        catch (Exception exception) when (exception is SafeSvgException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or InvalidOperationException
+            or NotSupportedException
+            or PathTooLongException
+            or UriFormatException)
+        {
+            MemoryStream empty = new(Array.Empty<byte>(), writable: false);
+            eventArgs.Response = core?.Environment.CreateWebResourceResponse(
+                empty,
+                403,
+                "SVG Blocked",
+                "Content-Type: image/svg+xml; charset=utf-8\r\n"
+                    + "Cache-Control: no-store\r\n"
+                    + "X-Content-Type-Options: nosniff");
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    private static string ResolveLocalSvgPath(Uri uri, string? documentDirectory)
+    {
+        if (documentDirectory is null)
+        {
+            throw new InvalidOperationException("当前预览没有本地资源目录。");
+        }
+
+        string directory = Path.GetFullPath(documentDirectory);
+        string candidate = directory;
+        foreach (string encodedSegment in uri.AbsolutePath.Split(
+                     '/',
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            string segment = Uri.UnescapeDataString(encodedSegment);
+            if (segment is "." or ".." || segment.IndexOfAny(['/', '\\']) >= 0)
+            {
+                throw new InvalidOperationException("SVG 地址包含不安全的路径片段。");
+            }
+
+            candidate = Path.Combine(candidate, segment);
+        }
+
+        string path = Path.GetFullPath(candidate);
+        string relative = Path.GetRelativePath(directory, path);
+        if (Path.IsPathFullyQualified(relative)
+            || relative.Equals("..", StringComparison.Ordinal)
+            || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            || relative.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
+            || !Path.GetExtension(path).Equals(".svg", StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(path))
+        {
+            throw new InvalidOperationException("SVG 超出当前文档目录或文件不存在。");
+        }
+
+        string current = directory;
+        foreach (string segment in relative.Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            if (File.GetAttributes(current).HasFlag(FileAttributes.ReparsePoint))
+            {
+                throw new InvalidOperationException("SVG 路径包含符号链接或目录联接。");
+            }
+        }
+
+        return path;
     }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs eventArgs)

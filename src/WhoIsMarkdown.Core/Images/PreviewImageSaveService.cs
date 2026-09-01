@@ -135,7 +135,7 @@ public sealed class PreviewImageSaveService : IDisposable
             throw new PreviewImageSaveException($"保存文件的扩展名必须为 {source.Extension}。");
         }
 
-        if (source.Kind == PreviewImageSourceKind.LocalFile
+        if (source.Kind is PreviewImageSourceKind.LocalFile or PreviewImageSourceKind.LocalSvg
             && Path.GetFullPath(source.Value).Equals(target, StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -215,7 +215,8 @@ public sealed class PreviewImageSaveService : IDisposable
             targetPath,
             source.Extension,
             source.SuggestedFileName,
-            source.Kind is PreviewImageSourceKind.GeneratedSvg);
+            source.Kind is PreviewImageSourceKind.GeneratedSvg,
+            source.Kind is PreviewImageSourceKind.LocalSvg);
     }
 
     /// <summary>
@@ -244,13 +245,28 @@ public sealed class PreviewImageSaveService : IDisposable
         }
 
         string extension;
-        if (preparedImage.IsGeneratedSvg)
+        if (preparedImage.IsSvg)
         {
             extension = Path.GetExtension(preparedPath).Equals(".svg", StringComparison.OrdinalIgnoreCase)
                 ? ".svg"
-                : throw new PreviewImageSaveException("图片查看器中的 Mermaid 图表类型已改变。");
-            ValidateGeneratedSvg(await File.ReadAllBytesAsync(preparedPath, cancellationToken)
-                .ConfigureAwait(false));
+                : throw new PreviewImageSaveException("图片查看器中的 SVG 类型已改变。");
+            if (preparedImage.IsGeneratedSvg)
+            {
+                ValidateGeneratedSvg(await File.ReadAllBytesAsync(preparedPath, cancellationToken)
+                    .ConfigureAwait(false));
+            }
+            else
+            {
+                try
+                {
+                    await SafeSvgSanitizer.SanitizeFileAsync(preparedPath, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (SafeSvgException exception)
+                {
+                    throw new PreviewImageSaveException("图片查看器中的 SVG 未通过安全复检。", exception);
+                }
+            }
         }
         else
         {
@@ -262,7 +278,9 @@ public sealed class PreviewImageSaveService : IDisposable
         }
 
         PreviewImageSaveSource source = new(
-            PreviewImageSourceKind.LocalFile,
+            preparedImage.IsSanitizedSvg
+                ? PreviewImageSourceKind.LocalSvg
+                : PreviewImageSourceKind.LocalFile,
             preparedPath,
             extension,
             preparedImage.SuggestedFileName);
@@ -367,7 +385,7 @@ public sealed class PreviewImageSaveService : IDisposable
             throw new PreviewImageSaveException("本地预览图片超出了当前文档目录。");
         }
 
-        string extension = ValidateExtension(Path.GetExtension(fullPath));
+        string extension = ValidateLocalExtension(Path.GetExtension(fullPath));
         if (!File.Exists(fullPath))
         {
             throw new PreviewImageSaveException("预览中的本地图片已不存在。");
@@ -375,7 +393,7 @@ public sealed class PreviewImageSaveService : IDisposable
 
         EnsureNoReparsePoint(directory, fullPath);
         return new PreviewImageSaveSource(
-            PreviewImageSourceKind.LocalFile,
+            extension == ".svg" ? PreviewImageSourceKind.LocalSvg : PreviewImageSourceKind.LocalFile,
             fullPath,
             extension,
             CreateSuggestedFileName(Path.GetFileName(fullPath), alternativeText, extension));
@@ -398,6 +416,23 @@ public sealed class PreviewImageSaveService : IDisposable
                     FileOptions.Asynchronous | FileOptions.SequentialScan))
                 {
                     await CopyWithLimitAsync(input, destination, cancellationToken).ConfigureAwait(false);
+                }
+
+                break;
+
+            case PreviewImageSourceKind.LocalSvg:
+                try
+                {
+                    SafeSvgSanitizationResult safeSvg = await SafeSvgSanitizer.SanitizeFileAsync(
+                        source.Value,
+                        cancellationToken).ConfigureAwait(false);
+                    await destination.WriteAsync(safeSvg.Bytes, cancellationToken).ConfigureAwait(false);
+                }
+                catch (SafeSvgException exception)
+                {
+                    throw new PreviewImageSaveException(
+                        $"SVG 无法通过安全静态过滤：{exception.Message}",
+                        exception);
                 }
 
                 break;
@@ -660,6 +695,13 @@ public sealed class PreviewImageSaveService : IDisposable
         }
 
         return extension.ToLowerInvariant();
+    }
+
+    private static string ValidateLocalExtension(string extension)
+    {
+        return extension.Equals(".svg", StringComparison.OrdinalIgnoreCase)
+            ? ".svg"
+            : ValidateExtension(extension);
     }
 
     private static bool IsDocumentVirtualHost(Uri uri)

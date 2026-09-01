@@ -13,11 +13,18 @@ public sealed class ImageAndPdfPresentationTests
             "src",
             "WhoIsMarkdown.App",
             "MainWindow.xaml"));
+        string imageCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.Images.cs"));
 
         Assert.Contains("Header=\"导出为 PDF...\"", mainWindow, StringComparison.Ordinal);
         Assert.Contains("Click=\"ExportPdf_Click\"", mainWindow, StringComparison.Ordinal);
         Assert.Contains("Click=\"InsertImage_Click\"", mainWindow, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"InsertImageToolbarButton\"", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("*.webp;*.svg", imageCode, StringComparison.Ordinal);
+        Assert.Contains("不会上传到 ImgBB", imageCode, StringComparison.Ordinal);
 
         XDocument document = XDocument.Parse(mainWindow);
         XElement settingsMenu = Assert.Single(
@@ -321,6 +328,9 @@ public sealed class ImageAndPdfPresentationTests
 
         Assert.Contains("open-preview-image", previewCode, StringComparison.Ordinal);
         Assert.Contains("PreviewImageOpenRequested", previewCode, StringComparison.Ordinal);
+        Assert.Contains("OnWebResourceRequested", previewCode, StringComparison.Ordinal);
+        Assert.Contains("SafeSvgSanitizer.SanitizeFileAsync", previewCode, StringComparison.Ordinal);
+        Assert.Contains("or InvalidOperationException", previewCode, StringComparison.Ordinal);
         Assert.Contains("image.draggable = false", previewCode, StringComparison.Ordinal);
         Assert.Contains("ResizeMode=\"CanResize\"", viewerXaml, StringComparison.Ordinal);
         Assert.Contains("ShowInTaskbar=\"True\"", viewerXaml, StringComparison.Ordinal);

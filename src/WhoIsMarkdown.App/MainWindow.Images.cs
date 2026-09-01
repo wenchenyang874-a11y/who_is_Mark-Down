@@ -26,7 +26,7 @@ public partial class MainWindow
         OpenFileDialog dialog = new()
         {
             Title = "选择要插入的图片",
-            Filter = "图片 (*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp",
+            Filter = "图片 (*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.svg)|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.svg",
             CheckFileExists = true,
             Multiselect = false,
         };
@@ -37,9 +37,27 @@ public partial class MainWindow
 
         string selectedPath = dialog.FileName;
         string altText = Path.GetFileNameWithoutExtension(selectedPath);
+        bool isSvg = Path.GetExtension(selectedPath).Equals(
+            ".svg",
+            StringComparison.OrdinalIgnoreCase);
+        if (isSvg && applicationSettings.ImageInsertion.StorageMode == ImageStorageMode.ImgBb)
+        {
+            MessageBoxResult choice = MessageBox.Show(
+                this,
+                "SVG 只支持经过安全过滤后保存到当前文档的本地图片目录，不会上传到 ImgBB。是否继续本地插入？",
+                "安全插入 SVG",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information,
+                MessageBoxResult.Yes);
+            if (choice != MessageBoxResult.Yes)
+            {
+                return;
+            }
+        }
+
         await RunImageOperationAsync(async cancellationToken =>
         {
-            if (applicationSettings.ImageInsertion.StorageMode == ImageStorageMode.ImgBb)
+            if (!isSvg && applicationSettings.ImageInsertion.StorageMode == ImageStorageMode.ImgBb)
             {
                 await UploadFileAndInsertAsync(selectedPath, altText, cancellationToken);
             }
@@ -141,14 +159,19 @@ public partial class MainWindow
             return;
         }
 
-        UpdateStatus("正在保存图片…");
+        bool isSvg = Path.GetExtension(sourcePath).Equals(
+            ".svg",
+            StringComparison.OrdinalIgnoreCase);
+        UpdateStatus(isSvg ? "正在安全过滤并保存 SVG…" : "正在保存图片…");
         StoredLocalImage image = await LocalImageStorageService.StoreFileAsync(
             document.FilePath!,
             applicationSettings.ImageInsertion.LocalDirectory,
             sourcePath,
             cancellationToken);
         InsertMarkdownImage(MarkdownImageFormatter.CreateLocal(altText, image.MarkdownPath));
-        UpdateStatus($"图片已保存到 {image.MarkdownPath}");
+        UpdateStatus(isSvg
+            ? $"SVG 已按安全静态模式保存到 {image.MarkdownPath}"
+            : $"图片已保存到 {image.MarkdownPath}");
     }
 
     private async Task StoreBytesAndInsertAsync(

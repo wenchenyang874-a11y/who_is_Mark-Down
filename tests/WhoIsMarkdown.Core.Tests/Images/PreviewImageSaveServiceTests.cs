@@ -155,6 +155,42 @@ public sealed class PreviewImageSaveServiceTests
     }
 
     [Fact]
+    public async Task 本地Svg_打开查看器并另存_复用安全过滤后的静态字节()
+    {
+        using TemporaryDirectory temporary = new();
+        string documentPath = Path.Combine(temporary.Path, "README.md");
+        string sourcePath = Path.Combine(temporary.Path, "flow.svg");
+        const string sourceSvg = """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
+              <script>alert(1)</script>
+              <rect width="120" height="40" onclick="alert(2)" />
+            </svg>
+            """;
+        await File.WriteAllTextAsync(documentPath, "# test", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(sourcePath, sourceSvg, TestContext.Current.CancellationToken);
+        using PreviewImageSaveService service = new(new RecordingHandler(
+            _ => throw new InvalidOperationException("本地 SVG 不应联网")));
+
+        PreviewImageSaveSource source = service.Resolve(
+            "https://wimd-document.invalid/flow.svg",
+            documentPath,
+            "流程图",
+            RemoteImagePolicy.BlockAll);
+        PreparedPreviewImage prepared = await service.PrepareAsync(
+            source,
+            Path.Combine(temporary.Path, "cache"),
+            TestContext.Current.CancellationToken);
+        string target = Path.Combine(temporary.Path, "saved.svg");
+        await service.SavePreparedAsync(prepared, target, TestContext.Current.CancellationToken);
+        string saved = await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken);
+
+        Assert.Equal(".svg", prepared.Extension);
+        Assert.DoesNotContain("script", saved, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("onclick", saved, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<rect", saved, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Mermaid图表_含脚本的Svg_拒绝进入查看器()
     {
         const string unsafeSvg =

@@ -38,6 +38,7 @@ public sealed class PreviewImageSaveSource
 internal enum PreviewImageSourceKind
 {
     LocalFile,
+    LocalSvg,
     DataUri,
     GeneratedSvg,
     RemoteHttps,

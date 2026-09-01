@@ -24,8 +24,8 @@ public sealed class LocalImageUrlResolverTests : IDisposable
 
     [Theory]
     [InlineData("https://example.com/tracker.png")]
+    [InlineData("https://example.com/vector.svg")]
     [InlineData("../outside.png")]
-    [InlineData("script.svg")]
     [InlineData("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")]
     public void RewriteGeneratedHtml_UnsafeOrUnsupportedImage_BecomesInert(string source)
     {
@@ -36,6 +36,20 @@ public sealed class LocalImageUrlResolverTests : IDisposable
 
         Assert.Contains("data:image/gif;base64,", result, StringComparison.Ordinal);
         Assert.DoesNotContain(source, result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteGeneratedHtml_本地Svg_使用受限虚拟主机()
+    {
+        string documentPath = Path.Combine(temporaryDirectory.Path, "指南.md");
+        const string html = "<img src=\"diagrams/flow.svg\" alt=\"流程图\" />";
+
+        string result = resolver.RewriteGeneratedHtml(html, documentPath);
+
+        Assert.Contains(
+            $"https://{LocalImageUrlResolver.VirtualHostName}/diagrams/flow.svg",
+            result,
+            StringComparison.Ordinal);
     }
 
     [Fact]
