@@ -402,6 +402,16 @@ public sealed class ImageAndPdfPresentationTests
             "src",
             "WhoIsMarkdown.App",
             "MainWindow.Editing.cs"));
+        string mainWindowCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml.cs"));
+        string scrollSyncCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.ScrollSync.cs"));
         string previewStyle = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
@@ -413,6 +423,16 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("PreviewTaskToggleRequest.TryCreate", previewCode, StringComparison.Ordinal);
         Assert.Contains("window.wimdTaskToggle?.complete", previewCode, StringComparison.Ordinal);
         Assert.Contains("MarkdownTaskListService.TryCreateStateEdit", editorCode, StringComparison.Ordinal);
+        Assert.Contains("suppressEditorDrivenPreviewSyncUntilReady = true", editorCode, StringComparison.Ordinal);
+        Assert.Contains("editorScrollSyncTimer.Stop()", editorCode, StringComparison.Ordinal);
+        Assert.Contains(
+            "SchedulePreview(synchronizePreviewToCaretWhenReady: !preservePreviewPosition)",
+            mainWindowCode,
+            StringComparison.Ordinal);
+        Assert.Contains("if (!eventArgs.SynchronizeToCaret)", scrollSyncCode, StringComparison.Ordinal);
+        Assert.Contains("ReleaseTaskPreviewPositionSuppression()", scrollSyncCode, StringComparison.Ordinal);
+        Assert.Contains("suppressEditorDrivenPreviewSyncUntilReady = false", scrollSyncCode, StringComparison.Ordinal);
+        Assert.Contains("snapshot.SynchronizeToCaretWhenReady", previewCode, StringComparison.Ordinal);
         Assert.Contains(".wimd-task-completed", previewStyle, StringComparison.Ordinal);
         Assert.Contains("#17835c", previewStyle, StringComparison.OrdinalIgnoreCase);
     }

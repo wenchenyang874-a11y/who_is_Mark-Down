@@ -283,6 +283,7 @@ public sealed class PreviewWebViewService : IDisposable
     private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
     private CoreWebView2? core;
     private PreviewSnapshot? pendingPreview;
+    private bool synchronizeCaretWhenReady = true;
     private bool processingPreview;
     private bool navigationInProgress;
     private bool previewPageReady;
@@ -314,7 +315,7 @@ public sealed class PreviewWebViewService : IDisposable
 
     public event EventHandler<PreviewScrollChangedEventArgs>? ScrollRatioChanged;
 
-    public event EventHandler? PreviewReady;
+    public event EventHandler<PreviewReadyEventArgs>? PreviewReady;
 
     public async Task InitializeAsync()
     {
@@ -369,7 +370,8 @@ public sealed class PreviewWebViewService : IDisposable
         string fullHtml,
         string bodyHtml,
         string? documentPath,
-        string pagePolicyIdentity)
+        string pagePolicyIdentity,
+        bool synchronizeToCaretWhenReady = true)
     {
         ArgumentNullException.ThrowIfNull(fullHtml);
         ArgumentNullException.ThrowIfNull(bodyHtml);
@@ -386,7 +388,8 @@ public sealed class PreviewWebViewService : IDisposable
             fullHtml,
             bodyHtml,
             documentPath,
-            pagePolicyIdentity);
+            pagePolicyIdentity,
+            synchronizeToCaretWhenReady);
         return ProcessPreviewQueueAsync();
     }
 
@@ -486,7 +489,7 @@ public sealed class PreviewWebViewService : IDisposable
     private void SignalPreviewReady()
     {
         previewReadySource.TrySetResult(true);
-        PreviewReady?.Invoke(this, EventArgs.Empty);
+        PreviewReady?.Invoke(this, new PreviewReadyEventArgs(synchronizeCaretWhenReady));
     }
 
     private void SignalPreviewFailure(string message)
@@ -586,6 +589,7 @@ public sealed class PreviewWebViewService : IDisposable
             {
                 PreviewSnapshot snapshot = pendingPreview;
                 pendingPreview = null;
+                synchronizeCaretWhenReady = snapshot.SynchronizeToCaretWhenReady;
                 bool resourceMappingChanged = ConfigureDocumentResourceMapping(
                     snapshot.DocumentPath);
                 bool pagePolicyChanged = !string.Equals(
@@ -1120,7 +1124,8 @@ public sealed class PreviewWebViewService : IDisposable
         string FullHtml,
         string BodyHtml,
         string? DocumentPath,
-        string PagePolicyIdentity);
+        string PagePolicyIdentity,
+        bool SynchronizeToCaretWhenReady);
 
     private static bool IsAllowedExternalScheme(string scheme)
     {

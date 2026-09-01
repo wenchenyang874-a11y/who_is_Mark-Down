@@ -4,6 +4,18 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.8] - 2026-09-01
+
+### 新增
+
+- 支持从“插入图片”选择本地 SVG 矢量图；SVG 会保存到当前文档的本地图片目录，并可在实时预览、PDF 和独立图片查看器中显示。单击 SVG 可复用滚轮缩放、左键拖动、适应窗口、100% 和另存为功能。
+
+### 安全与稳定性
+
+- SVG 采用安全静态模式：插入落盘、预览资源响应、查看器缓存和另存为均执行有界 XML 解析与过滤，移除脚本、动画、外部资源、事件属性、危险 CSS、未知元素和属性，并限制为 8 MB、50,000 个元素、200,000 个属性及 128 层嵌套。
+- 继续阻止远程 SVG、Markdown 内嵌 SVG data URI、内联 SVG、`object` 和 `iframe`；图床模式选择 SVG 时明确改为经确认后本地安全保存，不会上传到 ImgBB。
+- 修复在预览区勾选或取消任务后，增量刷新虽然恢复原滚动位置、却又被编辑器光标定位拉回文件开头的问题；任务状态写回现在保持用户正在查看的预览位置。
+
 ## [1.7.6] - 2026-08-31
 
 ### 新增
@@ -238,7 +250,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.6...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.8...HEAD
+[1.7.8]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.6...v1.7.8
 [1.7.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.5...v1.7.6
 [1.7.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.4...v1.7.5
 [1.7.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.3...v1.7.4

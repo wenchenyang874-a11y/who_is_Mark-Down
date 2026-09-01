@@ -29,7 +29,9 @@ public partial class MainWindow
 
     private void EditorTextView_ScrollOffsetChanged(object? sender, EventArgs eventArgs)
     {
-        if (applyingPreviewScrollToEditor || workspaceViewMode is not ViewModels.WorkspaceViewMode.EditorAndPreview)
+        if (applyingPreviewScrollToEditor
+            || suppressEditorDrivenPreviewSyncUntilReady
+            || workspaceViewMode is not ViewModels.WorkspaceViewMode.EditorAndPreview)
         {
             return;
         }
@@ -41,7 +43,9 @@ public partial class MainWindow
     private async void EditorScrollSyncTimer_Tick(object? sender, EventArgs eventArgs)
     {
         editorScrollSyncTimer.Stop();
-        if (previewService is null || applyingPreviewScrollToEditor)
+        if (previewService is null
+            || applyingPreviewScrollToEditor
+            || suppressEditorDrivenPreviewSyncUntilReady)
         {
             return;
         }
@@ -111,9 +115,24 @@ public partial class MainWindow
         }
     }
 
-    private void PreviewService_PreviewReady(object? sender, EventArgs eventArgs)
+    private void PreviewService_PreviewReady(object? sender, PreviewReadyEventArgs eventArgs)
     {
+        if (!eventArgs.SynchronizeToCaret)
+        {
+            // AvalonEdit can emit a delayed scroll-offset change after replacing
+            // the one task marker. Keep that notification from overwriting the
+            // preview scroll position restored by the DOM update.
+            ReleaseTaskPreviewPositionSuppression();
+            return;
+        }
+
         _ = SynchronizePreviewToCaretAsync();
+    }
+
+    private void ReleaseTaskPreviewPositionSuppression()
+    {
+        editorScrollSyncTimer.Stop();
+        suppressEditorDrivenPreviewSyncUntilReady = false;
     }
 
     private void SuppressPreviewScrollEcho()

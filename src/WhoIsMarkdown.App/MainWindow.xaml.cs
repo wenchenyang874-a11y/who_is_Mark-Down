@@ -32,6 +32,8 @@ public partial class MainWindow : Window
     private long previewVersion;
     private long documentOpenVersion;
     private bool applyingDocumentText;
+    private bool applyingPreviewTaskEdit;
+    private bool suppressEditorDrivenPreviewSyncUntilReady;
     private bool closeApproved;
     private bool closeWorkflowRunning;
     private bool windowClosed;
@@ -201,14 +203,23 @@ public partial class MainWindow : Window
         }
 
         document.Text = Editor.Text;
-        SchedulePreview();
+        bool preservePreviewPosition = applyingPreviewTaskEdit;
+        if (!preservePreviewPosition)
+        {
+            suppressEditorDrivenPreviewSyncUntilReady = false;
+        }
+
+        SchedulePreview(synchronizePreviewToCaretWhenReady: !preservePreviewPosition);
         UpdateStatus();
     }
 
     private void EditorCaret_PositionChanged(object? sender, EventArgs eventArgs)
     {
         CaretText.Text = $"行 {Editor.TextArea.Caret.Line}，列 {Editor.TextArea.Caret.Column}";
-        _ = SynchronizePreviewToCaretAsync();
+        if (!suppressEditorDrivenPreviewSyncUntilReady)
+        {
+            _ = SynchronizePreviewToCaretAsync();
+        }
     }
 
     private void Preview_PreviewMouseWheel(object sender, MouseWheelEventArgs eventArgs)
@@ -329,7 +340,7 @@ public partial class MainWindow : Window
         Editor.Focus();
     }
 
-    private void SchedulePreview()
+    private void SchedulePreview(bool synchronizePreviewToCaretWhenReady = true)
     {
         if (previewService is null || windowClosed)
         {
@@ -346,6 +357,7 @@ public partial class MainWindow : Window
             document.FilePath,
             remoteImagePolicy,
             version,
+            synchronizePreviewToCaretWhenReady,
             previewCancellation.Token);
     }
 
@@ -358,6 +370,7 @@ public partial class MainWindow : Window
         string? documentPath,
         RemoteImagePolicy remoteImagePolicy,
         long version,
+        bool synchronizePreviewToCaretWhenReady,
         CancellationToken cancellationToken)
     {
         try
@@ -385,7 +398,8 @@ public partial class MainWindow : Window
                     page,
                     visibleBody,
                     documentPath,
-                    remoteImagePolicy.Identity);
+                    remoteImagePolicy.Identity,
+                    synchronizePreviewToCaretWhenReady);
             }
         }
         catch (OperationCanceledException)
@@ -394,6 +408,11 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            if (!synchronizePreviewToCaretWhenReady && version == previewVersion)
+            {
+                ReleaseTaskPreviewPositionSuppression();
+            }
+
             UpdateStatus($"预览失败：{exception.Message}");
         }
     }
@@ -432,6 +451,7 @@ public partial class MainWindow : Window
 
     private void PreviewService_PreviewNavigationFailed(object? sender, string message)
     {
+        ReleaseTaskPreviewPositionSuppression();
         UpdateStatus(message);
     }
 

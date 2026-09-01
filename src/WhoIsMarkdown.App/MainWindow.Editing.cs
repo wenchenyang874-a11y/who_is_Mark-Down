@@ -184,7 +184,20 @@ public partial class MainWindow
 
         if (edit.HasChanged)
         {
-            Editor.Document.Replace(edit.Offset, 1, edit.Replacement.ToString());
+            // Bug fix: the preview checkbox is the user's active scroll surface.
+            // Carry that intent through the debounced DOM refresh so PreviewReady
+            // does not immediately relocate the page to an unrelated editor caret.
+            applyingPreviewTaskEdit = true;
+            suppressEditorDrivenPreviewSyncUntilReady = true;
+            editorScrollSyncTimer.Stop();
+            try
+            {
+                Editor.Document.Replace(edit.Offset, 1, edit.Replacement.ToString());
+            }
+            finally
+            {
+                applyingPreviewTaskEdit = false;
+            }
         }
 
         eventArgs.Succeeded = true;
