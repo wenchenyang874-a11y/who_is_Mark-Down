@@ -272,7 +272,10 @@ public partial class MainWindow : Window
             DocumentFileStamp stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
             document.MarkSaved(targetPath, stamp);
             RecordRecentFile(targetPath);
-            SchedulePreview();
+            // Bug fix: saving does not move the caret or change the Markdown body.
+            // Preserve the preview viewport when the refresh completes instead of
+            // letting PreviewReady align it to a caret that may be near the top.
+            SchedulePreview(synchronizePreviewToCaretWhenReady: false);
             UpdateStatus("文档已保存");
             return true;
         }

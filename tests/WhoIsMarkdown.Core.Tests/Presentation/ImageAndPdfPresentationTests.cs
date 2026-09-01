@@ -5,6 +5,33 @@ namespace WhoIsMarkdown.Core.Tests.Presentation;
 public sealed class ImageAndPdfPresentationTests
 {
     [Fact]
+    public void 保存文档_预览刷新完成_保持当前预览位置()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string mainWindowCode = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "WhoIsMarkdown.App",
+            "MainWindow.xaml.cs"));
+        int saveMethodStart = mainWindowCode.IndexOf(
+            "private async Task<bool> SaveCurrentDocumentAsync",
+            StringComparison.Ordinal);
+        int nextMethodStart = mainWindowCode.IndexOf(
+            "private async Task<bool> ConfirmDiscardOrSaveAsync",
+            saveMethodStart,
+            StringComparison.Ordinal);
+
+        Assert.True(saveMethodStart >= 0);
+        Assert.True(nextMethodStart > saveMethodStart);
+        string saveMethod = mainWindowCode[saveMethodStart..nextMethodStart];
+        Assert.Contains(
+            "SchedulePreview(synchronizePreviewToCaretWhenReady: false);",
+            saveMethod,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("SchedulePreview();", saveMethod, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 主窗口_图片与Pdf功能_在菜单和工具栏中可发现()
     {
         string repositoryRoot = FindRepositoryRoot();
