@@ -58,7 +58,8 @@ public partial class MainWindow
 
     private async Task OpenRecentFileAsync(string path)
     {
-        if (!File.Exists(path))
+        UpdateStatus("正在检查最近文件…");
+        if (!await Task.Run(() => File.Exists(path)))
         {
             ShowRecentFileMissing(path);
             return;
@@ -70,7 +71,7 @@ public partial class MainWindow
         }
     }
 
-    private void RevealRecentFile_Click(object sender, RoutedEventArgs eventArgs)
+    private async void RevealRecentFile_Click(object sender, RoutedEventArgs eventArgs)
     {
         if (!TryGetTaggedValue(sender, out string path))
         {
@@ -79,7 +80,8 @@ public partial class MainWindow
 
         try
         {
-            fileExplorerService.RevealFile(path);
+            UpdateStatus("正在检查文件位置…");
+            await Task.Run(() => fileExplorerService.RevealFile(path));
             UpdateStatus("已在文件资源管理器中定位文件");
         }
         catch (FileNotFoundException)
@@ -194,6 +196,9 @@ public partial class MainWindow
 
     private void RefreshRecentFilesView()
     {
+        // Bug fix: never probe recent paths while projecting the startup UI.
+        // File.Exists can block for minutes on disconnected mapped/network drives;
+        // explicit recent-file actions validate their one target on a worker thread.
         RecentFiles.Clear();
         foreach (RecentFileEntry entry in applicationSettings.RecentFiles)
         {

@@ -4,6 +4,13 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.7.10] - 2026-09-07
+
+### 修复
+
+- 修复启动或双击打开 Markdown 时，最近文件列表对断开的映射盘、网络盘逐项同步执行 `File.Exists`，导致 WIMD 进程已启动但窗口长时间不显示的问题；最近记录现在不再在启动阶段访问磁盘，只有用户主动执行文件操作时才在后台校验目标路径。
+- 启动文件及文件夹参数不再通过 `File.Exists` / `Directory.Exists` 同步探测；文档读取、工作区打开、新窗口打开和资源管理器定位中的慢路径访问均移出 UI 线程，路径响应缓慢时窗口仍可正常显示和交互，避免关闭卡死后留下无法结束的 WIMD 进程。
+
 ## [1.7.9] - 2026-09-01
 
 ### 修复
@@ -257,7 +264,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.9...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.10...HEAD
+[1.7.10]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.9...v1.7.10
 [1.7.9]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.8...v1.7.9
 [1.7.8]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.6...v1.7.8
 [1.7.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.5...v1.7.6

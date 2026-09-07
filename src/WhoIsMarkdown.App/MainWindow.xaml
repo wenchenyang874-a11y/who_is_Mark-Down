@@ -297,9 +297,9 @@
                                                     <Button Grid.Column="0" AutomationProperties.Name="{Binding DisplayName}" Tag="{Binding Path}" ToolTip="{Binding Path}" Style="{StaticResource RecentOpenButtonStyle}" Click="OpenRecentFile_Click">
                                                         <Button.ContextMenu>
                                                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                                                <MenuItem Header="打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFile_Click" />
-                                                                <MenuItem Header="在新窗口中打开" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="OpenRecentFileInNewWindow_Click" />
-                                                                <MenuItem Header="在文件资源管理器中显示" Tag="{Binding Path}" IsEnabled="{Binding IsAvailable}" Click="RevealRecentFile_Click" />
+                                                                <MenuItem Header="打开" Tag="{Binding Path}" Click="OpenRecentFile_Click" />
+                                                                <MenuItem Header="在新窗口中打开" Tag="{Binding Path}" Click="OpenRecentFileInNewWindow_Click" />
+                                                                <MenuItem Header="在文件资源管理器中显示" Tag="{Binding Path}" Click="RevealRecentFile_Click" />
                                                                 <Separator />
                                                                 <MenuItem Header="复制文件路径" Tag="{Binding Path}" Click="CopyRecentFilePath_Click" />
                                                                 <MenuItem Header="复制所在文件夹路径" Tag="{Binding DirectoryPath}" Click="CopyRecentDirectoryPath_Click" />

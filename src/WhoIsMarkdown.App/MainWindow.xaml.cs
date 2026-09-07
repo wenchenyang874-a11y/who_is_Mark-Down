@@ -67,9 +67,20 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
         LoadApplicationSettings();
-        string? startupWorkspacePath = restoredWindowState is null
-            ? GetStartupWorkspacePath()
-            : restoredWindowState.WorkspacePath;
+        // Bug fix: startup arguments can point at unavailable network, cloud, or
+        // filter-backed paths. Do not call File.Exists/Directory.Exists while the
+        // dispatcher is creating the first window. Classification is lexical; the
+        // actual file-system access is delegated to the existing background open
+        // operations so the shell paints immediately and remains responsive.
+        string? startupPath = restoredWindowState is null
+            ? GetStartupPathArgument()
+            : null;
+        string? startupWorkspacePath = restoredWindowState?.WorkspacePath;
+        if (startupPath is not null && !HasMarkdownExtension(startupPath))
+        {
+            startupWorkspacePath = startupPath;
+        }
+
         if (startupWorkspacePath is not null)
         {
             await OpenWorkspaceAsync(startupWorkspacePath);
@@ -79,8 +90,7 @@ public partial class MainWindow : Window
         {
             document.RestoreAfterUpdate(restoredWindowState);
             ApplyDocumentToEditor();
-            if (restoredWindowState.DocumentPath is { } recoveredPath
-                && File.Exists(recoveredPath))
+            if (restoredWindowState.DocumentPath is { } recoveredPath)
             {
                 RecordRecentFile(recoveredPath);
             }
@@ -90,9 +100,11 @@ public partial class MainWindow : Window
         else
         {
             string? startupDocumentPath = restoredWindowState is null
-                ? GetStartupDocumentPath()
+                ? startupPath is not null && HasMarkdownExtension(startupPath)
+                    ? startupPath
+                    : null
                 : restoredWindowState.DocumentPath;
-            if (startupDocumentPath is not null && File.Exists(startupDocumentPath))
+            if (startupDocumentPath is not null)
             {
                 await OpenDocumentAsync(startupDocumentPath);
             }
@@ -236,7 +248,10 @@ public partial class MainWindow : Window
         long requestVersion = Interlocked.Increment(ref documentOpenVersion);
         try
         {
-            LoadedDocument loadedDocument = await fileService.ReadAsync(path);
+            // Bug fix: opening a path can block before an asynchronous file read is
+            // established (notably on disconnected mapped drives). Run the complete
+            // open operation off the dispatcher so a slow path cannot freeze WIMD.
+            LoadedDocument loadedDocument = await Task.Run(() => fileService.ReadAsync(path));
             if (requestVersion != Volatile.Read(ref documentOpenVersion))
             {
                 return;
@@ -475,26 +490,22 @@ public partial class MainWindow : Window
             MessageBoxImage.Information);
     }
 
-    private static string? GetStartupWorkspacePath()
+    private static string? GetStartupPathArgument()
     {
-        // Directory arguments are treated strictly as paths. Supporting them here
-        // also prepares the Windows shell integration without evaluating commands.
+        // The CLR already splits the quoted shell command line. Treat the first
+        // non-option value strictly as a path without asking the file system about
+        // it on the startup thread. OpenWorkspaceAsync/OpenDocumentAsync perform
+        // validation and I/O away from the dispatcher.
         return Environment.GetCommandLineArgs()
             .Skip(1)
-            .FirstOrDefault(Directory.Exists);
+            .FirstOrDefault(argument => !argument.StartsWith("--", StringComparison.Ordinal));
     }
 
-    private static string? GetStartupDocumentPath()
+    private static bool HasMarkdownExtension(string path)
     {
-        // Windows shell commands quote paths before passing them to WIMD. The CLR
-        // performs argument splitting, so the application treats each value only as
-        // a path and never evaluates it as a command.
-        return Environment.GetCommandLineArgs()
-            .Skip(1)
-            .FirstOrDefault(path =>
-                File.Exists(path)
-                && (Path.GetExtension(path).Equals(".md", StringComparison.OrdinalIgnoreCase)
-                    || Path.GetExtension(path).Equals(".markdown", StringComparison.OrdinalIgnoreCase)));
+        string extension = Path.GetExtension(path);
+        return extension.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ShowFileError(string title, DocumentFileException exception)

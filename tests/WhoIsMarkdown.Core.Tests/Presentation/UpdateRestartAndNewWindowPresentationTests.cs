@@ -122,6 +122,14 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
         Assert.Contains("startInfo.ArgumentList.Add(\"--new-window\")", launcher, StringComparison.Ordinal);
         Assert.Contains("startInfo.ArgumentList.Add(normalizedPath)", launcher, StringComparison.Ordinal);
         Assert.Contains("UseShellExecute = false", launcher, StringComparison.Ordinal);
+        Assert.Contains(
+            "await Task.Run(() => applicationWindowLauncher.OpenDocumentInNewWindow(path))",
+            File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                "src",
+                "WhoIsMarkdown.App",
+                "MainWindow.Windows.cs")),
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,8 +155,12 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
             "Subkey: \"Software\\Classes\\Directory\\shell\\WIMD\\command\"; ValueType: string; ValueData: \"\"\"{app}\\{#MyAppExeName}\"\" \"\"%1\"\"\"",
             installer,
             StringComparison.Ordinal);
-        Assert.Contains("GetStartupWorkspacePath()", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("FirstOrDefault(Directory.Exists)", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("GetStartupPathArgument()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains(
+            "startupPath is not null && !HasMarkdownExtension(startupPath)",
+            mainWindow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Directory.Exists(path)", mainWindow, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

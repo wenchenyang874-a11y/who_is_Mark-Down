@@ -16,7 +16,6 @@ public sealed class RecentFileItemViewModel
         LastOpenedDisplay = entry.LastOpenedUtc
             .ToLocalTime()
             .ToString("MM-dd HH:mm", CultureInfo.CurrentCulture);
-        IsAvailable = File.Exists(targets.FilePath);
         IsCurrent = IsCurrentDocument(targets.FilePath, currentDocumentPath);
     }
 
@@ -27,8 +26,6 @@ public sealed class RecentFileItemViewModel
     public string DirectoryPath { get; }
 
     public string LastOpenedDisplay { get; }
-
-    public bool IsAvailable { get; }
 
     public bool IsCurrent { get; }
 

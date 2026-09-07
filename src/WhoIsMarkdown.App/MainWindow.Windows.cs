@@ -15,27 +15,28 @@ public partial class MainWindow
     private readonly IApplicationWindowLauncher applicationWindowLauncher =
         new ApplicationWindowLauncher();
 
-    private void OpenRecentFileInNewWindow_Click(object sender, RoutedEventArgs eventArgs)
+    private async void OpenRecentFileInNewWindow_Click(object sender, RoutedEventArgs eventArgs)
     {
         if (TryGetTaggedValue(sender, out string path))
         {
-            OpenDocumentInNewWindow(path);
+            await OpenDocumentInNewWindowAsync(path);
         }
     }
 
-    private void OpenWorkspaceEntryInNewWindow_Click(object sender, RoutedEventArgs eventArgs)
+    private async void OpenWorkspaceEntryInNewWindow_Click(object sender, RoutedEventArgs eventArgs)
     {
         if (TryGetWorkspaceItem(sender, out WorkspaceTreeItemViewModel item) && item.IsFile)
         {
-            OpenDocumentInNewWindow(item.Path);
+            await OpenDocumentInNewWindowAsync(item.Path);
         }
     }
 
-    private void OpenDocumentInNewWindow(string path)
+    private async Task OpenDocumentInNewWindowAsync(string path)
     {
         try
         {
-            applicationWindowLauncher.OpenDocumentInNewWindow(path);
+            UpdateStatus("正在检查并打开新窗口…");
+            await Task.Run(() => applicationWindowLauncher.OpenDocumentInNewWindow(path));
             UpdateStatus("已在新的 WIMD 窗口中打开文件");
         }
         catch (Exception exception) when (exception is ArgumentException
