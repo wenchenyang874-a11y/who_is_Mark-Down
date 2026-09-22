@@ -20,6 +20,10 @@ internal static class ShortcutCatalog
         Define("file.open", "打开文档", Key.O, control: true),
         Define("file.save", "保存文档", Key.S, control: true),
         Define("file.save-as", "另存为", Key.S, control: true, shift: true),
+        // Reloading re-reads the file from disk, so it also covers documents that
+        // changed outside WIMD. F5 stays free of modifiers on purpose: the plain
+        // function keys are already reserved for view actions rather than typing.
+        Define("file.reload", "重新加载文档", Key.F5),
         Define("view.cycle", "循环切换视图", Key.F9),
         Define("heading.1", "一级标题", Key.D1, control: true),
         Define("heading.2", "二级标题", Key.D2, control: true),

@@ -220,13 +220,15 @@ public sealed class PreviewImageSaveService : IDisposable
     }
 
     /// <summary>
-    /// Saves a prepared viewer image through the same extension, size and atomic
-    /// replacement checks used for direct preview saves.
+    /// Re-runs the prepared-image checks and returns the validated cache path together
+    /// with its normalized extension. Saving and exporting both repeat these checks
+    /// because the cache file can be replaced between the preview and the operation,
+    /// and an export format such as PNG or HTML must never trust bytes it did not
+    /// revalidate itself.
     /// </summary>
-    public async Task<bool> SavePreparedAsync(
+    internal async Task<(string Path, string Extension)> ValidatePreparedAsync(
         PreparedPreviewImage preparedImage,
-        string targetPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(preparedImage);
@@ -272,11 +274,30 @@ public sealed class PreviewImageSaveService : IDisposable
         {
             extension = ValidateExtension(Path.GetExtension(preparedPath));
         }
+
         if (!extension.Equals(preparedImage.Extension, StringComparison.OrdinalIgnoreCase))
         {
             throw new PreviewImageSaveException("图片查看器中的临时图片类型已改变。");
         }
 
+        return (preparedPath, extension);
+    }
+
+    /// <summary>
+    /// Saves a prepared viewer image through the same extension, size and atomic
+    /// replacement checks used for direct preview saves.
+    /// </summary>
+    public async Task<bool> SavePreparedAsync(
+        PreparedPreviewImage preparedImage,
+        string targetPath,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(preparedImage);
+
+        (string preparedPath, string extension) = await ValidatePreparedAsync(
+            preparedImage,
+            cancellationToken).ConfigureAwait(false);
         PreviewImageSaveSource source = new(
             preparedImage.IsSanitizedSvg
                 ? PreviewImageSourceKind.LocalSvg
@@ -285,6 +306,80 @@ public sealed class PreviewImageSaveService : IDisposable
             extension,
             preparedImage.SuggestedFileName);
         return await SaveAsync(source, targetPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Atomically replaces the destination with bytes that were produced in memory.
+    /// A rasterized PNG and a generated HTML page never exist as a source file, but
+    /// they must still reach the disk through the same temporary-file replacement as
+    /// every other image save so a failure never leaves a half-written target.
+    /// </summary>
+    public async Task<bool> SaveBytesAsync(
+        byte[] bytes,
+        string extension,
+        string targetPath,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentException.ThrowIfNullOrWhiteSpace(extension);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        if (bytes.Length is <= 0 || bytes.LongLength > MaximumImageBytes)
+        {
+            throw new PreviewImageSaveException("预览图片为空或超过 32 MB，无法保存。");
+        }
+
+        string target = Path.GetFullPath(targetPath);
+        if (!Path.GetExtension(target).Equals(extension, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new PreviewImageSaveException($"保存文件的扩展名必须为 {extension}。");
+        }
+
+        string directory = Path.GetDirectoryName(target)
+            ?? throw new PreviewImageSaveException("保存位置缺少有效的父目录。");
+        if (!Directory.Exists(directory))
+        {
+            throw new PreviewImageSaveException("保存位置的父目录不存在。");
+        }
+
+        string temporaryPath = Path.Combine(directory, $".wimd-image-save-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (FileStream destination = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+                await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            File.Move(temporaryPath, target, overwrite: true);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (PreviewImageSaveException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or NotSupportedException
+            or PathTooLongException)
+        {
+            throw new PreviewImageSaveException($"无法保存预览图片：{exception.Message}", exception);
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(temporaryPath);
+        }
     }
 
     public void Dispose()
@@ -426,7 +521,8 @@ public sealed class PreviewImageSaveService : IDisposable
                     SafeSvgSanitizationResult safeSvg = await SafeSvgSanitizer.SanitizeFileAsync(
                         source.Value,
                         cancellationToken).ConfigureAwait(false);
-                    await destination.WriteAsync(safeSvg.Bytes, cancellationToken).ConfigureAwait(false);
+                    await WriteVectorAsync(safeSvg.Bytes, destination, cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 catch (SafeSvgException exception)
                 {
@@ -437,8 +533,14 @@ public sealed class PreviewImageSaveService : IDisposable
 
                 break;
 
-            case PreviewImageSourceKind.DataUri:
             case PreviewImageSourceKind.GeneratedSvg:
+                await WriteVectorAsync(
+                    DecodeDataUriBytes(source.Value),
+                    destination,
+                    cancellationToken).ConfigureAwait(false);
+                break;
+
+            case PreviewImageSourceKind.DataUri:
                 await WriteDataUriAsync(source.Value, destination, cancellationToken).ConfigureAwait(false);
                 break;
 
@@ -449,6 +551,24 @@ public sealed class PreviewImageSaveService : IDisposable
             default:
                 throw new PreviewImageSaveException("不支持的预览图片来源。");
         }
+    }
+
+    /// <summary>
+    /// Writes a sanitized SVG after resolving its own pixel size.
+    ///
+    /// The size has to be baked in here rather than by each consumer: an image element
+    /// cannot read the vector's viewBox back, and Chromium reports its 300x150 default
+    /// for a percentage-sized SVG. The independent viewer trusted that number and
+    /// showed the diagram at several times its real scale, pinned to the left edge, and
+    /// a standalone HTML export rendered it only a few hundred pixels wide.
+    /// </summary>
+    private static async Task WriteVectorAsync(
+        byte[] svgBytes,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        byte[] sized = SvgPixelSizeNormalizer.Apply(svgBytes).Bytes;
+        await destination.WriteAsync(sized, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task WriteDataUriAsync(

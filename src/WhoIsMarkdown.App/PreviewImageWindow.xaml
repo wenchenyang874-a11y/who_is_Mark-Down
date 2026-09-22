@@ -70,9 +70,10 @@
                             Margin="10,1,1,1"
                             AutomationProperties.Name="另存预览图片"
                             Click="SaveAs_Click"
-                            Content="另存为…"
+                            Content="另存为 ▾"
                             IsEnabled="False"
-                            Style="{StaticResource CompactToolbarButtonStyle}" />
+                            Style="{StaticResource CompactToolbarButtonStyle}"
+                            ToolTip="选择另存为的格式（原格式 / PNG / HTML）" />
                 </StackPanel>
             </DockPanel>
         </Border>

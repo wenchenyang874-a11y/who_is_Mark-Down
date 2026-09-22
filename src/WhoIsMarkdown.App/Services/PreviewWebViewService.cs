@@ -21,6 +21,40 @@ public sealed class PreviewWebViewService : IDisposable
     private const string DocumentImageResourcePattern =
         "https://wimd-document.invalid/*";
 
+    /// <summary>
+    /// Longest accepted image source. A generated diagram travels as a base64 data uri,
+    /// so the bound is generous but still protects the desktop event loop from an
+    /// unbounded payload.
+    /// </summary>
+    private const int MaximumImageSourceLength = 48 * 1024 * 1024;
+
+    /// <summary>
+    /// Longest accepted reply from the element lookup. The reply carries one source url
+    /// plus a little metadata, so anything larger is not a picture description.
+    /// </summary>
+    private const int MaximumContextImageResultLength = MaximumImageSourceLength + 4096;
+
+    /// <summary>
+    /// Host-side bound for the Mermaid idle wait. The page bounds itself at 8 seconds;
+    /// this one is slightly larger so a page that never reports back cannot stall.
+    /// </summary>
+    private static readonly TimeSpan MermaidIdleTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Host-side bound for the PDF image settle wait. The page bounds itself at
+    /// 3 seconds, which is what keeps a dead image host from hanging the export.
+    /// </summary>
+    private static readonly TimeSpan PdfImageSettleTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// One preview image selected by the user, whether by clicking it or by opening its
+    /// context menu.
+    /// </summary>
+    private sealed record PreviewContextImageTarget(
+        string Source,
+        string? AlternativeText,
+        bool IsGeneratedDiagram);
+
     private const string ScrollReportingScript = """
         (() => {
           let scheduled = false;
@@ -43,15 +77,53 @@ public sealed class PreviewWebViewService : IDisposable
     private const string ImageInteractionScript = """
         (() => {
           const imageSelector = 'main.preview-document img';
+          const lineAnchorSelector = '[id^="pragma-line-"]';
+          let lastAnchor = '';
+          let lastAlternativeText = '';
+          let lastIndex = -1;
+
+          // The preview DOM is re-rendered for every edit, so element identity does
+          // not survive. The nearest pragma-line anchor plus the alternative text
+          // identifies the same Markdown source position across those updates, which
+          // is what lets a reload pick the image the user is still looking at.
+          const anchorOf = image => (image.closest(lineAnchorSelector) || image).id || '';
+
           const requestOpen = image => {
             const source = image.currentSrc || image.src;
-            if (!source) return;
+            if (!source) return false;
+            const images = [...document.querySelectorAll(imageSelector)];
+            lastAnchor = anchorOf(image);
+            lastAlternativeText = image.alt || '';
+            lastIndex = images.indexOf(image);
             window.chrome.webview.postMessage({
               type: 'open-preview-image',
               source,
               alternativeText: image.alt || '',
               generatedDiagram: image.dataset.wimdGeneratedDiagram === 'true'
             });
+            return true;
+          };
+
+          // Re-issues the open request for the image that is currently displayed in
+          // the independent viewer. Reading the element again is what makes a reload
+          // show freshly rendered Mermaid output instead of the data URI captured
+          // when the user first clicked the diagram.
+          const reopenLastImage = () => {
+            if (lastIndex < 0) return false;
+            const images = [...document.querySelectorAll(imageSelector)];
+            const sameAnchor = lastAnchor
+              ? images.filter(image =>
+                  anchorOf(image) === lastAnchor && (image.alt || '') === lastAlternativeText)
+              : [];
+            if (sameAnchor.length === 1) return requestOpen(sameAnchor[0]);
+
+            // A paragraph can hold several images and then share one anchor. Fall
+            // back to the recorded position, but only when the alternative text still
+            // matches, so a shifted index cannot silently open a different image.
+            const atIndex = images[lastIndex];
+            return atIndex && (atIndex.alt || '') === lastAlternativeText
+              ? requestOpen(atIndex)
+              : false;
           };
 
           const prepareImages = () => {
@@ -92,6 +164,8 @@ public sealed class PreviewWebViewService : IDisposable
 
           document.addEventListener('DOMContentLoaded', prepareImages, { once: true });
           document.addEventListener('wimd:preview-updated', prepareImages);
+
+          window.wimdImageOpen = Object.freeze({ reopenLastImage });
         })();
         """;
 
@@ -287,6 +361,13 @@ public sealed class PreviewWebViewService : IDisposable
     private bool processingPreview;
     private bool navigationInProgress;
     private bool previewPageReady;
+    /// <summary>
+    /// Entries of the image context menu that is currently on screen. WebView2 only
+    /// raises CustomItemSelected for items the host still references, so they must
+    /// outlive the request that created them.
+    /// </summary>
+    private readonly List<CoreWebView2ContextMenuItem> contextMenuItems = [];
+
     private bool initialized;
     private bool disposed;
     private string? currentPagePolicyIdentity;
@@ -317,6 +398,11 @@ public sealed class PreviewWebViewService : IDisposable
 
     public event EventHandler<PreviewReadyEventArgs>? PreviewReady;
 
+    /// <summary>
+    /// Raised when the user picks a save-as format for an image in the live preview.
+    /// </summary>
+    public event EventHandler<PreviewContextImageExportRequestedEventArgs>? PreviewContextImageExportRequested;
+
     public async Task InitializeAsync()
     {
         ThrowIfDisposed();
@@ -325,13 +411,9 @@ public sealed class PreviewWebViewService : IDisposable
             return;
         }
 
-        string userDataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "WIMD",
-            "WebView2");
         CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
-            userDataFolder: userDataFolder).ConfigureAwait(true);
+            userDataFolder: WebView2UserDataFolder.Resolve()).ConfigureAwait(true);
         await webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
         ThrowIfDisposed();
 
@@ -358,7 +440,202 @@ public sealed class PreviewWebViewService : IDisposable
             DocumentImageResourcePattern,
             CoreWebView2WebResourceContext.Image);
         core.WebResourceRequested += OnWebResourceRequested;
+        core.ContextMenuRequested += OnContextMenuRequested;
         initialized = true;
+    }
+
+    /// <summary>
+    /// Replaces WebView2's default menu over a preview image with WIMD's own choices.
+    ///
+    /// The browser menu could only save the generated host document as HTML, so the
+    /// right-click path and the viewer's toolbar button disagreed about the format of
+    /// the very same picture. Both surfaces now offer the same list. Regions without an
+    /// image keep the browser menu, which is what still provides text selection
+    /// actions for the rendered document.
+    ///
+    /// Bug fix: which picture the menu belongs to is resolved from the DOM rather than
+    /// from CoreWebView2ContextMenuTarget.SourceUri. Chromium does not report a source
+    /// uri for the generated diagrams the Mermaid bridge renders from data urls, so the
+    /// previous source-uri check silently rejected exactly those images and left the
+    /// browser's single-format menu in place for them. Reading the element under the
+    /// pointer also gives the alternative text and the generated-diagram flag, so the
+    /// right-click menu and a left click now describe the same picture the same way.
+    /// </summary>
+    private void OnContextMenuRequested(
+        object? sender,
+        CoreWebView2ContextMenuRequestedEventArgs eventArgs)
+    {
+        CoreWebView2? currentCore = core;
+        if (currentCore is null
+            || eventArgs.ContextMenuTarget is not { Kind: CoreWebView2ContextMenuTargetKind.Image })
+        {
+            return;
+        }
+
+        // Reading the element needs a round trip into the page, so the entries are built
+        // under the event deferral and the menu is shown once they are ready.
+        _ = BuildImageContextMenuAsync(
+            currentCore,
+            eventArgs,
+            eventArgs.GetDeferral());
+    }
+
+    private async Task BuildImageContextMenuAsync(
+        CoreWebView2 currentCore,
+        CoreWebView2ContextMenuRequestedEventArgs eventArgs,
+        CoreWebView2Deferral deferral)
+    {
+        try
+        {
+            PreviewContextImageTarget? target = await TryReadImageTargetAsync(eventArgs.Location)
+                .ConfigureAwait(true);
+            if (target is null)
+            {
+                // Nothing to act on: leaving MenuItems untouched keeps the browser menu,
+                // which is the right answer outside a preview image.
+                return;
+            }
+
+            PreviewImageSourceDescriptor descriptor = PreviewImageSourceDescriptor.Describe(
+                target.Source);
+            contextMenuItems.Clear();
+            contextMenuItems.Add(CreateImageMenuItem(
+                currentCore,
+                "在独立窗口中打开",
+                () => PreviewImageOpenRequested?.Invoke(
+                    this,
+                    new PreviewImageOpenRequestedEventArgs(
+                        target.Source,
+                        target.AlternativeText,
+                        target.IsGeneratedDiagram))));
+
+            if (descriptor.Extension.Length > 0)
+            {
+                foreach (PreviewImageExportFormat format in PreviewImageExportService
+                    .GetAvailableFormats(descriptor.Extension))
+                {
+                    PreviewImageExportFormat selected = format;
+                    contextMenuItems.Add(CreateImageMenuItem(
+                        currentCore,
+                        $"另存为 {PreviewImageExportService.GetDisplayName(descriptor.Extension, descriptor.IsSvg, format)}",
+                        () => PreviewContextImageExportRequested?.Invoke(
+                            this,
+                            new PreviewContextImageExportRequestedEventArgs(
+                                target.Source,
+                                target.IsGeneratedDiagram,
+                                selected))));
+                }
+            }
+
+            // The list built above replaces the browser menu. Removal and insertion are
+            // the operations the WebView2 item collection actually supports.
+            eventArgs.MenuItems.Clear();
+            foreach (CoreWebView2ContextMenuItem item in contextMenuItems)
+            {
+                eventArgs.MenuItems.Add(item);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or ObjectDisposedException
+            or System.Runtime.InteropServices.COMException)
+        {
+            // A menu that cannot be rebuilt falls back to the browser's own entries
+            // instead of failing the interaction.
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    /// <summary>
+    /// Reads the preview image under a point in the page. The coordinates come straight
+    /// from the context menu request, so this identifies the element the user actually
+    /// right-clicked even when several images share the document.
+    /// </summary>
+    private async Task<PreviewContextImageTarget?> TryReadImageTargetAsync(Point location)
+    {
+        if (core is null)
+        {
+            return null;
+        }
+
+        string script = $$"""
+            (() => {
+              const element = document.elementFromPoint({{location.X}}, {{location.Y}});
+              const image = element?.closest('main.preview-document img');
+              if (!image) return null;
+              return {
+                source: image.currentSrc || image.src || '',
+                alternativeText: image.alt || '',
+                generatedDiagram: image.dataset.wimdGeneratedDiagram === 'true'
+              };
+            })();
+            """;
+        string result = await core.ExecuteScriptAsync(script).ConfigureAwait(true);
+        if (result.Length is 0 or > MaximumContextImageResultLength)
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(result);
+            return TryReadImageTarget(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Builds the target from a payload that carries a picture's source, alternative
+    /// text and generated-diagram flag. Both the click path and the right-click path use
+    /// this, so the two can never disagree about which picture is meant.
+    /// </summary>
+    private static PreviewContextImageTarget? TryReadImageTarget(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("source", out JsonElement sourceElement))
+        {
+            return null;
+        }
+
+        string? source = sourceElement.GetString();
+        if (string.IsNullOrWhiteSpace(source) || source.Length > MaximumImageSourceLength)
+        {
+            return null;
+        }
+
+        string? alternativeText = root.TryGetProperty(
+            "alternativeText",
+            out JsonElement alternativeTextElement)
+            ? alternativeTextElement.GetString()
+            : null;
+        bool isGeneratedDiagram = root.TryGetProperty(
+            "generatedDiagram",
+            out JsonElement generatedDiagramElement)
+            && generatedDiagramElement.ValueKind is JsonValueKind.True;
+        return new PreviewContextImageTarget(source, alternativeText, isGeneratedDiagram);
+    }
+
+    /// <summary>
+    /// Creates one host-owned menu entry. The items are kept for as long as the menu
+    /// is on screen, because WebView2 only raises CustomItemSelected for objects the
+    /// host still holds.
+    /// </summary>
+    private static CoreWebView2ContextMenuItem CreateImageMenuItem(
+        CoreWebView2 currentCore,
+        string label,
+        Action onSelected)
+    {
+        CoreWebView2ContextMenuItem item = currentCore.Environment.CreateContextMenuItem(
+            label,
+            null,
+            CoreWebView2ContextMenuItemKind.Command);
+        item.CustomItemSelected += (_, _) => onSelected();
+        return item;
     }
 
     /// <summary>
@@ -406,22 +683,30 @@ public sealed class PreviewWebViewService : IDisposable
         await WaitForMermaidRenderingAsync().WaitAsync(cancellationToken).ConfigureAwait(true);
 
         // Remote images and generated Mermaid image surfaces can finish after the
-        // DOM update. Bound the wait so a dead image host cannot hang PDF export.
-        await core.ExecuteScriptAsync("""
-            (async () => {
+        // DOM update. The page bounds its own wait so a dead image host cannot hang the
+        // export, and the outcome is polled for because a script written as an async
+        // IIFE returns a pending promise that ExecuteScriptAsync never awaits — which
+        // silently skipped this wait and printed PDFs without their images.
+        await WebViewScriptResult.RunAsync(
+            core,
+            """
+            (() => {
+              window.wimdPdfImagesSettled = null;
               const pending = [...document.images]
                 .filter(image => !image.complete)
                 .map(image => new Promise(resolve => {
                   image.addEventListener('load', resolve, { once: true });
                   image.addEventListener('error', resolve, { once: true });
                 }));
-              await Promise.race([
+              Promise.race([
                 Promise.all(pending),
                 new Promise(resolve => setTimeout(resolve, 3000))
-              ]);
-              return true;
+              ]).then(() => { window.wimdPdfImagesSettled = true; });
             })();
-            """).WaitAsync(cancellationToken).ConfigureAwait(true);
+            """,
+            "window.wimdPdfImagesSettled",
+            PdfImageSettleTimeout,
+            cancellationToken).ConfigureAwait(true);
 
         bool succeeded = await core.PrintToPdfAsync(outputPath)
             .WaitAsync(cancellationToken)
@@ -471,6 +756,29 @@ public sealed class PreviewWebViewService : IDisposable
               return true;
             })();
             """);
+    }
+
+    /// <summary>
+    /// Re-issues the open request for the image the independent viewer is currently
+    /// showing, so the viewer reloads whatever the preview now renders at that
+    /// position. Reading the element again is what surfaces a re-rendered Mermaid
+    /// diagram whose markup changed after the document was edited elsewhere.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> when a fresh request was posted; <see langword="false"/>
+    /// when the preview no longer contains an image at the recorded position.
+    /// </returns>
+    public async Task<bool> TryReopenLastPreviewImageAsync()
+    {
+        ThrowIfDisposed();
+        if (core is null)
+        {
+            return false;
+        }
+
+        string result = await core.ExecuteScriptAsync(
+            "window.wimdImageOpen?.reopenLastImage?.() === true").ConfigureAwait(true);
+        return result.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
     private static TaskCompletionSource<bool> CreatePreviewReadySource()
@@ -560,6 +868,8 @@ public sealed class PreviewWebViewService : IDisposable
             core.NewWindowRequested -= OnNewWindowRequested;
             core.WebMessageReceived -= OnWebMessageReceived;
             core.WebResourceRequested -= OnWebResourceRequested;
+            core.ContextMenuRequested -= OnContextMenuRequested;
+            contextMenuItems.Clear();
             core.RemoveWebResourceRequestedFilter(
                 DocumentImageResourcePattern,
                 CoreWebView2WebResourceContext.Image);
@@ -682,16 +992,25 @@ public sealed class PreviewWebViewService : IDisposable
 
         // Host rendering is bounded so malformed or unexpectedly expensive diagrams
         // cannot permanently block typing, view switching, or PDF export.
-        await core.ExecuteScriptAsync("""
-            (async () => {
-              if (!window.wimdMermaid) return true;
-              await Promise.race([
+        //
+        // The page publishes the outcome into a slot: as an async IIFE this script used
+        // to return a pending promise, so the wait completed instantly and the preview
+        // was reported ready — and printed to PDF — before diagrams had finished.
+        await WebViewScriptResult.RunAsync(
+            core,
+            """
+            (() => {
+              window.wimdMermaidIdle = null;
+              if (!window.wimdMermaid) { window.wimdMermaidIdle = true; return; }
+              Promise.race([
                 window.wimdMermaid.whenIdle(),
                 new Promise(resolve => setTimeout(resolve, 8000))
-              ]);
-              return true;
+              ]).then(() => { window.wimdMermaidIdle = true; });
             })();
-            """).ConfigureAwait(true);
+            """,
+            "window.wimdMermaidIdle",
+            MermaidIdleTimeout,
+            CancellationToken.None).ConfigureAwait(true);
     }
 
     private async Task ExecuteHostScriptAsync(string script)
@@ -1055,32 +1374,17 @@ public sealed class PreviewWebViewService : IDisposable
 
     private void TryRaisePreviewImageOpenRequested(JsonElement root)
     {
-        if (!root.TryGetProperty("source", out JsonElement sourceElement))
+        if (TryReadImageTarget(root) is not { } target)
         {
             return;
         }
 
-        string? source = sourceElement.GetString();
-        if (string.IsNullOrWhiteSpace(source) || source.Length > 48 * 1024 * 1024)
-        {
-            return;
-        }
-
-        string? alternativeText = root.TryGetProperty(
-            "alternativeText",
-            out JsonElement alternativeTextElement)
-            ? alternativeTextElement.GetString()
-            : null;
-        bool isGeneratedDiagram = root.TryGetProperty(
-            "generatedDiagram",
-            out JsonElement generatedDiagramElement)
-            && generatedDiagramElement.ValueKind is JsonValueKind.True;
         PreviewImageOpenRequested?.Invoke(
             this,
             new PreviewImageOpenRequestedEventArgs(
-                source,
-                alternativeText,
-                isGeneratedDiagram));
+                target.Source,
+                target.AlternativeText,
+                target.IsGeneratedDiagram));
     }
 
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs eventArgs)

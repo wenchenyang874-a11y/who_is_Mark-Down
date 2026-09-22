@@ -80,6 +80,60 @@ public sealed class PreviewImageSaveServiceTests
     }
 
     [Fact]
+    public async Task 准备_生成的图表只有百分比宽度_按viewBox补齐像素尺寸()
+    {
+        using TemporaryDirectory temporary = new();
+        // Mermaid's own shape: a percentage width, no height attribute after
+        // sanitization, and the real extent only in the viewBox. Chromium reports its
+        // 300x150 default for such a file, which made the viewer fit against 300.
+        string svg = string.Concat(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" ",
+            "viewBox=\"0 0 1234 160\"><rect width=\"1234\" height=\"160\"/></svg>");
+        string payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
+        using PreviewImageSaveService service = new();
+        PreviewImageSaveSource source = service.ResolveGeneratedSvgDataUri(
+            $"data:image/svg+xml;base64,{payload}",
+            "Mermaid 图表");
+
+        PreparedPreviewImage prepared = await service.PrepareAsync(
+            source,
+            Path.Combine(temporary.Path, "viewer-cache"),
+            TestContext.Current.CancellationToken);
+
+        string materialized = await File.ReadAllTextAsync(
+            prepared.FilePath,
+            TestContext.Current.CancellationToken);
+        Assert.Contains("width=\"1234\"", materialized, StringComparison.Ordinal);
+        Assert.Contains("height=\"160\"", materialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("100%", materialized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 准备_生成的图表没有任何尺寸_使用回退的像素尺寸()
+    {
+        using TemporaryDirectory temporary = new();
+        string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"10\" height=\"10\"/></svg>";
+        string payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
+        using PreviewImageSaveService service = new();
+        PreviewImageSaveSource source = service.ResolveGeneratedSvgDataUri(
+            $"data:image/svg+xml;base64,{payload}",
+            "Mermaid 图表");
+
+        PreparedPreviewImage prepared = await service.PrepareAsync(
+            source,
+            Path.Combine(temporary.Path, "viewer-cache"),
+            TestContext.Current.CancellationToken);
+
+        // A file with neither an absolute size nor a viewBox still has to end up with
+        // dimensions a viewer can fit against, instead of the browser default.
+        string materialized = await File.ReadAllTextAsync(
+            prepared.FilePath,
+            TestContext.Current.CancellationToken);
+        Assert.Contains("width=\"1024\"", materialized, StringComparison.Ordinal);
+        Assert.Contains("height=\"768\"", materialized, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 解析_虚拟主机地址包含编码穿越_拒绝越出文档目录()
     {
         using TemporaryDirectory temporary = new();
@@ -149,9 +203,18 @@ public sealed class PreviewImageSaveServiceTests
         Assert.True(saved);
         Assert.Equal(".svg", prepared.Extension);
         Assert.Equal("训练流程.svg", prepared.SuggestedFileName);
-        Assert.Equal(svg, await File.ReadAllTextAsync(
+        string savedSvg = await File.ReadAllTextAsync(
             target,
-            TestContext.Current.CancellationToken));
+            TestContext.Current.CancellationToken);
+        // The diagram's own content, styles and markers survive the round trip, and the
+        // only addition is the explicit pixel size that lets a consumer fit the file
+        // instead of falling back to the browser's 300x150 default.
+        Assert.Contains("<style>#node { fill: #eef0fa; }", savedSvg, StringComparison.Ordinal);
+        Assert.Contains("<marker id=\"tip\">", savedSvg, StringComparison.Ordinal);
+        Assert.Contains("viewBox=\"0 0 120 40\"", savedSvg, StringComparison.Ordinal);
+        Assert.Contains("width=\"120\"", savedSvg, StringComparison.Ordinal);
+        Assert.Contains("height=\"40\"", savedSvg, StringComparison.Ordinal);
+        Assert.DoesNotContain("<?xml", savedSvg, StringComparison.Ordinal);
     }
 
     [Fact]

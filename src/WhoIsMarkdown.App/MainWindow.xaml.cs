@@ -127,6 +127,7 @@ public partial class MainWindow : Window
             previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
             previewService.PreviewImageOpenRequested += PreviewService_PreviewImageOpenRequested;
+            previewService.PreviewContextImageExportRequested += PreviewService_PreviewContextImageExportRequested;
             previewService.CodeBlockCopyStatusChanged += PreviewService_CodeBlockCopyStatusChanged;
             previewService.PreviewTaskToggleRequested += PreviewService_TaskToggleRequested;
             previewService.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
@@ -284,8 +285,24 @@ public partial class MainWindow : Window
 
         try
         {
-            DocumentFileStamp stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
-            document.MarkSaved(targetPath, stamp);
+            // WIMD's own atomic save raises the external-change watcher events too.
+            // The flag covers the window before MarkSaved publishes the new baseline
+            // stamp, which is what the watcher compares against.
+            applyingFileWrite = true;
+            DocumentFileStamp stamp;
+            try
+            {
+                stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
+                document.MarkSaved(targetPath, stamp);
+            }
+            finally
+            {
+                applyingFileWrite = false;
+            }
+
+            // Save-as moves the document to another directory, so the watcher has to
+            // follow it; the same path keeps the existing watcher untouched.
+            AttachExternalDocumentWatcher();
             RecordRecentFile(targetPath);
             // Bug fix: saving does not move the caret or change the Markdown body.
             // Preserve the preview viewport when the refresh completes instead of
@@ -353,6 +370,9 @@ public partial class MainWindow : Window
             applyingDocumentText = false;
         }
 
+        // Single place where new document content is installed, so the external-change
+        // watcher always follows the path that is actually being edited.
+        AttachExternalDocumentWatcher();
         SchedulePreview();
         UpdateStatus();
         Editor.Focus();

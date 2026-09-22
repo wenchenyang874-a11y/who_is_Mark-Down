@@ -99,6 +99,9 @@ public partial class MainWindow
             case "file.save-as":
                 SaveAs_Click(this, new RoutedEventArgs());
                 break;
+            case "file.reload":
+                Reload_Click(this, new RoutedEventArgs());
+                break;
             case "view.cycle":
                 CycleWorkspaceViewMode();
                 break;
@@ -152,6 +155,7 @@ public partial class MainWindow
         OpenDocumentMenuItem.InputGestureText = GetGestureText("file.open");
         SaveDocumentMenuItem.InputGestureText = GetGestureText("file.save");
         SaveAsDocumentMenuItem.InputGestureText = GetGestureText("file.save-as");
+        ReloadDocumentMenuItem.InputGestureText = GetGestureText("file.reload");
         CycleViewModeMenuItem.InputGestureText = GetGestureText("view.cycle");
 
         foreach (MenuItem menuItem in MarkdownFormatMenuItem.Items.OfType<MenuItem>())

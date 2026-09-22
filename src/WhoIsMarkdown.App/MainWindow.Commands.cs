@@ -74,6 +74,10 @@ public partial class MainWindow
         CancelPreviewImageWork();
         DisposeAppearanceController();
         DisposePerformanceMonitor();
+        // Stops the settle timer and releases the directory handle. A watcher that
+        // outlived its window would keep posting to a dispatcher that no longer has
+        // a document to compare against.
+        DetachExternalDocumentWatcher();
         DisposeUpdateController();
         DisposeWindowChrome();
         DisposeScrollSynchronization();
@@ -83,6 +87,7 @@ public partial class MainWindow
             previewService.ExternalNavigationFailed -= PreviewService_ExternalNavigationFailed;
             previewService.PreviewNavigationFailed -= PreviewService_PreviewNavigationFailed;
             previewService.PreviewImageOpenRequested -= PreviewService_PreviewImageOpenRequested;
+            previewService.PreviewContextImageExportRequested -= PreviewService_PreviewContextImageExportRequested;
             previewService.CodeBlockCopyStatusChanged -= PreviewService_CodeBlockCopyStatusChanged;
             previewService.ScrollRatioChanged -= PreviewService_ScrollRatioChanged;
             previewService.PreviewReady -= PreviewService_PreviewReady;

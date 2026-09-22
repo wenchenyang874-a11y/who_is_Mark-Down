@@ -197,6 +197,7 @@
                     <Separator />
                     <MenuItem x:Name="SaveDocumentMenuItem" Header="保存(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
                     <MenuItem x:Name="SaveAsDocumentMenuItem" Header="另存为(_A)..." InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
+                    <MenuItem x:Name="ReloadDocumentMenuItem" Header="重新加载(_R)" AutomationProperties.Name="重新加载文档" InputGestureText="F5" Click="Reload_Click" />
                     <Separator />
                     <MenuItem x:Name="ExportPdfMenuItem" Header="导出为 PDF..." Click="ExportPdf_Click" />
                     <Separator />
