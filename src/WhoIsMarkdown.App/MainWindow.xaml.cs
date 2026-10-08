@@ -260,6 +260,7 @@ public partial class MainWindow : Window
 
             document.Load(loadedDocument);
             ApplyDocumentToEditor();
+            ApplyFileOpenViewMode();
             RecordRecentFile(loadedDocument.Path);
             UpdateStatus("文档已打开");
         }

@@ -1,5 +1,6 @@
 using System.Windows.Threading;
 using WhoIsMarkdown.App.Services;
+using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
 
@@ -31,7 +32,7 @@ public partial class MainWindow
     {
         if (applyingPreviewScrollToEditor
             || suppressEditorDrivenPreviewSyncUntilReady
-            || workspaceViewMode is not ViewModels.WorkspaceViewMode.EditorAndPreview)
+            || workspaceViewMode is not WorkspaceViewMode.EditorAndPreview)
         {
             return;
         }
@@ -74,7 +75,7 @@ public partial class MainWindow
     {
         if (applyingEditorScrollToPreview
             || IsPreviewScrollEchoSuppressed()
-            || workspaceViewMode is not ViewModels.WorkspaceViewMode.EditorAndPreview)
+            || workspaceViewMode is not WorkspaceViewMode.EditorAndPreview)
         {
             return;
         }
@@ -99,7 +100,7 @@ public partial class MainWindow
     /// </summary>
     private async Task SynchronizePreviewToCaretAsync()
     {
-        if (previewService is null || workspaceViewMode is ViewModels.WorkspaceViewMode.EditorOnly)
+        if (previewService is null || workspaceViewMode is WorkspaceViewMode.EditorOnly)
         {
             return;
         }

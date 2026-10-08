@@ -39,6 +39,8 @@ public partial class MainWindow
         SetRecentPaneExpanded(applicationSettings.IsRecentPaneExpanded, persist: false);
         ApplyAppearanceSettings();
         ApplyShortcutSettings();
+        RefreshFileOpenViewModeMenu();
+        ApplyFileOpenViewMode();
     }
 
     private void RecordRecentFile(string path)

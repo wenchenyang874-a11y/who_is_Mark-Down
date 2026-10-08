@@ -1,5 +1,6 @@
 using System.Windows;
-using WhoIsMarkdown.App.ViewModels;
+using System.Windows.Controls;
+using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
 
@@ -32,9 +33,49 @@ public partial class MainWindow
         });
     }
 
-    private void SetWorkspaceViewMode(WorkspaceViewMode mode)
+    private void FileOpenViewMode_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (sender is not MenuItem { Tag: string value }
+            || !Enum.TryParse(value, out FileOpenViewMode mode)
+            || !Enum.IsDefined(mode))
+        {
+            return;
+        }
+
+        // Changing the opening policy does not disrupt the document being read.
+        // Snapshot this window's layout so RememberLast starts from what is visible.
+        applicationSettings = applicationSettings with { FileOpenViewMode = mode, LastViewMode = workspaceViewMode };
+        RefreshFileOpenViewModeMenu();
+        if (TrySaveApplicationSettings())
+        {
+            UpdateStatus("已保存打开文件时的显示模式，下次打开文件时生效");
+        }
+    }
+
+    private void RefreshFileOpenViewModeMenu()
+    {
+        foreach (MenuItem item in FileOpenViewModeMenuItem.Items.OfType<MenuItem>())
+        {
+            item.IsChecked = item.Tag is string value
+                && Enum.TryParse(value, out FileOpenViewMode mode)
+                && mode == applicationSettings.FileOpenViewMode;
+        }
+    }
+
+    private void ApplyFileOpenViewMode()
+    {
+        SetWorkspaceViewMode(applicationSettings.ResolveFileOpenViewMode(), persist: false);
+    }
+
+    private void SetWorkspaceViewMode(WorkspaceViewMode mode, bool persist = true)
     {
         workspaceViewMode = mode;
+        applicationSettings = applicationSettings with { LastViewMode = mode };
+        if (persist)
+        {
+            TrySaveApplicationSettings();
+        }
+
         bool showEditor = mode is not WorkspaceViewMode.PreviewOnly;
         bool showPreview = mode is not WorkspaceViewMode.EditorOnly;
         bool showSplitter = mode is WorkspaceViewMode.EditorAndPreview;

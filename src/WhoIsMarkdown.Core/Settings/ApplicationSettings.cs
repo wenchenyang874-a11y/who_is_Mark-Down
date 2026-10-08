@@ -23,6 +23,26 @@ public sealed record ApplicationSettings
 
     public bool CheckForUpdatesOnStartup { get; init; }
 
+    public FileOpenViewMode FileOpenViewMode { get; init; } = FileOpenViewMode.RememberLast;
+
+    public WorkspaceViewMode LastViewMode { get; init; } = WorkspaceViewMode.EditorAndPreview;
+
+    /// <summary>
+    /// Resolve only when starting a window or successfully opening another file.
+    /// Saving and reloading must not reset the current layout or preview position.
+    /// Invalid persisted enum values fall back to the original split layout.
+    /// </summary>
+    public WorkspaceViewMode ResolveFileOpenViewMode()
+    {
+        return FileOpenViewMode switch
+        {
+            FileOpenViewMode.EditorOnly => WorkspaceViewMode.EditorOnly,
+            FileOpenViewMode.EditorAndPreview => WorkspaceViewMode.EditorAndPreview,
+            FileOpenViewMode.PreviewOnly => WorkspaceViewMode.PreviewOnly,
+            _ => Enum.IsDefined(LastViewMode) ? LastViewMode : WorkspaceViewMode.EditorAndPreview,
+        };
+    }
+
     public IReadOnlyDictionary<string, ShortcutGesture> ShortcutOverrides { get; init; }
         = new Dictionary<string, ShortcutGesture>(StringComparer.Ordinal);
 
@@ -83,6 +103,8 @@ public sealed record ApplicationSettings
             BackgroundOpacity = Math.Clamp(BackgroundOpacity, 0, 1),
             ImageInsertion = (ImageInsertion ?? new ImageInsertionSettings()).Normalize(),
             Appearance = (Appearance ?? new AppearanceSettings()).Normalize(),
+            FileOpenViewMode = Enum.IsDefined(FileOpenViewMode) ? FileOpenViewMode : FileOpenViewMode.RememberLast,
+            LastViewMode = Enum.IsDefined(LastViewMode) ? LastViewMode : WorkspaceViewMode.EditorAndPreview,
             ShortcutOverrides = normalizedShortcuts,
         };
     }

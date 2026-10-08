@@ -4,6 +4,12 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.1] - 2026-10-08
+
+### 新增
+
+- “设置 → 打开文件时的显示模式”提供仅编辑、编辑 + 预览、仅预览、沿用上次模式四个选项；默认沿用上次模式，首次使用为编辑 + 预览。文件菜单、最近文件、工作区和启动参数打开文件时统一应用；保存和重新加载不改变当前布局，安装恢复仍优先还原窗口原布局。（#1）
+
 ## [1.8.0] - 2026-09-22
 
 ### 新增
@@ -283,7 +289,9 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.10...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.10...v1.8.0
 [1.7.10]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.9...v1.7.10
 [1.7.9]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.8...v1.7.9
 [1.7.8]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.6...v1.7.8

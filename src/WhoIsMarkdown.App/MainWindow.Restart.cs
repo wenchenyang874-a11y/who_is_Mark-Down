@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Threading;
-using WhoIsMarkdown.App.ViewModels;
 using WhoIsMarkdown.Core.Lifecycle;
+using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
 
@@ -53,9 +53,10 @@ public partial class MainWindow
             return;
         }
 
-        if (Enum.TryParse(restoredWindowState.ViewMode, out WorkspaceViewMode viewMode))
+        if (Enum.TryParse(restoredWindowState.ViewMode, out WorkspaceViewMode viewMode)
+            && Enum.IsDefined(viewMode))
         {
-            SetWorkspaceViewMode(viewMode);
+            SetWorkspaceViewMode(viewMode, persist: false);
         }
 
         int caretOffset = Math.Min(restoredWindowState.CaretOffset, Editor.Document.TextLength);

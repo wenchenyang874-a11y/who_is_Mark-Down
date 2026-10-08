@@ -1,4 +1,4 @@
-namespace WhoIsMarkdown.App.ViewModels;
+namespace WhoIsMarkdown.Core.Settings;
 
 public enum WorkspaceViewMode
 {
