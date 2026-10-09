@@ -91,6 +91,7 @@ public partial class MainWindow
         PreviewOnlyModeMenuItem.IsChecked = mode is WorkspaceViewMode.PreviewOnly;
         SplitModeMenuItem.IsChecked = mode is WorkspaceViewMode.EditorAndPreview;
         EditorOnlyModeMenuItem.IsChecked = mode is WorkspaceViewMode.EditorOnly;
+        UpdatePreviewVisibility();
 
         // Bug fix: changing layout must not rebuild or navigate the WebView.
         // The existing preview DOM and scroll position remain valid while hidden.

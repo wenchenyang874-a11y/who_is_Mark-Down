@@ -15,18 +15,6 @@ public partial class MainWindow
 {
     private async void ExportPdf_Click(object sender, RoutedEventArgs eventArgs)
     {
-        PreviewWebViewService? service = previewService;
-        if (service is null)
-        {
-            MessageBox.Show(
-                this,
-                "预览组件尚未准备好，请稍后再试。",
-                "暂时无法导出 PDF",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
         SaveFileDialog dialog = new()
         {
             Title = "导出为 PDF",
@@ -52,6 +40,12 @@ public partial class MainWindow
         UpdateStatus("正在准备最新预览并导出 PDF…");
         try
         {
+            await EnsurePreviewInitializedAsync();
+            if (windowClosed || previewService is not { } service)
+            {
+                return;
+            }
+
             CancellationToken cancellationToken = await PrepareLatestPreviewForExportAsync(service);
             await service.ExportPdfAsync(temporaryPath, cancellationToken);
             File.Move(temporaryPath, targetPath, overwrite: true);
@@ -64,8 +58,14 @@ public partial class MainWindow
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
             or InvalidOperationException
+            or TimeoutException
             or System.Runtime.InteropServices.COMException)
         {
+            if (windowClosed)
+            {
+                return;
+            }
+
             UpdateStatus($"PDF 导出失败：{exception.Message}");
             MessageBox.Show(
                 this,
@@ -95,9 +95,8 @@ public partial class MainWindow
         string? documentPath = document.FilePath;
         RemoteImagePolicy remoteImagePolicy = CreateRemoteImagePolicy();
 
-        string body = await Task.Run(
-            () => markdownRenderer.RenderBody(markdown, documentPath, remoteImagePolicy),
-            cancellationToken);
+        string body = await markdownRenderer.RenderAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
+            .WaitAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (version != previewVersion)
         {
@@ -111,7 +110,8 @@ public partial class MainWindow
             page,
             visibleBody,
             documentPath,
-            remoteImagePolicy.Identity);
+            remoteImagePolicy.Identity,
+            synchronizeToCaretWhenReady: false);
         await service.WaitUntilReadyAsync(cancellationToken);
         return cancellationToken;
     }

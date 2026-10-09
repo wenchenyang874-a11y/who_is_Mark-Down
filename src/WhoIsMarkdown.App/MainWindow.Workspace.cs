@@ -41,7 +41,7 @@ public partial class MainWindow
 
     private async Task OpenWorkspaceAsync(string path)
     {
-        if (workspaceOperationRunning)
+        if (windowClosed || workspaceOperationRunning)
         {
             return;
         }
@@ -49,7 +49,14 @@ public partial class MainWindow
         workspaceOperationRunning = true;
         try
         {
-            string root = await Task.Run(() => workspaceFileService.Open(path));
+            IWorkspaceFileService service = workspaceFileService;
+            string root = await Task.Run(() => service.Open(path))
+                .WaitAsync(windowLifetimeCancellation.Token);
+            if (windowClosed)
+            {
+                return;
+            }
+
             workspaceRootPath = root;
             WorkspaceFolderNameText.Text = Path.GetFileName(root);
             WorkspaceFolderPathText.Text = root;
@@ -59,6 +66,10 @@ public partial class MainWindow
             SetRecentPaneExpanded(expanded: true, persist: true);
             await RefreshWorkspaceCoreAsync();
             UpdateStatus($"已打开工作区：{root}");
+        }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            // The window is gone; blocked filesystem work may finish separately.
         }
         catch (Exception exception) when (IsWorkspaceFailure(exception))
         {
@@ -99,6 +110,10 @@ public partial class MainWindow
             await RefreshWorkspaceCoreAsync();
             UpdateStatus("工作区已刷新");
         }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            // No closed-window UI updates after a delayed directory read.
+        }
         catch (Exception exception) when (IsWorkspaceFailure(exception))
         {
             ShowWorkspaceError("无法刷新工作区", exception);
@@ -113,8 +128,14 @@ public partial class MainWindow
     {
         string root = workspaceRootPath
             ?? throw new InvalidOperationException("尚未打开工作区。");
+        IWorkspaceFileService service = workspaceFileService;
         IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
-            () => workspaceFileService.GetChildren(root, root));
+            () => service.GetChildren(root, root)).WaitAsync(windowLifetimeCancellation.Token);
+        if (windowClosed || !string.Equals(root, workspaceRootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         WorkspaceItems.Clear();
         foreach (WorkspaceEntry entry in entries)
         {
@@ -142,9 +163,20 @@ public partial class MainWindow
         try
         {
             string root = workspaceRootPath;
+            string nodePath = node.Path;
+            IWorkspaceFileService service = workspaceFileService;
             IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
-                () => workspaceFileService.GetChildren(root, node.Path));
+                () => service.GetChildren(root, nodePath)).WaitAsync(windowLifetimeCancellation.Token);
+            if (windowClosed || !string.Equals(root, workspaceRootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             node.ReplaceChildren(entries);
+        }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            // A collapsed/closed window must not retain a blocked directory wait.
         }
         catch (Exception exception) when (IsWorkspaceFailure(exception))
         {
@@ -600,6 +632,7 @@ public partial class MainWindow
     private static bool IsWorkspaceFailure(Exception exception)
     {
         return exception is WorkspaceFileException
+            or OperationCanceledException
             or ArgumentException
             or IOException
             or UnauthorizedAccessException
@@ -610,6 +643,11 @@ public partial class MainWindow
 
     private void ShowWorkspaceError(string title, Exception exception)
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         UpdateStatus($"{title}：{exception.Message}");
         MessageBox.Show(
             this,

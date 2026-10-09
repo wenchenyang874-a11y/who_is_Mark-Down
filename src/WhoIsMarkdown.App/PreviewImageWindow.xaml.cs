@@ -321,6 +321,11 @@ public partial class PreviewImageWindow : Window
             CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
                 userDataFolder: userDataFolder);
+            if (closed)
+            {
+                return;
+            }
+
             await ImageWebView.EnsureCoreWebView2Async(environment);
 
             // The window can be closed while the environment is still starting.
@@ -336,6 +341,12 @@ public partial class PreviewImageWindow : Window
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsWebMessageEnabled = true;
             await core.AddScriptToExecuteOnDocumentCreatedAsync(ViewerInteractionScript);
+            // Closing during registration must not reattach callbacks to a dead view.
+            if (closed)
+            {
+                return;
+            }
+
             core.NavigationStarting += Core_NavigationStarting;
             core.NewWindowRequested += Core_NewWindowRequested;
             core.WebMessageReceived += Core_WebMessageReceived;

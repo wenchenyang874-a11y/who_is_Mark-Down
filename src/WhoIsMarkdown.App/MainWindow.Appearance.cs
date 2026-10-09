@@ -25,6 +25,9 @@ public partial class MainWindow
     private bool appearanceSavePending;
     private ApplicationTheme effectiveTheme = ApplicationTheme.Light;
     private string previewAppearanceStyleSheet = string.Empty;
+    private long backgroundLoadVersion;
+    private string? loadedBackgroundPath;
+    private string? pendingBackgroundPath;
 
     private void InitializeAppearanceController()
     {
@@ -34,6 +37,11 @@ public partial class MainWindow
 
     private void ApplyAppearanceSettings()
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         AppearanceSettings appearance = applicationSettings.Appearance.Normalize();
         effectiveTheme = ApplicationThemeManager.Apply(appearance.Theme);
         previewAppearanceStyleSheet = PreviewAppearanceStyleBuilder.Build(effectiveTheme, appearance);
@@ -121,9 +129,9 @@ public partial class MainWindow
         dialog.ShowDialog();
     }
 
-    private void ApplySelectedBackground(BackgroundSettingsWindow dialog, string path)
+    private async void ApplySelectedBackground(BackgroundSettingsWindow dialog, string path)
     {
-        if (!TryLoadBackgroundImage(path))
+        if (!await LoadBackgroundImageAsync(path, forceReload: true))
         {
             return;
         }
@@ -132,13 +140,19 @@ public partial class MainWindow
         {
             BackgroundImagePath = path,
         };
-        dialog.SetBackgroundPath(path);
+        if (dialog.IsVisible)
+        {
+            dialog.SetBackgroundPath(path);
+        }
         TrySaveApplicationSettings();
         UpdateStatus("已应用本地背景图片");
     }
 
     private void RemoveBackground(BackgroundSettingsWindow dialog)
     {
+        backgroundLoadVersion++;
+        loadedBackgroundPath = null;
+        pendingBackgroundPath = null;
         AppBackgroundImage.Source = null;
         applicationSettings = applicationSettings with { BackgroundImagePath = null };
         dialog.SetBackgroundPath(null);
@@ -160,38 +174,74 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(path))
         {
+            backgroundLoadVersion++;
+            loadedBackgroundPath = null;
+            pendingBackgroundPath = null;
             AppBackgroundImage.Source = null;
             return;
         }
 
-        if (!TryLoadBackgroundImage(path))
-        {
-            applicationSettings = applicationSettings with { BackgroundImagePath = null };
-        }
+        _ = LoadBackgroundImageAsync(path);
     }
 
-    private bool TryLoadBackgroundImage(string path)
+    private async Task<bool> LoadBackgroundImageAsync(string path, bool forceReload = false)
     {
+        if (windowClosed)
+        {
+            return false;
+        }
+
+        if (!forceReload && (string.Equals(path, loadedBackgroundPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, pendingBackgroundPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        long version = ++backgroundLoadVersion;
+        pendingBackgroundPath = path;
+        // Snapshot DPI/layout before entering the worker: it must never read WPF
+        // controls. Keep the existing bitmap visible while its replacement loads.
+        DpiScale dpi = VisualTreeHelper.GetDpi(this);
+        int width = (int)Math.Clamp(Math.Max(ActualWidth, SystemParameters.PrimaryScreenWidth) * dpi.DpiScaleX, 1, 4096);
+        int height = (int)Math.Clamp(Math.Max(ActualHeight, SystemParameters.PrimaryScreenHeight) * dpi.DpiScaleY, 1, 4096);
         try
         {
-            BitmapImage image = new();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-            image.UriSource = new Uri(System.IO.Path.GetFullPath(path), UriKind.Absolute);
-            image.EndInit();
-            image.Freeze();
+            BitmapImage image = await Task.Run(() => BackgroundImageLoader.Load(path, width, height))
+                .WaitAsync(windowLifetimeCancellation.Token);
+            if (windowClosed || version != backgroundLoadVersion)
+            {
+                return false;
+            }
+
             AppBackgroundImage.Source = image;
+            loadedBackgroundPath = path;
             return true;
+        }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            return false;
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
             or NotSupportedException
-            or FormatException)
+            or FormatException
+            or ArgumentException
+            or InvalidOperationException
+            or System.Runtime.InteropServices.COMException)
         {
-            AppBackgroundImage.Source = null;
-            UpdateStatus($"无法加载背景图片：{exception.Message}");
+            if (!windowClosed && version == backgroundLoadVersion)
+            {
+                UpdateStatus($"无法加载背景图片：{exception.Message}");
+            }
+
             return false;
+        }
+        finally
+        {
+            if (version == backgroundLoadVersion)
+            {
+                pendingBackgroundPath = null;
+            }
         }
     }
 
@@ -221,6 +271,10 @@ public partial class MainWindow
 
     private void DisposeAppearanceController()
     {
+        backgroundLoadVersion++;
+        AppBackgroundImage.Source = null;
+        loadedBackgroundPath = null;
+        pendingBackgroundPath = null;
         FlushAppearanceSettings();
         appearanceSaveTimer.Tick -= AppearanceSaveTimer_Tick;
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;

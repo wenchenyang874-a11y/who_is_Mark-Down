@@ -34,7 +34,7 @@ public sealed class RecentFileStartupPresentationTests
         Assert.DoesNotContain("{Binding IsAvailable}", mainWindowXaml, StringComparison.Ordinal);
         Assert.Contains("Task.Run(() => File.Exists(path))", recentFilesCode, StringComparison.Ordinal);
         Assert.Contains(
-            "await Task.Run(() => fileService.ReadAsync(path))",
+            "Task.Run(() => service.ReadAsync(path, token), token).WaitAsync(token)",
             mainWindowCode,
             StringComparison.Ordinal);
         Assert.Contains("GetStartupPathArgument()", mainWindowCode, StringComparison.Ordinal);

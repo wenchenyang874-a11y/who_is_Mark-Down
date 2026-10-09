@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 
 namespace WhoIsMarkdown.App.Services;
@@ -34,8 +35,22 @@ internal static class WebViewScriptResult
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         ArgumentException.ThrowIfNullOrWhiteSpace(slotExpression);
 
-        await core.ExecuteScriptAsync(script).ConfigureAwait(true);
-        return await PollAsync(core, slotExpression, timeout, cancellationToken)
+        // Bound the native call too, not just the interval between polls. A closed
+        // or unresponsive browser may never complete ExecuteScriptAsync. WaitAsync
+        // stops our wait; it does not claim to interrupt Chromium's running script.
+        cancellationToken.ThrowIfCancellationRequested();
+        if (timeout <= TimeSpan.Zero) return null;
+        Stopwatch elapsed = Stopwatch.StartNew();
+        try
+        {
+            await core.ExecuteScriptAsync(script).WaitAsync(timeout, cancellationToken).ConfigureAwait(true);
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+
+        return await PollAsync(core, slotExpression, timeout - elapsed.Elapsed, cancellationToken)
             .ConfigureAwait(true);
     }
 
@@ -52,18 +67,33 @@ internal static class WebViewScriptResult
         ArgumentNullException.ThrowIfNull(core);
         ArgumentException.ThrowIfNullOrWhiteSpace(slotExpression);
 
-        DateTime deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        Stopwatch elapsed = Stopwatch.StartNew();
+        while (elapsed.Elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            string result = await core.ExecuteScriptAsync(slotExpression).ConfigureAwait(true);
+            TimeSpan remaining = timeout - elapsed.Elapsed;
+            if (remaining <= TimeSpan.Zero) return null;
+            string result;
+            try
+            {
+                result = await core.ExecuteScriptAsync(slotExpression)
+                    .WaitAsync(remaining, cancellationToken).ConfigureAwait(true);
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+
             string trimmed = result.Trim();
             if (!trimmed.Equals("null", StringComparison.Ordinal))
             {
                 return trimmed;
             }
 
-            await Task.Delay(PollIntervalMilliseconds, cancellationToken).ConfigureAwait(true);
+            remaining = timeout - elapsed.Elapsed;
+            if (remaining <= TimeSpan.Zero) return null;
+            await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(PollIntervalMilliseconds, remaining.TotalMilliseconds)),
+                cancellationToken).ConfigureAwait(true);
         }
 
         return null;

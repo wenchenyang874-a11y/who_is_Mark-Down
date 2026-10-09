@@ -60,8 +60,31 @@ public partial class MainWindow
 
     private async Task OpenRecentFileAsync(string path)
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
+        long requestVersion = Interlocked.Increment(ref documentOpenVersion);
         UpdateStatus("正在检查最近文件…");
-        if (!await Task.Run(() => File.Exists(path)))
+        bool exists;
+        try
+        {
+            // A disconnected recent path must not keep a closed window alive or
+            // reopen a stale document after a newer open/new request has won.
+            exists = await Task.Run(() => File.Exists(path)).WaitAsync(windowLifetimeCancellation.Token);
+        }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            return;
+        }
+
+        if (windowClosed || requestVersion != Volatile.Read(ref documentOpenVersion))
+        {
+            return;
+        }
+
+        if (!exists)
         {
             ShowRecentFileMissing(path);
             return;
@@ -228,6 +251,11 @@ public partial class MainWindow
 
     private void ShowRecentFileMissing(string path)
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         MessageBox.Show(
             this,
             $"文件已移动或不存在：\n{path}\n\n可右键选择“移出最近记录”，该操作不会删除原文件。",

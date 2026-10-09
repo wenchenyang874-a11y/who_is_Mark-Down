@@ -1,4 +1,3 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using WhoIsMarkdown.App.Services;
@@ -25,7 +24,7 @@ public partial class MainWindow
     /// </summary>
     private const int ExternalChangeSettleMilliseconds = 400;
 
-    private FileSystemWatcher? externalDocumentWatcher;
+    private DocumentChangeMonitor? externalDocumentWatcher;
     private DispatcherTimer? externalDocumentChangeTimer;
     private string? watchedDocumentPath;
     private DocumentFileStamp? reportedExternalStamp;
@@ -76,8 +75,8 @@ public partial class MainWindow
         long requestVersion = Interlocked.Increment(ref documentOpenVersion);
         try
         {
-            LoadedDocument loaded = await Task.Run(() => fileService.ReadAsync(path));
-            if (requestVersion != Volatile.Read(ref documentOpenVersion))
+            LoadedDocument loaded = await ReadDocumentOffThreadAsync(path);
+            if (windowClosed || requestVersion != Volatile.Read(ref documentOpenVersion))
             {
                 return false;
             }
@@ -88,9 +87,13 @@ public partial class MainWindow
             ApplyDocumentToEditor();
             return true;
         }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            return false;
+        }
         catch (DocumentFileException exception)
         {
-            if (requestVersion == Volatile.Read(ref documentOpenVersion))
+            if (!windowClosed && requestVersion == Volatile.Read(ref documentOpenVersion))
             {
                 ShowFileError("无法重新加载文档", exception);
             }
@@ -121,13 +124,29 @@ public partial class MainWindow
         {
             // The reopen request travels through the same open-image path as a user
             // click, so the handler needs to know it should report a refresh.
-            await WaitForPreviewRefreshAsync();
+            if (workspaceViewMode == WhoIsMarkdown.Core.Settings.WorkspaceViewMode.EditorOnly)
+            {
+                await PrepareLatestPreviewForExportAsync(service);
+            }
+            else
+            {
+                await WaitForPreviewRefreshAsync();
+            }
+
+            if (windowClosed)
+            {
+                return;
+            }
             previewImageRefreshRequested = true;
             if (!await service.TryReopenLastPreviewImageAsync())
             {
                 previewImageRefreshRequested = false;
                 UpdateStatus("预览中已找不到刚才打开的图片，图片查看窗口保持原内容");
             }
+        }
+        catch (OperationCanceledException)
+        {
+            previewImageRefreshRequested = false;
         }
         catch (Exception exception) when (exception is InvalidOperationException
             or ObjectDisposedException
@@ -184,49 +203,22 @@ public partial class MainWindow
             return;
         }
 
-        DetachExternalDocumentWatcher();
+        DetachExternalDocumentWatcher(disposeMonitor: false);
         if (path is null || windowClosed)
         {
             return;
         }
 
-        string? directory = Path.GetDirectoryName(path);
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-        {
-            return;
-        }
-
-        try
-        {
-            FileSystemWatcher watcher = new(directory, Path.GetFileName(path))
-            {
-                NotifyFilter = NotifyFilters.LastWrite
-                    | NotifyFilters.Size
-                    | NotifyFilters.CreationTime
-                    | NotifyFilters.FileName,
-            };
-            watcher.Changed += ExternalDocumentWatcher_Changed;
-            watcher.Created += ExternalDocumentWatcher_Changed;
-            watcher.Deleted += ExternalDocumentWatcher_Changed;
-            watcher.Renamed += ExternalDocumentWatcher_Changed;
-            watcher.EnableRaisingEvents = true;
-            externalDocumentWatcher = watcher;
-            watchedDocumentPath = path;
-        }
-        catch (Exception exception) when (exception is ArgumentException
-            or IOException
-            or UnauthorizedAccessException
-            or NotSupportedException)
-        {
-            // Watching is a convenience layered on top of editing. A path that cannot
-            // be watched — a disconnected share, for example — must never block
-            // opening, saving or closing the document itself.
-            externalDocumentWatcher = null;
-            watchedDocumentPath = null;
-        }
+        // Registration and handle disposal are worker-owned, including the implicit
+        // directory probe made by FileSystemWatcher itself. No UI-thread disk access.
+        externalDocumentWatcher ??= new DocumentChangeMonitor();
+        externalDocumentWatcher.Changed -= ExternalDocumentWatcher_Changed;
+        externalDocumentWatcher.Changed += ExternalDocumentWatcher_Changed;
+        watchedDocumentPath = path;
+        externalDocumentWatcher.SetPath(path);
     }
 
-    private void DetachExternalDocumentWatcher()
+    private void DetachExternalDocumentWatcher(bool disposeMonitor = true)
     {
         if (externalDocumentChangeTimer is not null)
         {
@@ -237,13 +229,16 @@ public partial class MainWindow
 
         if (externalDocumentWatcher is not null)
         {
-            externalDocumentWatcher.EnableRaisingEvents = false;
-            externalDocumentWatcher.Changed -= ExternalDocumentWatcher_Changed;
-            externalDocumentWatcher.Created -= ExternalDocumentWatcher_Changed;
-            externalDocumentWatcher.Deleted -= ExternalDocumentWatcher_Changed;
-            externalDocumentWatcher.Renamed -= ExternalDocumentWatcher_Changed;
-            externalDocumentWatcher.Dispose();
-            externalDocumentWatcher = null;
+            if (disposeMonitor)
+            {
+                externalDocumentWatcher.Changed -= ExternalDocumentWatcher_Changed;
+                externalDocumentWatcher.Dispose();
+                externalDocumentWatcher = null;
+            }
+            else
+            {
+                externalDocumentWatcher.SetPath(null);
+            }
         }
 
         watchedDocumentPath = null;
@@ -251,14 +246,17 @@ public partial class MainWindow
         reportedDocumentUnavailable = false;
     }
 
-    private void ExternalDocumentWatcher_Changed(object sender, FileSystemEventArgs eventArgs)
+    private void ExternalDocumentWatcher_Changed(object? sender, EventArgs eventArgs)
     {
         // Watcher callbacks run on a pool thread. Only the dispatcher may touch the
         // editor, the preview and the window controls, so the event is republished
         // there before any state is read.
-        _ = Dispatcher.BeginInvoke(
-            DispatcherPriority.Background,
-            new Action(QueueExternalDocumentChangeCheck));
+        if (!Dispatcher.HasShutdownStarted)
+        {
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                new Action(QueueExternalDocumentChangeCheck));
+        }
     }
 
     private void QueueExternalDocumentChangeCheck()
@@ -296,11 +294,20 @@ public partial class MainWindow
         DocumentFileStamp current;
         try
         {
-            current = await Task.Run(() => fileService.Inspect(path));
+            IDocumentFileService service = fileService;
+            current = await Task.Run(() => service.Inspect(path))
+                .WaitAsync(windowLifetimeCancellation.Token);
+        }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            return;
         }
         catch (DocumentFileException)
         {
-            ReportExternalDocumentLoss();
+            if (!windowClosed && string.Equals(document.FilePath, path, StringComparison.OrdinalIgnoreCase))
+            {
+                ReportExternalDocumentLoss();
+            }
             return;
         }
 

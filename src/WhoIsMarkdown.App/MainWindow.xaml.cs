@@ -21,9 +21,10 @@ public partial class MainWindow : Window
     private const int PreviewDebounceMilliseconds = 100;
 
     private readonly IDocumentFileService fileService = new DocumentFileService();
-    private readonly IMarkdownRenderer markdownRenderer = new MarkdownRenderer();
+    private readonly MarkdownRenderWorker markdownRenderer = new();
     private readonly IPreviewDocumentBuilder previewDocumentBuilder = new PreviewDocumentBuilder();
     private readonly DocumentEditorViewModel document = new();
+    private readonly CancellationTokenSource windowLifetimeCancellation = new();
 
     private PreviewWebViewService? previewService;
     private CancellationTokenSource? previewCancellation;
@@ -86,6 +87,11 @@ public partial class MainWindow : Window
             await OpenWorkspaceAsync(startupWorkspacePath);
         }
 
+        if (windowClosed)
+        {
+            return;
+        }
+
         if (restoredWindowState?.DocumentText is not null)
         {
             document.RestoreAfterUpdate(restoredWindowState);
@@ -110,45 +116,18 @@ public partial class MainWindow : Window
             }
         }
 
+        if (windowClosed)
+        {
+            return;
+        }
+
         RestoreWindowInteractionState();
-
-        try
+        windowStartupComplete = true;
+        await EnsureVisiblePreviewAsync();
+        if (!windowClosed)
         {
-            previewStyleSheet = ReadComponentTextResource(
-                "preview.css",
-                "找不到预览样式资源。");
-            string mermaidLibraryScript = ReadComponentTextResource(
-                "mermaid.min.js",
-                "找不到 Mermaid 离线渲染资源。");
-            previewService = new PreviewWebViewService(
-                Preview,
-                clipboardTextService,
-                mermaidLibraryScript);
-            previewService.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
-            previewService.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
-            previewService.PreviewImageOpenRequested += PreviewService_PreviewImageOpenRequested;
-            previewService.PreviewContextImageExportRequested += PreviewService_PreviewContextImageExportRequested;
-            previewService.CodeBlockCopyStatusChanged += PreviewService_CodeBlockCopyStatusChanged;
-            previewService.PreviewTaskToggleRequested += PreviewService_TaskToggleRequested;
-            previewService.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
-            previewService.PreviewReady += PreviewService_PreviewReady;
-            await previewService.InitializeAsync();
-
-            if (!windowClosed)
-            {
-                SchedulePreview();
-                UpdateStatus("准备就绪");
-                Editor.Focus();
-                _ = StartAutomaticUpdateCheckAsync();
-            }
-        }
-        catch (ObjectDisposedException) when (windowClosed)
-        {
-            // Closing during WebView initialization is an expected lifecycle race.
-        }
-        catch (Exception exception)
-        {
-            UpdateStatus($"预览初始化失败：{exception.Message}");
+            Editor.Focus();
+            _ = StartAutomaticUpdateCheckAsync();
         }
     }
 
@@ -166,6 +145,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (windowClosed)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref documentOpenVersion);
         document.StartNew(++untitledCounter);
         ApplyDocumentToEditor();
         RefreshRecentFilesView();
@@ -243,6 +228,11 @@ public partial class MainWindow : Window
 
     private async Task OpenDocumentAsync(string path)
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         // Workspace double-clicks may start overlapping asynchronous reads. Only the
         // latest request may update the editor; otherwise an older, slower read can
         // finish last and make switching appear to jump back to the previous file.
@@ -252,8 +242,8 @@ public partial class MainWindow : Window
             // Bug fix: opening a path can block before an asynchronous file read is
             // established (notably on disconnected mapped drives). Run the complete
             // open operation off the dispatcher so a slow path cannot freeze WIMD.
-            LoadedDocument loadedDocument = await Task.Run(() => fileService.ReadAsync(path));
-            if (requestVersion != Volatile.Read(ref documentOpenVersion))
+            LoadedDocument loadedDocument = await ReadDocumentOffThreadAsync(path);
+            if (windowClosed || requestVersion != Volatile.Read(ref documentOpenVersion))
             {
                 return;
             }
@@ -264,13 +254,26 @@ public partial class MainWindow : Window
             RecordRecentFile(loadedDocument.Path);
             UpdateStatus("文档已打开");
         }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            // Stop waiting on close; the underlying filesystem may still be busy.
+        }
         catch (DocumentFileException exception)
         {
-            if (requestVersion == Volatile.Read(ref documentOpenVersion))
+            if (!windowClosed && requestVersion == Volatile.Read(ref documentOpenVersion))
             {
                 ShowFileError("无法打开文档", exception);
             }
         }
+    }
+
+    private Task<LoadedDocument> ReadDocumentOffThreadAsync(string path)
+    {
+        // Do not capture this Window in the worker. WaitAsync releases the UI
+        // continuation on close even when a driver ignores read cancellation.
+        IDocumentFileService service = fileService;
+        CancellationToken token = windowLifetimeCancellation.Token;
+        return Task.Run(() => service.ReadAsync(path, token), token).WaitAsync(token);
     }
 
     private async Task<bool> SaveCurrentDocumentAsync(bool forceSaveAs)
@@ -294,6 +297,11 @@ public partial class MainWindow : Window
             try
             {
                 stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
+                if (windowClosed)
+                {
+                    return false;
+                }
+
                 document.MarkSaved(targetPath, stamp);
             }
             finally
@@ -321,6 +329,11 @@ public partial class MainWindow : Window
 
     private async Task<bool> ConfirmDiscardOrSaveAsync()
     {
+        if (windowClosed)
+        {
+            return false;
+        }
+
         if (!document.IsDirty)
         {
             return true;
@@ -359,6 +372,11 @@ public partial class MainWindow : Window
 
     private void ApplyDocumentToEditor()
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         applyingDocumentText = true;
         try
         {
@@ -381,13 +399,16 @@ public partial class MainWindow : Window
 
     private void SchedulePreview(bool synchronizePreviewToCaretWhenReady = true)
     {
-        if (previewService is null || windowClosed)
+        previewNeedsRefresh = true;
+        CancelPreviewWork();
+        if (!previewInitialized || previewService is null || windowClosed
+            || workspaceViewMode == WhoIsMarkdown.Core.Settings.WorkspaceViewMode.EditorOnly)
         {
             return;
         }
 
-        previewCancellation?.Cancel();
-        previewCancellation?.Dispose();
+        previewNeedsRefresh = false;
+        previewRenderPending = true;
         previewCancellation = new CancellationTokenSource();
         long version = ++previewVersion;
         RemoteImagePolicy remoteImagePolicy = CreateRemoteImagePolicy();
@@ -415,9 +436,9 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
-            string body = await Task.Run(
-                () => markdownRenderer.RenderBody(markdown, documentPath, remoteImagePolicy),
-                cancellationToken);
+            string body = await markdownRenderer.RenderAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
+                .WaitAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             string visibleBody = previewDocumentBuilder.GetVisibleBody(body);
             string pageStyleSheet = string.Concat(
                 previewStyleSheet,
@@ -447,12 +468,25 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            if (windowClosed || version != previewVersion)
+            {
+                return;
+            }
+
+            previewNeedsRefresh = true;
             if (!synchronizePreviewToCaretWhenReady && version == previewVersion)
             {
                 ReleaseTaskPreviewPositionSuppression();
             }
 
             UpdateStatus($"预览失败：{exception.Message}");
+        }
+        finally
+        {
+            if (version == previewVersion)
+            {
+                previewRenderPending = false;
+            }
         }
     }
 
@@ -531,12 +565,22 @@ public partial class MainWindow : Window
 
     private void ShowFileError(string title, DocumentFileException exception)
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         UpdateStatus(exception.Message);
         MessageBox.Show(this, exception.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
     }
 
     private void UpdateStatus(string? message = null)
     {
+        if (windowClosed)
+        {
+            return;
+        }
+
         if (message is not null)
         {
             StatusText.Text = message;

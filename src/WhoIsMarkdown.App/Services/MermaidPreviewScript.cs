@@ -15,6 +15,32 @@ internal static class MermaidPreviewScript
           const maximumSourceLength = 50000;
           let renderQueue = Promise.resolve();
           let nextDiagramId = 1;
+          // Rebuilding the Markdown DOM used to re-render every unchanged diagram.
+          // Retain only sanitized image strings, never detached DOM nodes. Both
+          // entry count and UTF-16 character storage are bounded per preview page.
+          const diagramCache = new Map();
+          const maximumCacheEntries = 32;
+          const maximumCacheCharacters = 1024 * 1024;
+          let cacheCharacters = 0;
+          const getCachedDiagram = source => {
+            const image = diagramCache.get(source);
+            if (image !== undefined) {
+              diagramCache.delete(source);
+              diagramCache.set(source, image);
+            }
+            return image;
+          };
+          const cacheDiagram = (source, image) => {
+            const size = source.length + image.length;
+            if (size > maximumCacheCharacters) return;
+            while (diagramCache.size >= maximumCacheEntries || cacheCharacters + size > maximumCacheCharacters) {
+              const oldest = diagramCache.keys().next().value;
+              cacheCharacters -= oldest.length + diagramCache.get(oldest).length;
+              diagramCache.delete(oldest);
+            }
+            diagramCache.set(source, image);
+            cacheCharacters += size;
+          };
 
           // Security note: Mermaid is configured by the trusted host only. Theme
           // directives and other security-sensitive options are locked so Markdown
@@ -150,7 +176,8 @@ internal static class MermaidPreviewScript
             const sourceBlock = sourceElement instanceof HTMLPreElement
               ? sourceElement
               : sourceElement.parentElement;
-            if (!(sourceBlock instanceof HTMLPreElement) || sourceBlock.dataset.wimdMermaid === 'done') return;
+            if (!(sourceBlock instanceof HTMLPreElement) || !sourceBlock.isConnected
+                || sourceBlock.dataset.wimdMermaid === 'done') return;
             sourceBlock.dataset.wimdMermaid = 'pending';
             const source = (sourceElement.textContent || '').replace(/\r?\n$/, '');
             if (!source.trim() || source.length > maximumSourceLength) {
@@ -162,9 +189,14 @@ internal static class MermaidPreviewScript
             }
 
             try {
-              const renderId = `wimd-mermaid-${nextDiagramId++}`;
-              const result = await mermaid.render(renderId, source);
-              const safeSvg = sanitizeSvg(result.svg);
+              let imageSource = getCachedDiagram(source);
+              if (imageSource === undefined) {
+                const renderId = `wimd-mermaid-${nextDiagramId++}`;
+                const result = await mermaid.render(renderId, source);
+                imageSource = toSvgDataUri(sanitizeSvg(result.svg));
+                cacheDiagram(source, imageSource);
+              }
+              if (!sourceBlock.isConnected) return;
               const figure = document.createElement('figure');
               figure.className = 'wimd-mermaid-diagram';
               copySourceAnchor(sourceBlock, figure);
@@ -176,7 +208,7 @@ internal static class MermaidPreviewScript
               image.draggable = false;
               image.decoding = 'async';
               image.dataset.wimdGeneratedDiagram = 'true';
-              image.src = toSvgDataUri(safeSvg);
+              image.src = imageSource;
               surface.append(image);
               figure.append(surface);
               sourceBlock.replaceWith(figure);

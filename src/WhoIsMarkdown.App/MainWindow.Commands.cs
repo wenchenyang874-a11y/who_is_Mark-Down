@@ -69,7 +69,11 @@ public partial class MainWindow
     protected override void OnClosed(EventArgs e)
     {
         windowClosed = true;
+        windowLifetimeCancellation.Cancel();
+        windowLifetimeCancellation.Dispose();
+        Interlocked.Increment(ref documentOpenVersion);
         CancelPreviewWork();
+        markdownRenderer.Dispose();
         CancelImageWork();
         CancelPreviewImageWork();
         DisposeAppearanceController();
@@ -89,10 +93,15 @@ public partial class MainWindow
             previewService.PreviewImageOpenRequested -= PreviewService_PreviewImageOpenRequested;
             previewService.PreviewContextImageExportRequested -= PreviewService_PreviewContextImageExportRequested;
             previewService.CodeBlockCopyStatusChanged -= PreviewService_CodeBlockCopyStatusChanged;
+            previewService.PreviewTaskToggleRequested -= PreviewService_TaskToggleRequested;
             previewService.ScrollRatioChanged -= PreviewService_ScrollRatioChanged;
             previewService.PreviewReady -= PreviewService_PreviewReady;
             previewService.Dispose();
             previewService = null;
+        }
+        else
+        {
+            Preview.Dispose();
         }
 
         Editor.TextArea.Caret.PositionChanged -= EditorCaret_PositionChanged;

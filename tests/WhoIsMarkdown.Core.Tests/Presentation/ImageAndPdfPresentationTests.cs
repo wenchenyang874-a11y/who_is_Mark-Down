@@ -167,7 +167,9 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("BackgroundImageSelected?.Invoke(dialog.FileName)", selectHandler, StringComparison.Ordinal);
         Assert.DoesNotContain("Close()", selectHandler, StringComparison.Ordinal);
         Assert.Contains("ReadComponentTextResource", mainWindowCode, StringComparison.Ordinal);
-        Assert.Contains("\"preview.css\"", mainWindowCode, StringComparison.Ordinal);
+        string previewLifecycle = File.ReadAllText(Path.Combine(
+            repositoryRoot, "src", "WhoIsMarkdown.App", "MainWindow.PreviewLifecycle.cs"));
+        Assert.Contains("\"preview.css\"", previewLifecycle, StringComparison.Ordinal);
         Assert.Contains(
             "typeof(MainWindow).Assembly.GetName().Name",
             mainWindowCode,

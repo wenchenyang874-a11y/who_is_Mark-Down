@@ -200,6 +200,10 @@ public sealed class PreviewWebViewService : IDisposable
           };
 
           const prepareCodeBlocks = () => {
+            // A replaced document must not remain rooted by unanswered host requests.
+            for (const [id, button] of pendingButtons) {
+              if (!button.isConnected) pendingButtons.delete(id);
+            }
             const preview = document.querySelector(previewSelector);
             if (!preview) return;
             preview.querySelectorAll('pre').forEach(block => {
@@ -301,6 +305,9 @@ public sealed class PreviewWebViewService : IDisposable
           };
 
           const prepareTasks = () => {
+            for (const [id, pending] of pendingCheckboxes) {
+              if (!pending.checkbox.isConnected) pendingCheckboxes.delete(id);
+            }
             document.querySelectorAll(checkboxSelector).forEach(checkbox => {
               if (getSourceLine(checkbox) === null) return;
               checkbox.disabled = false;
@@ -350,8 +357,10 @@ public sealed class PreviewWebViewService : IDisposable
         """;
 
     private readonly WebView2 webView;
+    private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly IClipboardTextService clipboardTextService;
-    private readonly string mermaidScript;
+    private Func<string>? mermaidLibraryLoader;
+    private bool mermaidInitialized;
     private readonly PreviewNavigationGate navigationGate = new();
     private readonly PreviewResourceMappingState resourceMappingState = new();
     private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
@@ -376,11 +385,19 @@ public sealed class PreviewWebViewService : IDisposable
         WebView2 webView,
         IClipboardTextService clipboardTextService,
         string mermaidLibraryScript)
+        : this(webView, clipboardTextService, () => mermaidLibraryScript)
+    {
+    }
+
+    public PreviewWebViewService(
+        WebView2 webView,
+        IClipboardTextService clipboardTextService,
+        Func<string> mermaidLibraryLoader)
     {
         this.webView = webView ?? throw new ArgumentNullException(nameof(webView));
         this.clipboardTextService = clipboardTextService
             ?? throw new ArgumentNullException(nameof(clipboardTextService));
-        mermaidScript = MermaidPreviewScript.Build(mermaidLibraryScript);
+        this.mermaidLibraryLoader = mermaidLibraryLoader ?? throw new ArgumentNullException(nameof(mermaidLibraryLoader));
         this.webView.DefaultBackgroundColor = Color.Transparent;
     }
 
@@ -413,8 +430,11 @@ public sealed class PreviewWebViewService : IDisposable
 
         CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
-            userDataFolder: WebView2UserDataFolder.Resolve()).ConfigureAwait(true);
-        await webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+            userDataFolder: WebView2UserDataFolder.Resolve())
+            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+        ThrowIfDisposed();
+        await webView.EnsureCoreWebView2Async(environment)
+            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
         ThrowIfDisposed();
 
         core = webView.CoreWebView2;
@@ -427,11 +447,14 @@ public sealed class PreviewWebViewService : IDisposable
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsWebMessageEnabled = true;
-        await core.AddScriptToExecuteOnDocumentCreatedAsync(mermaidScript).ConfigureAwait(true);
-        await core.AddScriptToExecuteOnDocumentCreatedAsync(ScrollReportingScript).ConfigureAwait(true);
-        await core.AddScriptToExecuteOnDocumentCreatedAsync(ImageInteractionScript).ConfigureAwait(true);
-        await core.AddScriptToExecuteOnDocumentCreatedAsync(CodeBlockCopyScript).ConfigureAwait(true);
-        await core.AddScriptToExecuteOnDocumentCreatedAsync(TaskListInteractionScript).ConfigureAwait(true);
+        await RegisterHostScriptAsync(ScrollReportingScript).ConfigureAwait(true);
+        ThrowIfDisposed();
+        await RegisterHostScriptAsync(ImageInteractionScript).ConfigureAwait(true);
+        ThrowIfDisposed();
+        await RegisterHostScriptAsync(CodeBlockCopyScript).ConfigureAwait(true);
+        ThrowIfDisposed();
+        await RegisterHostScriptAsync(TaskListInteractionScript).ConfigureAwait(true);
+        ThrowIfDisposed();
         core.NavigationStarting += OnNavigationStarting;
         core.NavigationCompleted += OnNavigationCompleted;
         core.NewWindowRequested += OnNewWindowRequested;
@@ -728,7 +751,7 @@ public sealed class PreviewWebViewService : IDisposable
             return Task.CompletedTask;
         }
 
-        return previewReadySource.Task.WaitAsync(cancellationToken);
+        return previewReadySource.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
     }
 
     /// <summary>
@@ -855,8 +878,13 @@ public sealed class PreviewWebViewService : IDisposable
         }
 
         disposed = true;
+        // Unwind host continuations immediately on close. This cancels our waits,
+        // not native WebView2 operations; the control itself is disposed below.
+        lifetimeCancellation.Cancel();
+        lifetimeCancellation.Dispose();
         previewReadySource.TrySetCanceled();
         pendingPreview = null;
+        mermaidLibraryLoader = null;
         previewPageReady = false;
         navigationInProgress = false;
         navigationGate.CancelGeneratedNavigation();
@@ -899,6 +927,8 @@ public sealed class PreviewWebViewService : IDisposable
             {
                 PreviewSnapshot snapshot = pendingPreview;
                 pendingPreview = null;
+                await EnsureMermaidForBodyAsync(snapshot.BodyHtml).ConfigureAwait(true);
+                ThrowIfDisposed();
                 synchronizeCaretWhenReady = snapshot.SynchronizeToCaretWhenReady;
                 bool resourceMappingChanged = ConfigureDocumentResourceMapping(
                     snapshot.DocumentPath);
@@ -973,6 +1003,7 @@ public sealed class PreviewWebViewService : IDisposable
         }
 
         string result = await core.ExecuteScriptAsync(PreviewUpdateScriptBuilder.Build(bodyHtml))
+            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token)
             .ConfigureAwait(true);
         if (!string.Equals(result, "true", StringComparison.Ordinal))
         {
@@ -985,7 +1016,7 @@ public sealed class PreviewWebViewService : IDisposable
 
     private async Task WaitForMermaidRenderingAsync()
     {
-        if (core is null)
+        if (disposed || core is null || !mermaidInitialized)
         {
             return;
         }
@@ -1010,7 +1041,40 @@ public sealed class PreviewWebViewService : IDisposable
             """,
             "window.wimdMermaidIdle",
             MermaidIdleTimeout,
-            CancellationToken.None).ConfigureAwait(true);
+            lifetimeCancellation.Token).ConfigureAwait(true);
+    }
+
+    private async Task EnsureMermaidForBodyAsync(string bodyHtml)
+    {
+        if (mermaidInitialized || mermaidLibraryLoader is null || core is null
+            || (!bodyHtml.Contains("language-mermaid", StringComparison.Ordinal)
+                && !bodyHtml.Contains("class=\"mermaid\"", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        // Register before any navigation, then also prepare the existing page for
+        // its first diagram. CSP remains script-src 'none'; only the host runs this.
+        string script = "if (!window.wimdMermaid) {\n"
+            + MermaidPreviewScript.Build(mermaidLibraryLoader()) + "\n}";
+        await RegisterHostScriptAsync(script).ConfigureAwait(true);
+        ThrowIfDisposed();
+        if (previewPageReady)
+        {
+            await core.ExecuteScriptAsync(script)
+                .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+            ThrowIfDisposed();
+        }
+
+        mermaidInitialized = true;
+        mermaidLibraryLoader = null;
+    }
+
+    private async Task RegisterHostScriptAsync(string script)
+    {
+        ThrowIfDisposed();
+        await core!.AddScriptToExecuteOnDocumentCreatedAsync(script)
+            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
     }
 
     private async Task ExecuteHostScriptAsync(string script)
@@ -1205,8 +1269,10 @@ public sealed class PreviewWebViewService : IDisposable
                 {
                     await ProcessPreviewQueueAsync().ConfigureAwait(true);
                 }
-                catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or System.Runtime.InteropServices.COMException)
+                catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException
+                    or OperationCanceledException or TimeoutException or System.Runtime.InteropServices.COMException)
                 {
+                    if (disposed) return;
                     string message = $"预览更新失败：{exception.Message}";
                     SignalPreviewFailure(message);
                     PreviewNavigationFailed?.Invoke(this, message);
@@ -1232,8 +1298,10 @@ public sealed class PreviewWebViewService : IDisposable
                 SignalPreviewReady();
             }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or System.Runtime.InteropServices.COMException)
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException
+            or OperationCanceledException or TimeoutException or System.Runtime.InteropServices.COMException)
         {
+            if (disposed) return;
             string message = $"预览更新失败：{exception.Message}";
             SignalPreviewFailure(message);
             PreviewNavigationFailed?.Invoke(this, message);

@@ -90,11 +90,12 @@ public sealed class DocumentReloadPresentationTests
         string reloadCode = ReadAppSource("MainWindow.Reload.cs");
         string mainWindowCode = ReadAppSource("MainWindow.xaml.cs");
 
-        Assert.Contains(
-            "FileSystemWatcher watcher = new(directory, Path.GetFileName(path))",
-            reloadCode,
-            StringComparison.Ordinal);
-        Assert.Contains("watcher.EnableRaisingEvents = true;", reloadCode, StringComparison.Ordinal);
+        string monitorCode = ReadAppSource("../WhoIsMarkdown.Core/Documents/DocumentChangeMonitor.cs");
+        Assert.Contains("new FileSystemWatcher(directory, Path.GetFileName(path))", monitorCode, StringComparison.Ordinal);
+        Assert.Contains("created.EnableRaisingEvents = true;", monitorCode, StringComparison.Ordinal);
+        Assert.Contains("Task.Run(UpdateWatcher)", monitorCode, StringComparison.Ordinal);
+        Assert.Contains("externalDocumentWatcher.SetPath(path)", reloadCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("Directory.Exists", reloadCode, StringComparison.Ordinal);
         // WIMD's own atomic save raises the same events, so detection must compare the
         // saved baseline stamp instead of assuming every event is external.
         Assert.Contains("document.Stamp == current", reloadCode, StringComparison.Ordinal);

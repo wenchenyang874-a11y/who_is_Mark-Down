@@ -52,7 +52,7 @@ public sealed class MermaidPresentationTests
             repositoryRoot,
             "src",
             "WhoIsMarkdown.App",
-            "MainWindow.xaml.cs"));
+            "MainWindow.PreviewLifecycle.cs"));
         string style = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
