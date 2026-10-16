@@ -370,7 +370,7 @@ public partial class MainWindow : Window
         return dialog.ShowDialog(this) == true ? dialog.FileName : null;
     }
 
-    private void ApplyDocumentToEditor()
+    private void ApplyDocumentToEditor(bool forcePreviewUpdate = false)
     {
         if (windowClosed)
         {
@@ -392,12 +392,12 @@ public partial class MainWindow : Window
         // Single place where new document content is installed, so the external-change
         // watcher always follows the path that is actually being edited.
         AttachExternalDocumentWatcher();
-        SchedulePreview();
+        SchedulePreview(synchronizePreviewToCaretWhenReady: !forcePreviewUpdate, forceBodyReplacement: forcePreviewUpdate);
         UpdateStatus();
         Editor.Focus();
     }
 
-    private void SchedulePreview(bool synchronizePreviewToCaretWhenReady = true)
+    private void SchedulePreview(bool synchronizePreviewToCaretWhenReady = true, bool forceBodyReplacement = false)
     {
         previewNeedsRefresh = true;
         CancelPreviewWork();
@@ -418,6 +418,7 @@ public partial class MainWindow : Window
             remoteImagePolicy,
             version,
             synchronizePreviewToCaretWhenReady,
+            forceBodyReplacement,
             previewCancellation.Token);
     }
 
@@ -431,20 +432,21 @@ public partial class MainWindow : Window
         RemoteImagePolicy remoteImagePolicy,
         long version,
         bool synchronizePreviewToCaretWhenReady,
+        bool forceBodyReplacement,
         CancellationToken cancellationToken)
     {
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
-            string body = await markdownRenderer.RenderAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
+            MarkdownRenderResult rendered = await markdownRenderer.RenderDocumentAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
                 .WaitAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            string visibleBody = previewDocumentBuilder.GetVisibleBody(body);
+            string visibleBody = previewDocumentBuilder.GetVisibleBody(rendered.PreviewHtml);
             string pageStyleSheet = string.Concat(
                 previewStyleSheet,
                 Environment.NewLine,
                 previewAppearanceStyleSheet);
-            string page = previewDocumentBuilder.Build(body, pageStyleSheet, remoteImagePolicy);
+            string page = previewDocumentBuilder.Build(rendered.PreviewHtml, pageStyleSheet, remoteImagePolicy);
 
             PreviewWebViewService? service = previewService;
             if (!cancellationToken.IsCancellationRequested
@@ -459,7 +461,9 @@ public partial class MainWindow : Window
                     visibleBody,
                     documentPath,
                     remoteImagePolicy.Identity,
-                    synchronizePreviewToCaretWhenReady);
+                    synchronizePreviewToCaretWhenReady,
+                    rendered.Blocks,
+                    forceBodyReplacement);
             }
         }
         catch (OperationCanceledException)

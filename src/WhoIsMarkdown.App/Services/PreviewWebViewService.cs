@@ -366,6 +366,7 @@ public sealed class PreviewWebViewService : IDisposable
     private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
     private CoreWebView2? core;
     private PreviewSnapshot? pendingPreview;
+    private IReadOnlyList<MarkdownRenderBlock>? displayedBlocks;
     private bool synchronizeCaretWhenReady = true;
     private bool processingPreview;
     private bool navigationInProgress;
@@ -671,7 +672,9 @@ public sealed class PreviewWebViewService : IDisposable
         string bodyHtml,
         string? documentPath,
         string pagePolicyIdentity,
-        bool synchronizeToCaretWhenReady = true)
+        bool synchronizeToCaretWhenReady = true,
+        IReadOnlyList<MarkdownRenderBlock>? blocks = null,
+        bool forceBodyReplacement = false)
     {
         ArgumentNullException.ThrowIfNull(fullHtml);
         ArgumentNullException.ThrowIfNull(bodyHtml);
@@ -689,7 +692,9 @@ public sealed class PreviewWebViewService : IDisposable
             bodyHtml,
             documentPath,
             pagePolicyIdentity,
-            synchronizeToCaretWhenReady);
+            synchronizeToCaretWhenReady,
+            blocks,
+            forceBodyReplacement);
         return ProcessPreviewQueueAsync();
     }
 
@@ -884,6 +889,7 @@ public sealed class PreviewWebViewService : IDisposable
         lifetimeCancellation.Dispose();
         previewReadySource.TrySetCanceled();
         pendingPreview = null;
+        displayedBlocks = null;
         mermaidLibraryLoader = null;
         previewPageReady = false;
         navigationInProgress = false;
@@ -944,14 +950,16 @@ public sealed class PreviewWebViewService : IDisposable
                 // rebuild the host page once when the resource directory changes.
                 if (!previewPageReady || resourceMappingChanged || pagePolicyChanged)
                 {
+                    displayedBlocks = snapshot.Blocks;
                     NavigateToPreview(snapshot.FullHtml);
                     return;
                 }
 
-                bool updated = await TryUpdateBodyAsync(snapshot.BodyHtml).ConfigureAwait(true);
+                bool updated = await TryUpdateBodyAsync(snapshot).ConfigureAwait(true);
                 if (!updated)
                 {
                     previewPageReady = false;
+                    displayedBlocks = snapshot.Blocks;
                     NavigateToPreview(snapshot.FullHtml);
                     return;
                 }
@@ -995,22 +1003,35 @@ public sealed class PreviewWebViewService : IDisposable
         }
     }
 
-    private async Task<bool> TryUpdateBodyAsync(string bodyHtml)
+    private async Task<bool> TryUpdateBodyAsync(PreviewSnapshot snapshot)
     {
         if (core is null)
         {
             return false;
         }
 
-        string result = await core.ExecuteScriptAsync(PreviewUpdateScriptBuilder.Build(bodyHtml))
+        bool patch = !snapshot.ForceBodyReplacement && displayedBlocks is not null && snapshot.Blocks is not null;
+        string script = patch
+            ? PreviewUpdateScriptBuilder.BuildPatch(displayedBlocks!, snapshot.Blocks!)
+            : PreviewUpdateScriptBuilder.Build(snapshot.BodyHtml);
+        string result = await core.ExecuteScriptAsync(script)
             .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token)
             .ConfigureAwait(true);
+        if (patch && !string.Equals(result, "true", StringComparison.Ordinal))
+        {
+            // A missing/tampered base uses the existing safe replacement in this
+            // page, not navigation. F5 also takes this path deliberately to refresh
+            // local image bytes even when their Markdown URLs did not change.
+            result = await core.ExecuteScriptAsync(PreviewUpdateScriptBuilder.Build(snapshot.BodyHtml))
+                .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+        }
         if (!string.Equals(result, "true", StringComparison.Ordinal))
         {
             return false;
         }
 
         await WaitForMermaidRenderingAsync().ConfigureAwait(true);
+        displayedBlocks = snapshot.Blocks;
         return true;
     }
 
@@ -1497,7 +1518,9 @@ public sealed class PreviewWebViewService : IDisposable
         string BodyHtml,
         string? DocumentPath,
         string PagePolicyIdentity,
-        bool SynchronizeToCaretWhenReady);
+        bool SynchronizeToCaretWhenReady,
+        IReadOnlyList<MarkdownRenderBlock>? Blocks,
+        bool ForceBodyReplacement);
 
     private static bool IsAllowedExternalScheme(string scheme)
     {

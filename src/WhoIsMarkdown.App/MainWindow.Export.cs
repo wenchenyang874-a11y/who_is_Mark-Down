@@ -85,7 +85,8 @@ public partial class MainWindow
     }
 
     private async Task<CancellationToken> PrepareLatestPreviewForExportAsync(
-        PreviewWebViewService service)
+        PreviewWebViewService service,
+        bool forceBodyReplacement = false)
     {
         CancelPreviewWork();
         previewCancellation = new CancellationTokenSource();
@@ -95,7 +96,7 @@ public partial class MainWindow
         string? documentPath = document.FilePath;
         RemoteImagePolicy remoteImagePolicy = CreateRemoteImagePolicy();
 
-        string body = await markdownRenderer.RenderAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
+        MarkdownRenderResult rendered = await markdownRenderer.RenderDocumentAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
             .WaitAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (version != previewVersion)
@@ -103,15 +104,17 @@ public partial class MainWindow
             throw new OperationCanceledException(cancellationToken);
         }
 
-        string visibleBody = previewDocumentBuilder.GetVisibleBody(body);
-        string page = previewDocumentBuilder.Build(body, previewStyleSheet, remoteImagePolicy);
+        string visibleBody = previewDocumentBuilder.GetVisibleBody(rendered.PreviewHtml);
+        string page = previewDocumentBuilder.Build(rendered.PreviewHtml, previewStyleSheet, remoteImagePolicy);
         SuppressPreviewScrollEcho();
         await service.ShowAsync(
             page,
             visibleBody,
             documentPath,
             remoteImagePolicy.Identity,
-            synchronizeToCaretWhenReady: false);
+            synchronizeToCaretWhenReady: false,
+            blocks: rendered.Blocks,
+            forceBodyReplacement: forceBodyReplacement);
         await service.WaitUntilReadyAsync(cancellationToken);
         return cancellationToken;
     }

@@ -4,6 +4,7 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="WhoIsMarkdown.Core.Tests" />
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Markdig" />
   </ItemGroup>

@@ -57,7 +57,7 @@ public partial class MainWindow
 
         if (path is null)
         {
-            SchedulePreview(synchronizePreviewToCaretWhenReady: false);
+            SchedulePreview(synchronizePreviewToCaretWhenReady: false, forceBodyReplacement: true);
         }
 
         UpdateStatus("已重新加载文档");
@@ -84,7 +84,7 @@ public partial class MainWindow
             document.Load(loaded);
             reportedExternalStamp = null;
             reportedDocumentUnavailable = false;
-            ApplyDocumentToEditor();
+            ApplyDocumentToEditor(forcePreviewUpdate: true);
             return true;
         }
         catch (OperationCanceledException) when (windowClosed)
@@ -126,7 +126,7 @@ public partial class MainWindow
             // click, so the handler needs to know it should report a refresh.
             if (workspaceViewMode == WhoIsMarkdown.Core.Settings.WorkspaceViewMode.EditorOnly)
             {
-                await PrepareLatestPreviewForExportAsync(service);
+                await PrepareLatestPreviewForExportAsync(service, forceBodyReplacement: true);
             }
             else
             {

@@ -25,6 +25,13 @@ public sealed class MarkdownRenderWorker : IDisposable
         string? documentPath,
         RemoteImagePolicy? policy,
         CancellationToken cancellationToken)
+        => (await RenderDocumentAsync(markdown, documentPath, policy, cancellationToken).ConfigureAwait(false)).BodyHtml;
+
+    public async Task<MarkdownRenderResult> RenderDocumentAsync(
+        string markdown,
+        string? documentPath,
+        RemoteImagePolicy? policy,
+        CancellationToken cancellationToken)
     {
         lock (lifecycleGate)
         {
@@ -39,7 +46,7 @@ public sealed class MarkdownRenderWorker : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return await Task.Run(
-                    () => renderer.Value.RenderBody(markdown, documentPath, policy),
+                    () => renderer.Value.RenderDocument(markdown, documentPath, policy),
                     cancellationToken).ConfigureAwait(false);
             }
             finally

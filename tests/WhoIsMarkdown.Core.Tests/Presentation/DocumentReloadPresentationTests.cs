@@ -79,7 +79,7 @@ public sealed class DocumentReloadPresentationTests
 
         Assert.Contains("if (path is null)", reloadMethod, StringComparison.Ordinal);
         Assert.Contains(
-            "SchedulePreview(synchronizePreviewToCaretWhenReady: false);",
+            "SchedulePreview(synchronizePreviewToCaretWhenReady: false, forceBodyReplacement: true);",
             reloadMethod,
             StringComparison.Ordinal);
     }

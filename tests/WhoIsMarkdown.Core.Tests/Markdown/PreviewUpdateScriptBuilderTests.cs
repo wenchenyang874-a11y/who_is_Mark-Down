@@ -24,4 +24,25 @@ public sealed class PreviewUpdateScriptBuilderTests
         Assert.DoesNotContain("</script>", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\\u003C", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void 分块更新_只传变化块Html_旧块仅携带宿主键()
+    {
+        MarkdownRenderResult previous = MarkdownRenderResult.Create(["<p>UNCHANGED_PAYLOAD</p>", "<p>old</p>"]);
+        MarkdownRenderResult current = MarkdownRenderResult.Create(["<p>UNCHANGED_PAYLOAD</p>", "<p>new</p>"]);
+        string script = PreviewUpdateScriptBuilder.BuildPatch(previous.Blocks, current.Blocks);
+        Assert.DoesNotContain("UNCHANGED_PAYLOAD", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("<p>", script, StringComparison.Ordinal);
+        Assert.Contains(previous.Blocks[0].Key, script, StringComparison.Ordinal);
+        Assert.Contains("new", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 分块更新_特殊Html数据_仍只能成为转义Json()
+    {
+        MarkdownRenderResult current = MarkdownRenderResult.Create(["</script><script>alert('x')</script>"]);
+        string script = PreviewUpdateScriptBuilder.BuildPatch([], current.Blocks);
+        Assert.DoesNotContain("</script>", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\\u003C", script, StringComparison.Ordinal);
+    }
 }

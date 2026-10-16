@@ -113,6 +113,11 @@ blockquote {
   background: var(--wimd-quote-bg, #f5f5fc);
 }
 
+/* Host-owned semantic boundaries must not introduce boxes, margins or PDF pages. */
+.wimd-preview-block {
+  display: contents;
+}
+
 .preview-document li.task-list-item {
   transition: color 120ms ease;
 }
