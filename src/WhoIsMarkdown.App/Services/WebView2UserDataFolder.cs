@@ -4,8 +4,9 @@ namespace WhoIsMarkdown.App.Services;
 
 /// <summary>
 /// Single definition of the browser profile WIMD hosts its WebView2 surfaces in.
-/// WebView2 refuses to share one user data folder across processes, so every control
-/// in the desktop app has to resolve the same path.
+/// Matching configurations may share the browser process for a user data folder.
+/// Keep the requested path consistent; WebView2EnvironmentProvider also separates
+/// dispatcher affinity and SDK environment overrides when reusing a creation task.
 /// </summary>
 internal static class WebView2UserDataFolder
 {

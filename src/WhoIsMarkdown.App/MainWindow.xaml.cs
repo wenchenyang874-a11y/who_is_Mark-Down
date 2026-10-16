@@ -68,6 +68,7 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
         LoadApplicationSettings();
+        PreparePreviewForFileOpen();
         // Bug fix: startup arguments can point at unavailable network, cloud, or
         // filter-backed paths. Do not call File.Exists/Directory.Exists while the
         // dispatcher is creating the first window. Classification is lexical; the
@@ -241,7 +242,9 @@ public partial class MainWindow : Window
             // Bug fix: opening a path can block before an asynchronous file read is
             // established (notably on disconnected mapped drives). Run the complete
             // open operation off the dispatcher so a slow path cannot freeze WIMD.
-            LoadedDocument loadedDocument = await ReadDocumentOffThreadAsync(path);
+            Task<LoadedDocument> read = ReadDocumentOffThreadAsync(path);
+            PreparePreviewForFileOpen();
+            LoadedDocument loadedDocument = await read;
             if (windowClosed || requestVersion != Volatile.Read(ref documentOpenVersion))
             {
                 return;
@@ -425,7 +428,7 @@ public partial class MainWindow : Window
     {
         previewNeedsRefresh = true;
         CancelPreviewWork();
-        if (!previewInitialized || previewService is null || windowClosed
+        if (!windowStartupComplete || !previewInitialized || previewService is null || windowClosed
             || workspaceViewMode == WhoIsMarkdown.Core.Settings.WorkspaceViewMode.EditorOnly)
         {
             return;

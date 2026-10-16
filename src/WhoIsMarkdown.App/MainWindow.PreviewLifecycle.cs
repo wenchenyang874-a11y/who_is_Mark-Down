@@ -1,3 +1,4 @@
+using System.Windows.Threading;
 using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Settings;
 
@@ -43,11 +44,15 @@ public partial class MainWindow
     private Task EnsurePreviewInitializedAsync()
     {
         ObjectDisposedException.ThrowIf(windowClosed, this);
-        return previewInitialization ??= InitializePreviewAsync();
+        // Let the WPF shell render before native startup. The task is installed
+        // immediately, so file-open prefetch, visible preview and export coalesce.
+        return previewInitialization ??= Dispatcher.InvokeAsync(
+            InitializePreviewAsync, DispatcherPriority.Background, windowLifetimeCancellation.Token).Task.Unwrap();
     }
 
     private async Task InitializePreviewAsync()
     {
+        ObjectDisposedException.ThrowIf(windowClosed, this);
         previewStyleSheet = ReadComponentTextResource("preview.css", "找不到预览样式资源。");
         // Ordinary documents do not pay the multi-megabyte Mermaid load/parse cost.
         PreviewWebViewService service = new(Preview, clipboardTextService,
@@ -65,6 +70,32 @@ public partial class MainWindow
         await service.InitializeAsync();
         ObjectDisposedException.ThrowIf(windowClosed, this);
         previewInitialized = true;
+    }
+
+    private void PreparePreviewForFileOpen()
+    {
+        WorkspaceViewMode mode = !windowStartupComplete && restoredWindowState is not null
+            && Enum.TryParse(restoredWindowState.ViewMode, out WorkspaceViewMode restoredMode)
+            && Enum.IsDefined(restoredMode)
+                ? restoredMode
+                : applicationSettings.ResolveFileOpenViewMode();
+        if (windowClosed || mode == WorkspaceViewMode.EditorOnly) return;
+
+        _ = ObservePreviewPreparationAsync(EnsurePreviewInitializedAsync());
+    }
+
+    private static async Task ObservePreviewPreparationAsync(Task preparation)
+    {
+        try
+        {
+            await preparation.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Prefetch never owns document status. The original task is awaited
+            // and reported by the visible-preview/export path when it is needed.
+            // Observe failures even if the file read fails or its window closes.
+        }
     }
 
     private void UpdatePreviewVisibility()

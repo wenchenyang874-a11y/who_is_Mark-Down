@@ -439,10 +439,8 @@ public sealed class PreviewWebViewService : IDisposable
             return;
         }
 
-        CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-            browserExecutableFolder: null,
-            userDataFolder: WebView2UserDataFolder.Resolve())
-            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+        CoreWebView2Environment environment = await WebView2EnvironmentProvider.GetAsync(
+            WebView2UserDataFolder.Resolve(), lifetimeCancellation.Token).ConfigureAwait(true);
         ThrowIfDisposed();
         await webView.EnsureCoreWebView2Async(environment)
             .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);

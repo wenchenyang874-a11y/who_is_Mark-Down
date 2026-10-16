@@ -153,10 +153,10 @@ internal sealed class WebView2ImageRasterizer : IPreviewImageRasterizer
             view = new WebView2();
             host.Content = view;
             host.Show();
-            CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: userDataFolder).ConfigureAwait(true);
-            await view.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+            CoreWebView2Environment environment = await WebView2EnvironmentProvider.GetAsync(
+                userDataFolder, cancellationToken).ConfigureAwait(true);
+            await view.EnsureCoreWebView2Async(environment)
+                .WaitAsync(RasterStepTimeout, cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
 
             CoreWebView2 core = view.CoreWebView2;
@@ -174,7 +174,7 @@ internal sealed class WebView2ImageRasterizer : IPreviewImageRasterizer
 
             // Registered before navigating so it runs inside the raster document itself.
             await core.AddScriptToExecuteOnDocumentCreatedAsync(MeasureScript)
-                .ConfigureAwait(true);
+                .WaitAsync(RasterStepTimeout, cancellationToken).ConfigureAwait(true);
             core.NavigateToString(BuildRasterDocument(Path.GetFileName(imagePath)));
             (int width, int height, double ratio) = await MeasureAsync(core, cancellationToken)
                 .ConfigureAwait(true);
@@ -199,7 +199,7 @@ internal sealed class WebView2ImageRasterizer : IPreviewImageRasterizer
 
             using MemoryStream stream = new();
             await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream)
-                .ConfigureAwait(true);
+                .WaitAsync(RasterStepTimeout, cancellationToken).ConfigureAwait(true);
             if (stream.Length is <= 0 or > PreviewImageSaveService.MaximumImageBytes)
             {
                 throw new PreviewImageSaveException("PNG 导出结果为空或超过 32 MB。");
@@ -214,6 +214,8 @@ internal sealed class WebView2ImageRasterizer : IPreviewImageRasterizer
         catch (Exception exception) when (exception is InvalidOperationException
             or IOException
             or UnauthorizedAccessException
+            or TimeoutException
+            or WebView2RuntimeNotFoundException
             or System.Runtime.InteropServices.COMException)
         {
             throw new PreviewImageSaveException(

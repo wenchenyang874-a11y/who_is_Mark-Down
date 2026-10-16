@@ -17,6 +17,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\WhoIsMarkdown.Core\WhoIsMarkdown.Core.csproj" />
+    <InternalsVisibleTo Include="WhoIsMarkdown.App.Tests" />
     <PackageReference Include="AvalonEdit" />
     <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>

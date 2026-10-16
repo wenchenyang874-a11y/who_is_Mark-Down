@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.IO;
 using System.Net;
@@ -34,6 +35,8 @@ namespace WhoIsMarkdown.App;
 /// identical origin and file name, which kept showing the previous bytes after the
 /// source image or the document had changed on disk.
 /// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The WPF window lifetime owns cancellation; OnClosed disposes it.")]
 public partial class PreviewImageWindow : Window
 {
     /// <summary>
@@ -176,6 +179,7 @@ public partial class PreviewImageWindow : Window
         """;
 
     private PreparedPreviewImage preparedImage;
+    private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly PreviewNavigationGate navigationGate = new();
 
     /// <summary>
@@ -285,6 +289,8 @@ public partial class PreviewImageWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         closed = true;
+        lifetimeCancellation.Cancel();
+        lifetimeCancellation.Dispose();
         Loaded -= Window_Loaded;
         if (core is not null)
         {
@@ -307,26 +313,25 @@ public partial class PreviewImageWindow : Window
 
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
-        if (initialized)
+        if (initialized || closed)
         {
             return;
         }
 
+        string phase = "浏览器环境";
         try
         {
-            string userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "WIMD",
-                "WebView2");
-            CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: userDataFolder);
+            CancellationToken cancellationToken = lifetimeCancellation.Token;
+            CoreWebView2Environment environment = await WebView2EnvironmentProvider.GetAsync(
+                WebView2UserDataFolder.Resolve(), cancellationToken);
             if (closed)
             {
                 return;
             }
 
-            await ImageWebView.EnsureCoreWebView2Async(environment);
+            phase = "图片控件";
+            await ImageWebView.EnsureCoreWebView2Async(environment)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
 
             // The window can be closed while the environment is still starting.
             if (closed)
@@ -340,7 +345,9 @@ public partial class PreviewImageWindow : Window
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsWebMessageEnabled = true;
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(ViewerInteractionScript);
+            phase = "宿主脚本注册";
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(ViewerInteractionScript)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
             // Closing during registration must not reattach callbacks to a dead view.
             if (closed)
             {
@@ -355,13 +362,19 @@ public partial class PreviewImageWindow : Window
             // the same code path working if a request ever arrives without our items.
             core.ContextMenuRequested += Core_ContextMenuRequested;
 
+            phase = "图片导航";
             NavigateToPreparedImage();
             initialized = true;
         }
-        catch (Exception exception) when (IsViewerFailure(exception))
+        catch (OperationCanceledException) when (closed)
         {
+            // Closing one viewer only cancels its wait, not shared initialization.
+        }
+        catch (Exception exception)
+        {
+            if (closed) return;
             initializationFailed = true;
-            DimensionsText.Text = $"图片加载失败：{exception.Message}";
+            DimensionsText.Text = $"图片加载失败（{phase}）：{exception.Message}";
         }
     }
 
@@ -623,5 +636,7 @@ public partial class PreviewImageWindow : Window
         InvalidOperationException
         or IOException
         or UnauthorizedAccessException
+        or TimeoutException
+        or WebView2RuntimeNotFoundException
         or System.Runtime.InteropServices.COMException;
 }
