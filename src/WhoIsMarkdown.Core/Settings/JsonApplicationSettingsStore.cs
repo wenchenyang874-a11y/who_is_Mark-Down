@@ -35,7 +35,15 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
         writerMutexName = "WIMD.Settings." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
     }
 
-    public ApplicationSettings Load() => Load(sortRecentFiles: true);
+    public ApplicationSettings Load()
+    {
+        // Bug fix: on Windows even an atomic destination replacement can briefly
+        // reject an unlocked reader. Readers must join the same cross-process
+        // transaction lock; UI callers already perform this work off dispatcher.
+        ApplicationSettings? result = null;
+        WithWriterLock(() => result = Load(sortRecentFiles: true));
+        return result!;
+    }
 
     private ApplicationSettings Load(bool sortRecentFiles)
     {

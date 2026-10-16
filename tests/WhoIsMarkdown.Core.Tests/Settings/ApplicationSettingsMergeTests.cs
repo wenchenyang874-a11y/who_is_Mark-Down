@@ -5,6 +5,25 @@ namespace WhoIsMarkdown.Core.Tests.Settings;
 public sealed class ApplicationSettingsMergeTests
 {
     [Fact]
+    public async Task Load_DuringConcurrentAtomicReplacements_UsesSameTransactionLock()
+    {
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "settings.json");
+        JsonApplicationSettingsStore writer = new(path), reader = new(path);
+        writer.Save(new());
+        await Task.WhenAll(
+            Task.Run(() =>
+            {
+                for (int index = 1; index <= 40; index++) writer.Save(new() { BackgroundOpacity = index / 50.0 });
+            }, TestContext.Current.CancellationToken),
+            Task.Run(() =>
+            {
+                for (int index = 0; index < 80; index++) Assert.InRange(reader.Load().BackgroundOpacity, 0, 1);
+            }, TestContext.Current.CancellationToken));
+        Assert.Equal(0.8, reader.Load().BackgroundOpacity);
+    }
+
+    [Fact]
     public void Merge_StaleWindow_PreservesUnchangedScalarsAndNestedFields()
     {
         ApplicationSettings initial = new();
