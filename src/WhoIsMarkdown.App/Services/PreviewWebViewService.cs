@@ -359,6 +359,7 @@ public sealed class PreviewWebViewService : IDisposable
     private readonly WebView2 webView;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly IClipboardTextService clipboardTextService;
+    private readonly PreviewPreparationWorker previewPreparationWorker;
     private Func<string>? mermaidLibraryLoader;
     private bool mermaidInitialized;
     private readonly PreviewNavigationGate navigationGate = new();
@@ -366,6 +367,11 @@ public sealed class PreviewWebViewService : IDisposable
     private TaskCompletionSource<bool> previewReadySource = CreatePreviewReadySource();
     private CoreWebView2? core;
     private PreviewSnapshot? pendingPreview;
+    private PreviewSnapshot? committedPreview;
+    private CancellationTokenSource? activePreviewCancellation;
+    private long previewRequestVersion;
+    private bool nativeMutationUnacknowledged;
+    private string? latestAppearanceStyleSheet;
     private IReadOnlyList<MarkdownRenderBlock>? displayedBlocks;
     private bool synchronizeCaretWhenReady = true;
     private bool processingPreview;
@@ -393,12 +399,14 @@ public sealed class PreviewWebViewService : IDisposable
     public PreviewWebViewService(
         WebView2 webView,
         IClipboardTextService clipboardTextService,
-        Func<string> mermaidLibraryLoader)
+        Func<string> mermaidLibraryLoader,
+        IPreviewContentBuilder? contentBuilder = null)
     {
         this.webView = webView ?? throw new ArgumentNullException(nameof(webView));
         this.clipboardTextService = clipboardTextService
             ?? throw new ArgumentNullException(nameof(clipboardTextService));
         this.mermaidLibraryLoader = mermaidLibraryLoader ?? throw new ArgumentNullException(nameof(mermaidLibraryLoader));
+        previewPreparationWorker = new PreviewPreparationWorker(contentBuilder);
         this.webView.DefaultBackgroundColor = Color.Transparent;
     }
 
@@ -415,6 +423,8 @@ public sealed class PreviewWebViewService : IDisposable
     public event EventHandler<PreviewScrollChangedEventArgs>? ScrollRatioChanged;
 
     public event EventHandler<PreviewReadyEventArgs>? PreviewReady;
+
+    public event EventHandler? PreviewContentApplying;
 
     /// <summary>
     /// Raised when the user picks a save-as format for an image in the live preview.
@@ -674,27 +684,53 @@ public sealed class PreviewWebViewService : IDisposable
         string pagePolicyIdentity,
         bool synchronizeToCaretWhenReady = true,
         IReadOnlyList<MarkdownRenderBlock>? blocks = null,
-        bool forceBodyReplacement = false)
+        bool forceBodyReplacement = false,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(fullHtml);
         ArgumentNullException.ThrowIfNull(bodyHtml);
         ArgumentNullException.ThrowIfNull(pagePolicyIdentity);
-        ThrowIfDisposed();
+        return QueuePreview(new PreviewContent(bodyHtml, blocks, string.Empty, string.Empty,
+            RemoteImagePolicy.BlockAll, fullHtml), documentPath, pagePolicyIdentity,
+            synchronizeToCaretWhenReady, forceBodyReplacement, cancellationToken);
+    }
 
+    public Task ShowAsync(
+        MarkdownRenderResult rendered,
+        string styleSheet,
+        string appearanceStyleSheet,
+        string? documentPath,
+        RemoteImagePolicy imagePolicy,
+        bool synchronizeToCaretWhenReady = true,
+        bool forceBodyReplacement = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rendered);
+        ArgumentNullException.ThrowIfNull(imagePolicy);
+        return QueuePreview(new PreviewContent(rendered.PreviewHtml, rendered.Blocks,
+            styleSheet, appearanceStyleSheet, imagePolicy), documentPath, imagePolicy.Identity,
+            synchronizeToCaretWhenReady, forceBodyReplacement, cancellationToken);
+    }
+
+    private Task QueuePreview(
+        PreviewContent content,
+        string? documentPath,
+        string pagePolicyIdentity,
+        bool synchronizeToCaretWhenReady,
+        bool forceBodyReplacement,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
         if (!initialized || core is null)
         {
             throw new InvalidOperationException("预览组件尚未初始化。");
         }
 
         MarkPreviewPending();
-        pendingPreview = new PreviewSnapshot(
-            fullHtml,
-            bodyHtml,
-            documentPath,
-            pagePolicyIdentity,
-            synchronizeToCaretWhenReady,
-            blocks,
-            forceBodyReplacement);
+        pendingPreview = new PreviewSnapshot(content, documentPath, pagePolicyIdentity,
+            synchronizeToCaretWhenReady, forceBodyReplacement, ++previewRequestVersion, cancellationToken);
+        activePreviewCancellation?.Cancel();
         return ProcessPreviewQueueAsync();
     }
 
@@ -771,6 +807,7 @@ public sealed class PreviewWebViewService : IDisposable
             throw new ArgumentException("预览外观样式长度异常。", nameof(styleSheet));
         }
 
+        latestAppearanceStyleSheet = styleSheet;
         string styleLiteral = JsonSerializer.Serialize(styleSheet);
         return ExecuteHostScriptAsync($$"""
             (() => {
@@ -824,6 +861,7 @@ public sealed class PreviewWebViewService : IDisposable
 
     private void SignalPreviewReady()
     {
+        if (committedPreview is null || !IsCurrentPreview(committedPreview)) return;
         previewReadySource.TrySetResult(true);
         PreviewReady?.Invoke(this, new PreviewReadyEventArgs(synchronizeCaretWhenReady));
     }
@@ -889,6 +927,10 @@ public sealed class PreviewWebViewService : IDisposable
         lifetimeCancellation.Dispose();
         previewReadySource.TrySetCanceled();
         pendingPreview = null;
+        committedPreview = null;
+        activePreviewCancellation?.Cancel();
+        latestAppearanceStyleSheet = null;
+        previewPreparationWorker.Dispose();
         displayedBlocks = null;
         mermaidLibraryLoader = null;
         previewPageReady = false;
@@ -929,43 +971,50 @@ public sealed class PreviewWebViewService : IDisposable
         processingPreview = true;
         try
         {
-            while (pendingPreview is not null)
+            while (pendingPreview is not null && !disposed)
             {
                 PreviewSnapshot snapshot = pendingPreview;
                 pendingPreview = null;
-                await EnsureMermaidForBodyAsync(snapshot.BodyHtml).ConfigureAwait(true);
-                ThrowIfDisposed();
-                synchronizeCaretWhenReady = snapshot.SynchronizeToCaretWhenReady;
-                bool resourceMappingChanged = ConfigureDocumentResourceMapping(
-                    snapshot.DocumentPath);
-                bool pagePolicyChanged = !string.Equals(
-                    currentPagePolicyIdentity,
-                    snapshot.PagePolicyIdentity,
-                    StringComparison.Ordinal);
-                currentPagePolicyIdentity = snapshot.PagePolicyIdentity;
-
-                // Bug fix: opening a file from an already-running blank editor changes
-                // the virtual-host folder after the preview page exists. A DOM-only
-                // replacement can keep WebView2's earlier failed image responses, so
-                // rebuild the host page once when the resource directory changes.
-                if (!previewPageReady || resourceMappingChanged || pagePolicyChanged)
+                if (!IsCurrentPreview(snapshot)) continue;
+                using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    lifetimeCancellation.Token, snapshot.CancellationToken);
+                activePreviewCancellation = cancellation;
+                try
                 {
-                    displayedBlocks = snapshot.Blocks;
-                    NavigateToPreview(snapshot.FullHtml);
-                    return;
+                    await ApplyPreviewSnapshotAsync(snapshot, cancellation.Token).ConfigureAwait(true);
+                    if (navigationInProgress) return;
                 }
-
-                bool updated = await TryUpdateBodyAsync(snapshot).ConfigureAwait(true);
-                if (!updated)
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested || !IsCurrentPreview(snapshot))
                 {
-                    previewPageReady = false;
-                    displayedBlocks = snapshot.Blocks;
-                    NavigateToPreview(snapshot.FullHtml);
-                    return;
+                    // A native call may already have executed when its wait was
+                    // canceled. Forget the uncertain baseline; the next delivery
+                    // must replace safely rather than patch an assumed DOM state.
+                    if (nativeMutationUnacknowledged) displayedBlocks = null;
+                }
+                catch (Exception) when (!IsCurrentPreview(snapshot))
+                {
+                    // Ignore a failure from obsolete background work. Reporting it
+                    // against the current document would be as stale as applying it.
+                    if (nativeMutationUnacknowledged) displayedBlocks = null;
+                }
+                catch (Exception exception)
+                {
+                    if (nativeMutationUnacknowledged) displayedBlocks = null;
+                    string message = $"预览交付失败（请求 {snapshot.Version}，正文 {snapshot.Content.BodyHtml.Length} 字符，页面就绪 {previewPageReady}，导航 {navigationInProgress}）：{exception.Message}";
+                    // A coalesced request may be processed by an older caller's
+                    // task. Report the current failure here, not only to that
+                    // caller, whose own version check can correctly discard it.
+                    SignalPreviewFailure(message);
+                    PreviewNavigationFailed?.Invoke(this, message);
+                    throw new InvalidOperationException(message, exception);
+                }
+                finally
+                {
+                    nativeMutationUnacknowledged = false;
+                    activePreviewCancellation = null;
                 }
             }
 
-            SignalPreviewReady();
         }
         finally
         {
@@ -976,6 +1025,60 @@ public sealed class PreviewWebViewService : IDisposable
                 processingPreview = false;
             }
         }
+
+        // Ready handlers may synchronously enqueue another request. Release the
+        // queue first so such reentrant work is started, not left pending forever.
+        if (!disposed) SignalPreviewReady();
+    }
+
+    private bool IsCurrentPreview(PreviewSnapshot snapshot) => !disposed
+        && snapshot.Version == previewRequestVersion && !snapshot.CancellationToken.IsCancellationRequested;
+
+    private async Task ApplyPreviewSnapshotAsync(PreviewSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        bool navigate = !previewPageReady || resourceMappingState.WouldChange(snapshot.DocumentPath)
+            || !string.Equals(currentPagePolicyIdentity, snapshot.PagePolicyIdentity, StringComparison.Ordinal);
+        PreviewContent content = snapshot.Content with
+        {
+            AppearanceStyleSheet = latestAppearanceStyleSheet ?? snapshot.Content.AppearanceStyleSheet,
+        };
+        // Capture only immutable input and the acknowledged base. No worker may
+        // capture this service, a Window, WebView2, or any dispatcher-owned state.
+        IReadOnlyList<MarkdownRenderBlock>? previous = displayedBlocks;
+        bool forceReplacement = snapshot.ForceBodyReplacement;
+        PreparedPreviewContent prepared = await previewPreparationWorker.PrepareAsync(
+            content, previous, navigate, forceReplacement, cancellationToken)
+            .WaitAsync(cancellationToken).ConfigureAwait(true);
+        if (!IsCurrentPreview(snapshot)) return;
+        await EnsureMermaidForBodyAsync(prepared.ContainsMermaid).ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsCurrentPreview(snapshot)) return;
+
+        synchronizeCaretWhenReady = snapshot.SynchronizeToCaretWhenReady;
+        ConfigureDocumentResourceMapping(snapshot.DocumentPath);
+        currentPagePolicyIdentity = snapshot.PagePolicyIdentity;
+        if (prepared.NavigationHtml is not null)
+        {
+            CommitNavigation(snapshot, prepared);
+            return;
+        }
+
+        if (await TryUpdateBodyAsync(snapshot, content, prepared, cancellationToken).ConfigureAwait(true)) return;
+        if (!IsCurrentPreview(snapshot)) return;
+        // A missing preview root is exceptional. Build a complete page only now,
+        // off-thread, and recheck the request before admitting its one-shot URL.
+        prepared = await previewPreparationWorker.PrepareAsync(
+            content, null, true, true, cancellationToken)
+            .WaitAsync(cancellationToken).ConfigureAwait(true);
+        if (IsCurrentPreview(snapshot)) CommitNavigation(snapshot, prepared);
+    }
+
+    private void CommitNavigation(PreviewSnapshot snapshot, PreparedPreviewContent prepared)
+    {
+        PreviewContentApplying?.Invoke(this, EventArgs.Empty);
+        displayedBlocks = prepared.Blocks;
+        committedPreview = snapshot;
+        NavigateToPreview(prepared.NavigationHtml!);
     }
 
     private void NavigateToPreview(string html)
@@ -1003,35 +1106,50 @@ public sealed class PreviewWebViewService : IDisposable
         }
     }
 
-    private async Task<bool> TryUpdateBodyAsync(PreviewSnapshot snapshot)
+    private async Task<bool> TryUpdateBodyAsync(
+        PreviewSnapshot snapshot,
+        PreviewContent content,
+        PreparedPreviewContent prepared,
+        CancellationToken cancellationToken)
     {
         if (core is null)
         {
             return false;
         }
 
-        bool patch = !snapshot.ForceBodyReplacement && displayedBlocks is not null && snapshot.Blocks is not null;
-        string script = patch
-            ? PreviewUpdateScriptBuilder.BuildPatch(displayedBlocks!, snapshot.Blocks!)
-            : PreviewUpdateScriptBuilder.Build(snapshot.BodyHtml);
-        string result = await core.ExecuteScriptAsync(script)
-            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token)
+        cancellationToken.ThrowIfCancellationRequested();
+        PreviewContentApplying?.Invoke(this, EventArgs.Empty);
+        nativeMutationUnacknowledged = true;
+        string result = await core.ExecuteScriptAsync(prepared.UpdateScript!)
+            .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken)
             .ConfigureAwait(true);
-        if (patch && !string.Equals(result, "true", StringComparison.Ordinal))
+        nativeMutationUnacknowledged = false;
+        if (string.Equals(result, "true", StringComparison.Ordinal)) displayedBlocks = prepared.Blocks;
+        if (!IsCurrentPreview(snapshot)) return true;
+        if (prepared.IsPatch && !string.Equals(result, "true", StringComparison.Ordinal))
         {
             // A missing/tampered base uses the existing safe replacement in this
             // page, not navigation. F5 also takes this path deliberately to refresh
             // local image bytes even when their Markdown URLs did not change.
-            result = await core.ExecuteScriptAsync(PreviewUpdateScriptBuilder.Build(snapshot.BodyHtml))
-                .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+            string replacement = await previewPreparationWorker.BuildReplacementAsync(content, cancellationToken)
+                .WaitAsync(cancellationToken).ConfigureAwait(true);
+            if (!IsCurrentPreview(snapshot)) return true;
+            PreviewContentApplying?.Invoke(this, EventArgs.Empty);
+            nativeMutationUnacknowledged = true;
+            result = await core.ExecuteScriptAsync(replacement)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(true);
+            nativeMutationUnacknowledged = false;
+            if (string.Equals(result, "true", StringComparison.Ordinal)) displayedBlocks = prepared.Blocks;
         }
         if (!string.Equals(result, "true", StringComparison.Ordinal))
         {
             return false;
         }
 
-        await WaitForMermaidRenderingAsync().ConfigureAwait(true);
-        displayedBlocks = snapshot.Blocks;
+        await WaitForMermaidRenderingAsync().WaitAsync(cancellationToken).ConfigureAwait(true);
+        if (!IsCurrentPreview(snapshot)) return true;
+        displayedBlocks = prepared.Blocks;
+        committedPreview = snapshot;
         return true;
     }
 
@@ -1065,11 +1183,10 @@ public sealed class PreviewWebViewService : IDisposable
             lifetimeCancellation.Token).ConfigureAwait(true);
     }
 
-    private async Task EnsureMermaidForBodyAsync(string bodyHtml)
+    private async Task EnsureMermaidForBodyAsync(bool containsMermaid)
     {
         if (mermaidInitialized || mermaidLibraryLoader is null || core is null
-            || (!bodyHtml.Contains("language-mermaid", StringComparison.Ordinal)
-                && !bodyHtml.Contains("class=\"mermaid\"", StringComparison.Ordinal)))
+            || !containsMermaid)
         {
             return;
         }
@@ -1309,7 +1426,17 @@ public sealed class PreviewWebViewService : IDisposable
 
         try
         {
+            // Keep navigation completion inside the same mutation queue. Otherwise
+            // a second delivery could begin while Mermaid/style initialization is
+            // still awaiting Chromium and signal the wrong request as ready.
+            processingPreview = true;
             await WaitForMermaidRenderingAsync().ConfigureAwait(true);
+            if (latestAppearanceStyleSheet is { } latestStyle)
+            {
+                await ApplyAppearanceAsync(latestStyle)
+                    .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+            }
+            processingPreview = false;
             if (pendingPreview is not null)
             {
                 await ProcessPreviewQueueAsync().ConfigureAwait(true);
@@ -1322,6 +1449,7 @@ public sealed class PreviewWebViewService : IDisposable
         catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException
             or OperationCanceledException or TimeoutException or System.Runtime.InteropServices.COMException)
         {
+            if (!navigationInProgress) processingPreview = false;
             if (disposed) return;
             string message = $"预览更新失败：{exception.Message}";
             SignalPreviewFailure(message);
@@ -1514,13 +1642,13 @@ public sealed class PreviewWebViewService : IDisposable
     }
 
     private sealed record PreviewSnapshot(
-        string FullHtml,
-        string BodyHtml,
+        PreviewContent Content,
         string? DocumentPath,
         string PagePolicyIdentity,
         bool SynchronizeToCaretWhenReady,
-        IReadOnlyList<MarkdownRenderBlock>? Blocks,
-        bool ForceBodyReplacement);
+        bool ForceBodyReplacement,
+        long Version,
+        CancellationToken CancellationToken);
 
     private static bool IsAllowedExternalScheme(string scheme)
     {

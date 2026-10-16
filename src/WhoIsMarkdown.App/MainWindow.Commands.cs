@@ -96,6 +96,7 @@ public partial class MainWindow
             previewService.PreviewTaskToggleRequested -= PreviewService_TaskToggleRequested;
             previewService.ScrollRatioChanged -= PreviewService_ScrollRatioChanged;
             previewService.PreviewReady -= PreviewService_PreviewReady;
+            previewService.PreviewContentApplying -= PreviewService_PreviewContentApplying;
             previewService.Dispose();
             previewService = null;
         }

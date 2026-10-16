@@ -21,7 +21,6 @@ public partial class MainWindow : Window
 
     private readonly IDocumentFileService fileService = new DocumentFileService();
     private readonly MarkdownRenderWorker markdownRenderer = new();
-    private readonly IPreviewDocumentBuilder previewDocumentBuilder = new PreviewDocumentBuilder();
     private readonly DocumentEditorViewModel document = new();
     private readonly CancellationTokenSource windowLifetimeCancellation = new();
 
@@ -469,12 +468,6 @@ public partial class MainWindow : Window
             MarkdownRenderResult rendered = await markdownRenderer.RenderSnapshotAsync(snapshot.ReadText, documentPath, remoteImagePolicy, cancellationToken)
                 .WaitAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            string visibleBody = previewDocumentBuilder.GetVisibleBody(rendered.PreviewHtml);
-            string pageStyleSheet = string.Concat(
-                previewStyleSheet,
-                Environment.NewLine,
-                previewAppearanceStyleSheet);
-            string page = previewDocumentBuilder.Build(rendered.PreviewHtml, pageStyleSheet, remoteImagePolicy);
 
             PreviewWebViewService? service = previewService;
             if (!cancellationToken.IsCancellationRequested
@@ -485,13 +478,14 @@ public partial class MainWindow : Window
                 // host-generated report so an edit never scrolls AvalonEdit.
                 SuppressPreviewScrollEcho();
                 await service.ShowAsync(
-                    page,
-                    visibleBody,
+                    rendered,
+                    previewStyleSheet,
+                    previewAppearanceStyleSheet,
                     documentPath,
-                    remoteImagePolicy.Identity,
+                    remoteImagePolicy,
                     synchronizePreviewToCaretWhenReady,
-                    rendered.Blocks,
-                    forceBodyReplacement);
+                    forceBodyReplacement,
+                    cancellationToken);
             }
         }
         catch (OperationCanceledException)
@@ -556,6 +550,7 @@ public partial class MainWindow : Window
 
     private void PreviewService_PreviewNavigationFailed(object? sender, string message)
     {
+        previewNeedsRefresh = true;
         ReleaseTaskPreviewPositionSuppression();
         UpdateStatus(message);
     }

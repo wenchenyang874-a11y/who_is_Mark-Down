@@ -16,15 +16,26 @@ public sealed class PreviewUpdateScriptBuilder
     public static string BuildPatch(
         IReadOnlyList<MarkdownRenderBlock> previous,
         IReadOnlyList<MarkdownRenderBlock> current)
+        => BuildPatch(previous, current, CancellationToken.None);
+
+    public static string BuildPatch(
+        IReadOnlyList<MarkdownRenderBlock> previous,
+        IReadOnlyList<MarkdownRenderBlock> current,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(current);
+        cancellationToken.ThrowIfCancellationRequested();
         Dictionary<string, string> prior = previous.ToDictionary(block => block.Key, block => block.Html, StringComparer.Ordinal);
+        cancellationToken.ThrowIfCancellationRequested();
         string expected = JsonSerializer.Serialize(previous.Select(block => block.Key));
+        cancellationToken.ThrowIfCancellationRequested();
         string desired = JsonSerializer.Serialize(current.Select(block => block.Key));
+        cancellationToken.ThrowIfCancellationRequested();
         Dictionary<string, string> changed = new(StringComparer.Ordinal);
         foreach (MarkdownRenderBlock block in current)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!prior.TryGetValue(block.Key, out string? html) || !string.Equals(html, block.Html, StringComparison.Ordinal))
             {
                 changed.Add(block.Key, block.Html);
@@ -32,6 +43,7 @@ public sealed class PreviewUpdateScriptBuilder
         }
 
         string replacements = JsonSerializer.Serialize(changed);
+        cancellationToken.ThrowIfCancellationRequested();
         return $$"""
             (() => {
               const preview = document.querySelector('main.preview-document');

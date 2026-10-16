@@ -5,6 +5,20 @@ namespace WhoIsMarkdown.Core.Tests.Markdown;
 public sealed class PreviewResourceMappingStateTests
 {
     [Fact]
+    public void WouldChange_InspectingNewDirectory_DoesNotCommitMapping()
+    {
+        PreviewResourceMappingState state = new();
+        string first = Path.Combine(Path.GetTempPath(), "first", "a.md");
+        string second = Path.Combine(Path.GetTempPath(), "second", "b.md");
+        state.Update(first);
+        Assert.True(state.WouldChange(second));
+        Assert.False(state.WouldChange(first));
+        Assert.Equal(Path.GetDirectoryName(first), state.DirectoryPath);
+        Assert.True(state.Update(second).HasChanged);
+        Assert.False(state.WouldChange(second));
+    }
+
+    [Fact]
     public void 更新_从未命名文档切换到已保存文档_要求完整导航()
     {
         PreviewResourceMappingState state = new();

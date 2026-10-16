@@ -9,6 +9,9 @@ public sealed class PreviewResourceMappingState
 {
     public string? DirectoryPath { get; private set; }
 
+    public bool WouldChange(string? documentPath) => !string.Equals(
+        DirectoryPath, ResolveDirectory(documentPath), StringComparison.OrdinalIgnoreCase);
+
     public PreviewResourceMappingUpdate Update(string? documentPath)
     {
         string? nextDirectory = ResolveDirectory(documentPath);

@@ -61,6 +61,7 @@ public partial class MainWindow
         service.PreviewTaskToggleRequested += PreviewService_TaskToggleRequested;
         service.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
         service.PreviewReady += PreviewService_PreviewReady;
+        service.PreviewContentApplying += PreviewService_PreviewContentApplying;
         await service.InitializeAsync();
         ObjectDisposedException.ThrowIf(windowClosed, this);
         previewInitialized = true;

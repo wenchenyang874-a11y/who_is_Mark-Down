@@ -130,6 +130,13 @@ public partial class MainWindow
         _ = SynchronizePreviewToCaretAsync();
     }
 
+    private void PreviewService_PreviewContentApplying(object? sender, EventArgs eventArgs)
+    {
+        // Background packaging may outlive the original scroll-echo interval.
+        // Restart it immediately before a real DOM mutation, not before queuing.
+        SuppressPreviewScrollEcho();
+    }
+
     private void ReleaseTaskPreviewPositionSuppression()
     {
         editorScrollSyncTimer.Stop();

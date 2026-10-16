@@ -104,17 +104,16 @@ public partial class MainWindow
             throw new OperationCanceledException(cancellationToken);
         }
 
-        string visibleBody = previewDocumentBuilder.GetVisibleBody(rendered.PreviewHtml);
-        string page = previewDocumentBuilder.Build(rendered.PreviewHtml, previewStyleSheet, remoteImagePolicy);
         SuppressPreviewScrollEcho();
         await service.ShowAsync(
-            page,
-            visibleBody,
+            rendered,
+            previewStyleSheet,
+            previewAppearanceStyleSheet,
             documentPath,
-            remoteImagePolicy.Identity,
+            remoteImagePolicy,
             synchronizeToCaretWhenReady: false,
-            blocks: rendered.Blocks,
-            forceBodyReplacement: forceBodyReplacement);
+            forceBodyReplacement: forceBodyReplacement,
+            cancellationToken: cancellationToken);
         await service.WaitUntilReadyAsync(cancellationToken);
         return cancellationToken;
     }

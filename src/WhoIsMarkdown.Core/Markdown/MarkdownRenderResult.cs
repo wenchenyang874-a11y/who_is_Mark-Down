@@ -13,18 +13,21 @@ public sealed record MarkdownRenderBlock(string Key, string Html);
 /// </summary>
 public sealed class MarkdownRenderResult
 {
-    private MarkdownRenderResult(IReadOnlyList<MarkdownRenderBlock> blocks)
+    private MarkdownRenderResult(IReadOnlyList<MarkdownRenderBlock> blocks, CancellationToken cancellationToken)
     {
         Blocks = blocks;
         BodyHtml = string.Concat(blocks.Select(block => block.Html));
+        cancellationToken.ThrowIfCancellationRequested();
         StringBuilder preview = new();
         foreach (MarkdownRenderBlock block in blocks)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             preview.Append("<div class=\"wimd-preview-block\" data-wimd-block=\"")
                 .Append(block.Key).Append("\">").Append(block.Html).Append("</div>");
         }
 
         PreviewHtml = preview.ToString();
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     public IReadOnlyList<MarkdownRenderBlock> Blocks { get; }
@@ -32,12 +35,17 @@ public sealed class MarkdownRenderResult
     public string PreviewHtml { get; }
 
     public static MarkdownRenderResult Create(IEnumerable<string> safeBlocks)
+        => Create(safeBlocks, CancellationToken.None);
+
+    public static MarkdownRenderResult Create(IEnumerable<string> safeBlocks, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(safeBlocks);
+        cancellationToken.ThrowIfCancellationRequested();
         List<MarkdownRenderBlock> blocks = [];
         Dictionary<string, int> occurrences = new(StringComparer.Ordinal);
         foreach (string html in safeBlocks)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(html)) continue;
             string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html)));
             occurrences.TryGetValue(fingerprint, out int occurrence);
@@ -45,6 +53,6 @@ public sealed class MarkdownRenderResult
             blocks.Add(new MarkdownRenderBlock($"{fingerprint}-{occurrence}", html));
         }
 
-        return new MarkdownRenderResult(blocks.AsReadOnly());
+        return new MarkdownRenderResult(blocks.AsReadOnly(), cancellationToken);
     }
 }

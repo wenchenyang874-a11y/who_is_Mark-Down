@@ -34,7 +34,7 @@ public sealed class MarkdownBlockRenderingTests
         MarkdownRenderer renderer = new();
         const string first = "[link][ref] and note[^n]\n\n[ref]: https://example.com/old\n\n[^n]: old note";
         string second = first.Replace("/old", "/new", StringComparison.Ordinal).Replace("old note", "new note", StringComparison.Ordinal);
-        renderer.RenderDocument(first);
+        renderer.RenderDocument(first, null, null, TestContext.Current.CancellationToken);
         Assert.Equal(Reference(second), renderer.RenderBody(second));
     }
 
@@ -44,7 +44,7 @@ public sealed class MarkdownBlockRenderingTests
         MarkdownRenderer renderer = new();
         foreach (string markdown in new[] { "<div>\n\nfirst\n\nsecond\n\n</div>", "> nested <span>html</span>\n\nnext", "first <a id=\"pragma-line-0\"></a>\n\nsecond" })
         {
-            MarkdownRenderResult result = renderer.RenderDocument(markdown);
+            MarkdownRenderResult result = renderer.RenderDocument(markdown, null, null, TestContext.Current.CancellationToken);
             Assert.Single(result.Blocks);
             Assert.Equal(Reference(markdown), result.BodyHtml);
         }
@@ -54,12 +54,12 @@ public sealed class MarkdownBlockRenderingTests
     public void 局部编辑_其余语义块_保持稳定标识且标识唯一()
     {
         MarkdownRenderer renderer = new();
-        MarkdownRenderResult first = renderer.RenderDocument("first\n\nsecond\n\nthird");
-        MarkdownRenderResult second = renderer.RenderDocument("first\n\nchanged\n\nthird");
+        MarkdownRenderResult first = renderer.RenderDocument("first\n\nsecond\n\nthird", null, null, TestContext.Current.CancellationToken);
+        MarkdownRenderResult second = renderer.RenderDocument("first\n\nchanged\n\nthird", null, null, TestContext.Current.CancellationToken);
         Assert.Equal(first.Blocks[0].Key, second.Blocks[0].Key);
         Assert.NotEqual(first.Blocks[1].Key, second.Blocks[1].Key);
         Assert.Equal(first.Blocks[2].Key, second.Blocks[2].Key);
-        MarkdownRenderResult duplicates = MarkdownRenderResult.Create(["<p>same</p>", "<p>same</p>"]);
+        MarkdownRenderResult duplicates = MarkdownRenderResult.Create(["<p>same</p>", "<p>same</p>"], TestContext.Current.CancellationToken);
         Assert.Equal(2, duplicates.Blocks.Select(block => block.Key).Distinct(StringComparer.Ordinal).Count());
     }
 
@@ -81,8 +81,8 @@ public sealed class MarkdownBlockRenderingTests
     {
         string markdown = string.Concat(Enumerable.Range(0, 500).Select(index => $"## section {index}\n\nparagraph {index}\n\n"));
         MarkdownRenderer renderer = new();
-        MarkdownRenderResult first = renderer.RenderDocument(markdown);
-        MarkdownRenderResult second = renderer.RenderDocument(markdown + "\nnew paragraph\n");
+        MarkdownRenderResult first = renderer.RenderDocument(markdown, null, null, TestContext.Current.CancellationToken);
+        MarkdownRenderResult second = renderer.RenderDocument(markdown + "\nnew paragraph\n", null, null, TestContext.Current.CancellationToken);
         Assert.Equal(Reference(markdown), first.BodyHtml);
         Assert.Equal(Reference(markdown + "\nnew paragraph\n"), second.BodyHtml);
         Assert.InRange(first.Blocks.Count, 2, 100);

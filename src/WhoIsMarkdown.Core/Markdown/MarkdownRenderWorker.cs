@@ -2,18 +2,14 @@ namespace WhoIsMarkdown.Core.Markdown;
 
 /// <summary>
 /// Creates the renderer only on its first worker request and serializes complete
-/// parses. Cancellation used to stop only debounce timers: obsolete parses could
-/// still pile up behind the sanitizer lock, retaining multiple document snapshots.
-/// Waiting requests now cancel before parsing. An active parse is not interruptible;
-/// disposal releases its gate only after all outstanding requests have unwound.
+/// parses. Waiting requests cancel before materializing their immutable snapshots.
+/// Active synchronous stages cannot be forcibly interrupted; cancellation is checked
+/// between them. The shared queue also supplies the preview preparation lifecycle.
 /// </summary>
 public sealed class MarkdownRenderWorker : IDisposable
 {
-    private readonly object lifecycleGate = new();
-    private readonly SemaphoreSlim renderGate = new(1, 1);
+    private readonly BackgroundWorkQueue queue = new();
     private readonly Lazy<IMarkdownRenderer> renderer;
-    private int requests;
-    private bool disposed;
 
     public MarkdownRenderWorker(Func<IMarkdownRenderer>? factory = null)
     {
@@ -39,67 +35,21 @@ public sealed class MarkdownRenderWorker : IDisposable
     /// The factory must capture data, never a UI control or a mutable document.
     /// Canceled queued requests do not allocate full document strings.
     /// </summary>
-    public async Task<MarkdownRenderResult> RenderSnapshotAsync(
+    public Task<MarkdownRenderResult> RenderSnapshotAsync(
         Func<string> readSnapshot,
         string? documentPath,
         RemoteImagePolicy? policy,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(readSnapshot);
-        lock (lifecycleGate)
+        return queue.RunAsync(() =>
         {
-            ObjectDisposedException.ThrowIf(disposed, this);
-            requests++;
-        }
-
-        try
-        {
-            await renderGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return await Task.Run(
-                    () =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        string markdown = readSnapshot();
-                        cancellationToken.ThrowIfCancellationRequested();
-                        return renderer.Value.RenderDocument(markdown, documentPath, policy);
-                    },
-                    cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                renderGate.Release();
-            }
-        }
-        finally
-        {
-            lock (lifecycleGate)
-            {
-                requests--;
-                if (disposed && requests == 0)
-                {
-                    renderGate.Dispose();
-                }
-            }
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            string markdown = readSnapshot();
+            cancellationToken.ThrowIfCancellationRequested();
+            return renderer.Value.RenderDocument(markdown, documentPath, policy, cancellationToken);
+        }, cancellationToken);
     }
 
-    public void Dispose()
-    {
-        lock (lifecycleGate)
-        {
-            if (disposed)
-            {
-                return;
-            }
-
-            disposed = true;
-            if (requests == 0)
-            {
-                renderGate.Dispose();
-            }
-        }
-    }
+    public void Dispose() => queue.Dispose();
 }

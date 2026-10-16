@@ -52,19 +52,33 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
         string markdown,
         string? documentPath = null,
         RemoteImagePolicy? remoteImagePolicy = null)
+        => RenderDocument(markdown, documentPath, remoteImagePolicy, CancellationToken.None);
+
+    public MarkdownRenderResult RenderDocument(
+        string markdown,
+        string? documentPath,
+        RemoteImagePolicy? remoteImagePolicy,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         lock (renderGate)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             // Always parse the complete document: reference links, abbreviations,
             // footnotes and heading identifiers can depend on later source blocks.
             MarkdownDocument document = Markdig.Markdown.Parse(markdown, pipeline);
+            // A parse already executing cannot be interrupted safely, but an old
+            // request must not continue into filtering or packaging afterwards.
+            cancellationToken.ThrowIfCancellationRequested();
             if (document.Descendants().Any(IsAuthorHtml))
             {
                 // HTML may open in one Markdown block and close in another. Never
                 // sanitize such fragments independently or infer balance with regex.
                 string html = Markdig.Markdown.ToHtml(document, pipeline);
-                return MarkdownRenderResult.Create([Rewrite(htmlSanitizer.Sanitize(html))]);
+                cancellationToken.ThrowIfCancellationRequested();
+                string safe = htmlSanitizer.Sanitize(html);
+                cancellationToken.ThrowIfCancellationRequested();
+                return MarkdownRenderResult.Create([Rewrite(safe)], cancellationToken);
             }
 
             using StringWriter writer = new(System.Globalization.CultureInfo.InvariantCulture);
@@ -78,6 +92,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
             int pendingBlocks = 0;
             foreach (Block block in document)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // Reuse one renderer so extension state and output ordering match
                 // a full-document render, but cache only complete top-level blocks.
                 renderer.Render(block);
@@ -89,7 +104,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
 
             if (pendingBlocks > 0) FlushFragment();
 
-            return MarkdownRenderResult.Create(safeBlocks);
+            return MarkdownRenderResult.Create(safeBlocks, cancellationToken);
 
             void FlushFragment()
             {
@@ -98,12 +113,21 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                 pendingBlocks = 0;
                 if (!string.IsNullOrWhiteSpace(generated))
                 {
-                    safeBlocks.Add(Rewrite(blockCache.GetOrAdd(generated, htmlSanitizer.Sanitize)));
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string safe = blockCache.GetOrAdd(generated, htmlSanitizer.Sanitize);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    safeBlocks.Add(Rewrite(safe));
                 }
             }
         }
 
-        string Rewrite(string html) => imageUrlResolver.RewriteGeneratedHtml(html, documentPath, remoteImagePolicy);
+        string Rewrite(string html)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string rewritten = imageUrlResolver.RewriteGeneratedHtml(html, documentPath, remoteImagePolicy);
+            cancellationToken.ThrowIfCancellationRequested();
+            return rewritten;
+        }
     }
 
     private static bool IsAuthorHtml(MarkdownObject node)
