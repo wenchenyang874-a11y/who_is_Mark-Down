@@ -4,6 +4,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.3] - 2026-10-17
+
 ### 优化
 
 - 预览源行锚点改为按需重建索引和二分查找；正文更新、图表替换及锚点属性变化立即失效旧引用，定位时仍读取实际几何位置，保留 25%～75% 舒适区。
@@ -335,7 +337,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.2...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.3...HEAD
+[1.8.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.7.10...v1.8.0
