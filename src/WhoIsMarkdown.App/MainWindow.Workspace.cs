@@ -47,11 +47,13 @@ public partial class MainWindow
         }
 
         workspaceOperationRunning = true;
+        long operation = ++workspaceOperationVersion;
+        (_, CancellationToken token) = BeginWorkspaceRead();
         try
         {
             IWorkspaceFileService service = workspaceFileService;
             string root = await Task.Run(() => service.Open(path))
-                .WaitAsync(windowLifetimeCancellation.Token);
+                .WaitAsync(token);
             if (windowClosed)
             {
                 return;
@@ -65,24 +67,28 @@ public partial class MainWindow
             CloseWorkspaceMenuItem.IsEnabled = true;
             SetRecentPaneExpanded(expanded: true, persist: true);
             await RefreshWorkspaceCoreAsync();
-            UpdateStatus($"已打开工作区：{root}");
+            if (operation == workspaceOperationVersion && !windowClosed && workspaceRootPath == root)
+                UpdateStatus($"已打开工作区：{root}");
         }
-        catch (OperationCanceledException) when (windowClosed)
+        catch (OperationCanceledException) when (windowClosed || token.IsCancellationRequested)
         {
             // The window is gone; blocked filesystem work may finish separately.
         }
         catch (Exception exception) when (IsWorkspaceFailure(exception))
         {
-            ShowWorkspaceError("无法打开文件夹", exception);
+            if (operation == workspaceOperationVersion && !windowClosed) ShowWorkspaceError("无法打开文件夹", exception);
         }
         finally
         {
-            workspaceOperationRunning = false;
+            if (operation == workspaceOperationVersion) workspaceOperationRunning = false;
         }
     }
 
     private void CloseWorkspace_Click(object sender, RoutedEventArgs eventArgs)
     {
+        CancelWorkspaceReads();
+        workspaceOperationVersion++;
+        workspaceOperationRunning = false;
         workspaceRootPath = null;
         selectedWorkspaceItem = null;
         WorkspaceItems.Clear();
@@ -105,22 +111,23 @@ public partial class MainWindow
         }
 
         workspaceOperationRunning = true;
+        long operation = ++workspaceOperationVersion;
         try
         {
             await RefreshWorkspaceCoreAsync();
-            UpdateStatus("工作区已刷新");
+            if (operation == workspaceOperationVersion && !windowClosed) UpdateStatus("工作区已刷新");
         }
-        catch (OperationCanceledException) when (windowClosed)
+        catch (OperationCanceledException)
         {
             // No closed-window UI updates after a delayed directory read.
         }
         catch (Exception exception) when (IsWorkspaceFailure(exception))
         {
-            ShowWorkspaceError("无法刷新工作区", exception);
+            if (operation == workspaceOperationVersion && !windowClosed) ShowWorkspaceError("无法刷新工作区", exception);
         }
         finally
         {
-            workspaceOperationRunning = false;
+            if (operation == workspaceOperationVersion) workspaceOperationRunning = false;
         }
     }
 
@@ -129,59 +136,69 @@ public partial class MainWindow
         string root = workspaceRootPath
             ?? throw new InvalidOperationException("尚未打开工作区。");
         IWorkspaceFileService service = workspaceFileService;
-        IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
-            () => service.GetChildren(root, root)).WaitAsync(windowLifetimeCancellation.Token);
-        if (windowClosed || !string.Equals(root, workspaceRootPath, StringComparison.OrdinalIgnoreCase))
+        (long version, CancellationToken token) = BeginWorkspaceRead();
+        try
         {
-            return;
+            IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
+                () => service.GetChildren(root, root, token), token).WaitAsync(token);
+            if (!IsCurrentWorkspaceRead(version, root)) return;
+            await PopulateWorkspaceAsync(entries, version, root, token);
         }
-
-        WorkspaceItems.Clear();
-        foreach (WorkspaceEntry entry in entries)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            WorkspaceItems.Add(new WorkspaceTreeItemViewModel(entry));
+            // Refresh is shared by async-void mutation handlers too. Closing the
+            // workspace cancels presentation, not a completed disk operation.
         }
-
-        WorkspaceEmptyState.Visibility = WorkspaceItems.Count == 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
     }
 
     private async void WorkspaceTree_Expanded(object sender, RoutedEventArgs eventArgs)
     {
-        if (eventArgs.OriginalSource is not TreeViewItem
+        if (windowClosed || eventArgs.OriginalSource is not TreeViewItem
             {
                 DataContext: WorkspaceTreeItemViewModel node,
             }
             || !node.IsDirectory
-            || node.IsLoaded
-            || workspaceRootPath is null)
+            || workspaceRootPath is null
+            || !node.BeginLoading())
         {
             return;
         }
 
+        long version = workspaceReadVersion;
+        string root = workspaceRootPath;
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            workspaceReadCancellation?.Token ?? windowLifetimeCancellation.Token);
+        workspaceNodeLoads.Add(node, cancellation);
+        CancellationToken token = cancellation.Token;
         try
         {
-            string root = workspaceRootPath;
             string nodePath = node.Path;
             IWorkspaceFileService service = workspaceFileService;
             IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
-                () => service.GetChildren(root, nodePath)).WaitAsync(windowLifetimeCancellation.Token);
-            if (windowClosed || !string.Equals(root, workspaceRootPath, StringComparison.OrdinalIgnoreCase))
+                () => service.GetChildren(root, nodePath, token), token).WaitAsync(token);
+            if (!IsCurrentWorkspaceRead(version, root))
             {
                 return;
             }
 
-            node.ReplaceChildren(entries);
+            await PopulateWorkspaceAsync(entries, version, root, token, node);
         }
-        catch (OperationCanceledException) when (windowClosed)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // A collapsed/closed window must not retain a blocked directory wait.
         }
         catch (Exception exception) when (IsWorkspaceFailure(exception))
         {
-            node.ReplaceChildren([]);
-            ShowWorkspaceError("无法读取目录", exception);
+            if (IsCurrentWorkspaceRead(version, root) && !token.IsCancellationRequested)
+            {
+                node.MarkUnloaded();
+                ShowWorkspaceError("无法读取目录", exception);
+            }
+        }
+        finally
+        {
+            if (workspaceNodeLoads.TryGetValue(node, out CancellationTokenSource? current) && ReferenceEquals(current, cancellation))
+                workspaceNodeLoads.Remove(node);
         }
     }
 

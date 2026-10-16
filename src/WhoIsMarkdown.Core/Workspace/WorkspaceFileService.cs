@@ -31,7 +31,11 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
     }
 
     public IReadOnlyList<WorkspaceEntry> GetChildren(string rootPath, string directoryPath)
+        => GetChildren(rootPath, directoryPath, CancellationToken.None);
+
+    public IReadOnlyList<WorkspaceEntry> GetChildren(string rootPath, string directoryPath, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         string root = Open(rootPath);
         string directory = ValidateExistingPath(root, directoryPath, allowRoot: true);
         if (!Directory.Exists(directory))
@@ -47,6 +51,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             List<WorkspaceEntry> entries = [];
             foreach (DirectoryInfo childDirectory in new DirectoryInfo(directory).EnumerateDirectories())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!childDirectory.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
                     entries.Add(new WorkspaceEntry(
@@ -58,6 +63,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
 
             foreach (FileInfo file in new DirectoryInfo(directory).EnumerateFiles())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!file.Attributes.HasFlag(FileAttributes.ReparsePoint)
                     && MarkdownExtensions.Contains(file.Extension))
                 {
@@ -65,10 +71,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 }
             }
 
-            return entries
+            cancellationToken.ThrowIfCancellationRequested();
+            WorkspaceEntry[] sorted = entries
                 .OrderByDescending(entry => entry.IsDirectory)
                 .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+            cancellationToken.ThrowIfCancellationRequested();
+            return sorted;
         }
         catch (Exception exception) when (IsExpectedFailure(exception))
         {

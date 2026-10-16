@@ -98,6 +98,7 @@ public partial class MainWindow
     protected override void OnClosed(EventArgs e)
     {
         windowClosed = true;
+        CancelWorkspaceReads();
         DisposeSettingsPersistence();
         windowLifetimeCancellation.Cancel();
         windowLifetimeCancellation.Dispose();

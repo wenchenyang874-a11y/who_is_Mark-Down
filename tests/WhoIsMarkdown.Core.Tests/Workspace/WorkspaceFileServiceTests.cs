@@ -7,6 +7,14 @@ public sealed class WorkspaceFileServiceTests
     private readonly WorkspaceFileService service = new();
 
     [Fact]
+    public void GetChildren_CanceledBeforeRead_DoesNotProbeMissingPath()
+    {
+        using CancellationTokenSource canceled = new();
+        canceled.Cancel();
+        Assert.Throws<OperationCanceledException>(() => service.GetChildren("missing", "missing", canceled.Token));
+    }
+
+    [Fact]
     public void 枚举_工作区包含多种文件_只返回目录和Markdown文件()
     {
         using TemporaryDirectory temporaryDirectory = new();
@@ -17,7 +25,7 @@ public sealed class WorkspaceFileServiceTests
 
         IReadOnlyList<WorkspaceEntry> entries = service.GetChildren(
             temporaryDirectory.Path,
-            temporaryDirectory.Path);
+            temporaryDirectory.Path, TestContext.Current.CancellationToken);
 
         Assert.Equal(["文档", "notes.markdown", "说明.md"], entries.Select(entry => entry.Name));
         Assert.True(entries[0].IsDirectory);

@@ -381,11 +381,19 @@
                                           Padding="2"
                                           Background="Transparent"
                                           BorderThickness="0"
+                                          ScrollViewer.CanContentScroll="True"
+                                          VirtualizingStackPanel.IsVirtualizing="True"
+                                          VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                          VirtualizingPanel.ScrollUnit="Pixel"
                                           ItemsSource="{Binding WorkspaceItems, ElementName=RootWindow}"
                                           SelectedItemChanged="WorkspaceTree_SelectedItemChanged"
                                           PreviewMouseRightButtonDown="WorkspaceTree_PreviewMouseRightButtonDown"
                                           KeyDown="WorkspaceTree_KeyDown"
-                                          TreeViewItem.Expanded="WorkspaceTree_Expanded">
+                                          TreeViewItem.Expanded="WorkspaceTree_Expanded"
+                                          TreeViewItem.Collapsed="WorkspaceTree_Collapsed">
+                                    <TreeView.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                                    </TreeView.ItemsPanel>
                                     <TreeView.ContextMenu>
                                         <ContextMenu AutomationProperties.Name="工作区根目录菜单">
                                             <MenuItem Header="新建 Markdown 文件"
@@ -409,6 +417,13 @@
                                     <TreeView.ItemContainerStyle>
                                         <Style TargetType="{x:Type TreeViewItem}">
                                             <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+                                            <Setter Property="VirtualizingStackPanel.IsVirtualizing" Value="True" />
+                                            <Setter Property="VirtualizingStackPanel.VirtualizationMode" Value="Recycling" />
+                                            <Setter Property="ItemsPanel">
+                                                <Setter.Value><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></Setter.Value>
+                                            </Setter>
                                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                             <Setter Property="Padding" Value="0" />
                                             <Setter Property="Margin" Value="0,1" />

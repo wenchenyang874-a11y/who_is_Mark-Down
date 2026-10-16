@@ -6,6 +6,12 @@ public interface IWorkspaceFileService
 
     public IReadOnlyList<WorkspaceEntry> GetChildren(string rootPath, string directoryPath);
 
+    public IReadOnlyList<WorkspaceEntry> GetChildren(string rootPath, string directoryPath, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return GetChildren(rootPath, directoryPath);
+    }
+
     public string CreateMarkdownFile(string rootPath, string parentDirectoryPath, string name);
 
     public string CreateDirectory(string rootPath, string parentDirectoryPath, string name);

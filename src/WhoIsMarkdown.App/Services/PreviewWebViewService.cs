@@ -45,6 +45,8 @@ public sealed class PreviewWebViewService : IDisposable
     /// 3 seconds, which is what keeps a dead image host from hanging the export.
     /// </summary>
     private static readonly TimeSpan PdfImageSettleTimeout = TimeSpan.FromSeconds(5);
+    private int? pendingSourceLine;
+    private Task? sourceNavigationTask;
 
     /// <summary>
     /// One preview image selected by the user, whether by clicking it or by opening its
@@ -457,6 +459,7 @@ public sealed class PreviewWebViewService : IDisposable
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsWebMessageEnabled = true;
         await RegisterHostScriptAsync(ScrollReportingScript).ConfigureAwait(true);
+        await RegisterHostScriptAsync(SourceLineNavigationScript.Script).ConfigureAwait(true);
         ThrowIfDisposed();
         await RegisterHostScriptAsync(ImageInteractionScript).ConfigureAwait(true);
         ThrowIfDisposed();
@@ -726,6 +729,7 @@ public sealed class PreviewWebViewService : IDisposable
         }
 
         MarkPreviewPending();
+        pendingSourceLine = null;
         pendingPreview = new PreviewSnapshot(content, documentPath, pagePolicyIdentity,
             synchronizeToCaretWhenReady, forceBodyReplacement, ++previewRequestVersion, cancellationToken);
         activePreviewCancellation?.Cancel();
@@ -884,31 +888,27 @@ public sealed class PreviewWebViewService : IDisposable
     /// </summary>
     public Task EnsureSourceLineInComfortZoneAsync(int zeroBasedLine)
     {
-        int safeLine = Math.Max(0, zeroBasedLine);
-        return ExecuteHostScriptAsync($$"""
-            (() => {
-              const line = {{safeLine}};
-              const anchors = [...document.querySelectorAll('[id^="pragma-line-"]')]
-                .map(element => ({ element, line: Number(element.id.slice(12)) }))
-                .filter(item => Number.isFinite(item.line));
-              if (anchors.length === 0) return;
-              let target = anchors[0];
-              for (const candidate of anchors) {
-                if (candidate.line > line) break;
-                target = candidate;
-              }
+        ThrowIfDisposed();
+        pendingSourceLine = Math.Max(0, zeroBasedLine);
+        return sourceNavigationTask ??= DrainSourceNavigationAsync();
+    }
 
-              const viewportHeight = Math.max(1, window.innerHeight);
-              const anchorTop = target.element.getBoundingClientRect().top;
-              const comfortTop = viewportHeight * 0.25;
-              const comfortBottom = viewportHeight * 0.75;
-              if (anchorTop >= comfortTop && anchorTop <= comfortBottom) return;
-
-              const nearestBoundary = anchorTop < comfortTop ? comfortTop : comfortBottom;
-              const absoluteTop = anchorTop + window.scrollY;
-              window.scrollTo(0, Math.max(0, absoluteTop - nearestBoundary));
-            })();
-            """);
+    private async Task DrainSourceNavigationAsync()
+    {
+        // Yield before sending native work so a same-turn caret burst collapses.
+        await Task.Yield();
+        try
+        {
+            while (pendingSourceLine is { } line && !disposed)
+            {
+                pendingSourceLine = null;
+                string value = line.ToString(CultureInfo.InvariantCulture);
+                await ExecuteHostScriptAsync($"window.wimdSourceNavigation?.ensureLine({value});")
+                    .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException) when (disposed) { }
+        finally { sourceNavigationTask = null; }
     }
 
     public void Dispose()
@@ -919,6 +919,7 @@ public sealed class PreviewWebViewService : IDisposable
         }
 
         disposed = true;
+        pendingSourceLine = null;
         // Unwind host continuations immediately on close. This cancels our waits,
         // not native WebView2 operations; the control itself is disposed below.
         lifetimeCancellation.Cancel();

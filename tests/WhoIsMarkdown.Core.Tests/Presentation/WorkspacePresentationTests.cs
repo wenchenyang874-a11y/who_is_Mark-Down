@@ -3,6 +3,18 @@ namespace WhoIsMarkdown.Core.Tests.Presentation;
 public sealed class WorkspacePresentationTests
 {
     [Fact]
+    public void WorkspaceTree_VirtualizedRecycling_BindsLogicalExpansionAndSelection()
+    {
+        string xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "WhoIsMarkdown.App", "MainWindow.xaml"));
+        Assert.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("VirtualizingStackPanel.VirtualizationMode=\"Recycling\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("VirtualizingPanel.ScrollUnit=\"Pixel\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding IsExpanded, Mode=TwoWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding IsSelected, Mode=TwoWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("TreeViewItem.Collapsed=\"WorkspaceTree_Collapsed\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 主窗口_文件夹模式入口与磁盘操作_保持可发现且语义明确()
     {
         string repositoryRoot = FindRepositoryRoot();

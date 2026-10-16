@@ -20,6 +20,7 @@ public partial class MainWindow
 
     private bool applyingPreviewScrollToEditor;
     private bool applyingEditorScrollToPreview;
+    private int pendingCaretSynchronizations;
     private long suppressPreviewScrollUntilTick;
 
     private void InitializeScrollSynchronization()
@@ -73,7 +74,7 @@ public partial class MainWindow
         object? sender,
         PreviewScrollChangedEventArgs eventArgs)
     {
-        if (applyingEditorScrollToPreview
+        if (applyingEditorScrollToPreview || pendingCaretSynchronizations > 0
             || IsPreviewScrollEchoSuppressed()
             || workspaceViewMode is not WorkspaceViewMode.EditorAndPreview)
         {
@@ -106,13 +107,24 @@ public partial class MainWindow
         }
 
         SuppressPreviewScrollEcho();
+        pendingCaretSynchronizations++;
         try
         {
             await previewService.EnsureSourceLineInComfortZoneAsync(Editor.TextArea.Caret.Line - 1);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException
+            or System.Runtime.InteropServices.COMException)
         {
             UpdateStatus($"预览定位失败：{exception.Message}");
+        }
+        catch (TimeoutException)
+        {
+            if (!windowClosed) UpdateStatus("预览定位等待超过 15 秒，底层脚本可能仍在执行。");
+        }
+        finally
+        {
+            pendingCaretSynchronizations--;
+            SuppressPreviewScrollEcho();
         }
     }
 
