@@ -1,4 +1,6 @@
+using ICSharpCode.AvalonEdit.Document;
 using WhoIsMarkdown.App.Infrastructure;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Documents;
 using WhoIsMarkdown.Core.Lifecycle;
 
@@ -11,25 +13,24 @@ namespace WhoIsMarkdown.App.ViewModels;
 /// </summary>
 public sealed class DocumentEditorViewModel : ObservableObject
 {
-    private string text = string.Empty;
-    private string savedText = string.Empty;
+    private EditorDocumentSession session = new(string.Empty);
     private string? filePath;
     private bool hasUtf8Bom;
     private DocumentLineEnding lineEnding = DocumentLineEnding.None;
     private DocumentFileStamp? stamp;
     private string untitledName = "未命名-1";
 
+    public DocumentEditorViewModel()
+    {
+        session.TextChanged += Session_TextChanged;
+    }
+
+    public TextDocument EditorDocument => session.Document;
+
     public string Text
     {
-        get => text;
-        set
-        {
-            if (SetProperty(ref text, value))
-            {
-                OnPropertyChanged(nameof(IsDirty));
-                OnPropertyChanged(nameof(WindowTitle));
-            }
-        }
+        get => session.Capture().ReadText();
+        set => session.Document.Text = value;
     }
 
     public string? FilePath => filePath;
@@ -40,7 +41,7 @@ public sealed class DocumentEditorViewModel : ObservableObject
 
     public DocumentFileStamp? Stamp => stamp;
 
-    public bool IsDirty => !string.Equals(text, savedText, StringComparison.Ordinal);
+    public bool IsDirty => session.IsDirty;
 
     public string DisplayName => filePath is null ? untitledName : System.IO.Path.GetFileName(filePath);
 
@@ -66,8 +67,8 @@ public sealed class DocumentEditorViewModel : ObservableObject
         return windowState with
         {
             DocumentPath = filePath,
-            DocumentText = includeContent ? text : null,
-            SavedDocumentText = includeContent ? savedText : null,
+            DocumentText = includeContent ? Text : null,
+            SavedDocumentText = includeContent ? session.SavedText : null,
             UntitledDisplayName = untitledName,
             HasUtf8Bom = hasUtf8Bom,
             LineEnding = lineEnding,
@@ -84,8 +85,7 @@ public sealed class DocumentEditorViewModel : ObservableObject
             throw new InvalidOperationException("恢复状态不包含文档正文。");
         }
 
-        text = normalized.DocumentText;
-        savedText = normalized.SavedDocumentText ?? normalized.DocumentText;
+        ReplaceSession(normalized.DocumentText, normalized.SavedDocumentText);
         filePath = normalized.DocumentPath;
         untitledName = normalized.UntitledDisplayName;
         hasUtf8Bom = normalized.HasUtf8Bom;
@@ -98,28 +98,29 @@ public sealed class DocumentEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(WindowTitle));
     }
 
-    public DocumentWriteRequest CreateWriteRequest(string path)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        return new DocumentWriteRequest(path, Text, HasUtf8Bom);
-    }
+    public EditorTextSnapshot CaptureSnapshot() => session.Capture();
 
-    public void MarkSaved(string path, DocumentFileStamp newStamp)
+    public bool MarkSaved(EditorTextSnapshot snapshot, string path, DocumentFileStamp newStamp)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        filePath = System.IO.Path.GetFullPath(path);
+        string normalizedPath = System.IO.Path.GetFullPath(path);
+        if (!session.MarkSaved(snapshot))
+        {
+            return false;
+        }
+
+        filePath = normalizedPath;
         stamp = newStamp;
-        savedText = text;
 
         NotifyDocumentMetadataChanged();
         OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(WindowTitle));
+        return true;
     }
 
     private void ApplyDocument(string newText, string? newFilePath, bool emitUtf8Bom, DocumentLineEnding newLineEnding, DocumentFileStamp? newStamp)
     {
-        text = newText;
-        savedText = newText;
+        ReplaceSession(newText);
         filePath = newFilePath;
         hasUtf8Bom = emitUtf8Bom;
         lineEnding = newLineEnding;
@@ -127,6 +128,20 @@ public sealed class DocumentEditorViewModel : ObservableObject
 
         OnPropertyChanged(nameof(Text));
         NotifyDocumentMetadataChanged();
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(WindowTitle));
+    }
+
+    private void ReplaceSession(string text, string? savedText = null)
+    {
+        session.TextChanged -= Session_TextChanged;
+        session = new EditorDocumentSession(text, savedText);
+        session.TextChanged += Session_TextChanged;
+    }
+
+    private void Session_TextChanged(object? sender, EventArgs eventArgs)
+    {
+        OnPropertyChanged(nameof(Text));
         OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(WindowTitle));
     }

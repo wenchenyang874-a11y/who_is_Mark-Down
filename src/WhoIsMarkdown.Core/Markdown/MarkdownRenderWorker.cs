@@ -27,12 +27,25 @@ public sealed class MarkdownRenderWorker : IDisposable
         CancellationToken cancellationToken)
         => (await RenderDocumentAsync(markdown, documentPath, policy, cancellationToken).ConfigureAwait(false)).BodyHtml;
 
-    public async Task<MarkdownRenderResult> RenderDocumentAsync(
+    public Task<MarkdownRenderResult> RenderDocumentAsync(
         string markdown,
         string? documentPath,
         RemoteImagePolicy? policy,
         CancellationToken cancellationToken)
+        => RenderSnapshotAsync(() => markdown, documentPath, policy, cancellationToken);
+
+    /// <summary>
+    /// Materializes an immutable snapshot only after debounce and queue admission.
+    /// The factory must capture data, never a UI control or a mutable document.
+    /// Canceled queued requests do not allocate full document strings.
+    /// </summary>
+    public async Task<MarkdownRenderResult> RenderSnapshotAsync(
+        Func<string> readSnapshot,
+        string? documentPath,
+        RemoteImagePolicy? policy,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(readSnapshot);
         lock (lifecycleGate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -46,7 +59,13 @@ public sealed class MarkdownRenderWorker : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return await Task.Run(
-                    () => renderer.Value.RenderDocument(markdown, documentPath, policy),
+                    () =>
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        string markdown = readSnapshot();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        return renderer.Value.RenderDocument(markdown, documentPath, policy);
+                    },
                     cancellationToken).ConfigureAwait(false);
             }
             finally

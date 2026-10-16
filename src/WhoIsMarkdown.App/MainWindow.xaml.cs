@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
-using ICSharpCode.AvalonEdit.Document;
 using Microsoft.Win32;
 using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.App.ViewModels;
@@ -38,6 +37,7 @@ public partial class MainWindow : Window
     private bool closeApproved;
     private bool closeWorkflowRunning;
     private bool windowClosed;
+    private bool documentSaveRunning;
 
     public MainWindow()
         : this(
@@ -62,6 +62,7 @@ public partial class MainWindow : Window
         InitializeScrollSynchronization();
         DataContext = document;
         document.StartNew(untitledCounter);
+        Editor.Document = document.EditorDocument;
         Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
     }
 
@@ -200,7 +201,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        document.Text = Editor.Text;
         bool preservePreviewPosition = applyingPreviewTaskEdit;
         if (!preservePreviewPosition)
         {
@@ -278,6 +278,11 @@ public partial class MainWindow : Window
 
     private async Task<bool> SaveCurrentDocumentAsync(bool forceSaveAs)
     {
+        if (documentSaveRunning || windowClosed)
+        {
+            return false;
+        }
+
         string? targetPath = forceSaveAs || document.FilePath is null
             ? SelectSavePath()
             : document.FilePath;
@@ -287,6 +292,11 @@ public partial class MainWindow : Window
             return false;
         }
 
+        documentSaveRunning = true;
+        EditorTextSnapshot snapshot = document.CaptureSnapshot();
+        bool emitUtf8Bom = document.HasUtf8Bom;
+        IDocumentFileService service = fileService;
+        CancellationToken token = windowLifetimeCancellation.Token;
         try
         {
             // WIMD's own atomic save raises the external-change watcher events too.
@@ -296,13 +306,20 @@ public partial class MainWindow : Window
             DocumentFileStamp stamp;
             try
             {
-                stamp = await fileService.WriteAsync(document.CreateWriteRequest(targetPath));
+                stamp = await Task.Run(
+                    () => service.WriteAsync(new DocumentWriteRequest(targetPath, snapshot.ReadText(), emitUtf8Bom), token),
+                    token).WaitAsync(token);
                 if (windowClosed)
                 {
                     return false;
                 }
 
-                document.MarkSaved(targetPath, stamp);
+                if (!document.MarkSaved(snapshot, targetPath, stamp))
+                {
+                    // A completed save belongs to its original document only.
+                    // Switching/new/reload must never adopt an old save's path.
+                    return false;
+                }
             }
             finally
             {
@@ -317,13 +334,22 @@ public partial class MainWindow : Window
             // Preserve the preview viewport when the refresh completes instead of
             // letting PreviewReady align it to a caret that may be near the top.
             SchedulePreview(synchronizePreviewToCaretWhenReady: false);
-            UpdateStatus("文档已保存");
-            return true;
+            UpdateStatus(document.IsDirty ? "已保存快照；仍有新的修改未保存" : "文档已保存");
+            // Close/open confirmation must not discard edits made during save.
+            return !document.IsDirty;
+        }
+        catch (OperationCanceledException) when (windowClosed)
+        {
+            return false;
         }
         catch (DocumentFileException exception)
         {
             ShowFileError("无法保存文档", exception);
             return false;
+        }
+        finally
+        {
+            documentSaveRunning = false;
         }
     }
 
@@ -380,8 +406,7 @@ public partial class MainWindow : Window
         applyingDocumentText = true;
         try
         {
-            Editor.Document = new TextDocument(document.Text);
-            Editor.Document.UndoStack.ClearAll();
+            Editor.Document = document.EditorDocument;
             Editor.CaretOffset = 0;
         }
         finally
@@ -413,7 +438,6 @@ public partial class MainWindow : Window
         long version = ++previewVersion;
         RemoteImagePolicy remoteImagePolicy = CreateRemoteImagePolicy();
         _ = RefreshPreviewAsync(
-            document.Text,
             document.FilePath,
             remoteImagePolicy,
             version,
@@ -427,7 +451,6 @@ public partial class MainWindow : Window
     /// can be mapped safely, while stale asynchronous renders remain cancellable.
     /// </summary>
     private async Task RefreshPreviewAsync(
-        string markdown,
         string? documentPath,
         RemoteImagePolicy remoteImagePolicy,
         long version,
@@ -438,7 +461,12 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
-            MarkdownRenderResult rendered = await markdownRenderer.RenderDocumentAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
+            cancellationToken.ThrowIfCancellationRequested();
+            // Capture the latest rope on the dispatcher after debounce, not a
+            // complete string on every input event. Only immutable data crosses
+            // the worker boundary; queued obsolete snapshots stay unmaterialized.
+            EditorTextSnapshot snapshot = document.CaptureSnapshot();
+            MarkdownRenderResult rendered = await markdownRenderer.RenderSnapshotAsync(snapshot.ReadText, documentPath, remoteImagePolicy, cancellationToken)
                 .WaitAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             string visibleBody = previewDocumentBuilder.GetVisibleBody(rendered.PreviewHtml);

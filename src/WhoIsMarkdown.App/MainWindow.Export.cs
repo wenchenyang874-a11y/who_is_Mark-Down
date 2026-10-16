@@ -92,11 +92,11 @@ public partial class MainWindow
         previewCancellation = new CancellationTokenSource();
         CancellationToken cancellationToken = previewCancellation.Token;
         long version = ++previewVersion;
-        string markdown = document.Text;
+        EditorTextSnapshot snapshot = document.CaptureSnapshot();
         string? documentPath = document.FilePath;
         RemoteImagePolicy remoteImagePolicy = CreateRemoteImagePolicy();
 
-        MarkdownRenderResult rendered = await markdownRenderer.RenderDocumentAsync(markdown, documentPath, remoteImagePolicy, cancellationToken)
+        MarkdownRenderResult rendered = await markdownRenderer.RenderSnapshotAsync(snapshot.ReadText, documentPath, remoteImagePolicy, cancellationToken)
             .WaitAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (version != previewVersion)

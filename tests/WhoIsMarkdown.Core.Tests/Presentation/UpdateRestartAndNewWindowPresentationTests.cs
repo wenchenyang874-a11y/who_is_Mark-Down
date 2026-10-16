@@ -81,8 +81,8 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
             < commandsCode.IndexOf("if (closeApproved || !document.IsDirty)", StringComparison.Ordinal));
         Assert.Contains("ConfirmDiscardOrSaveAsync()", commandsCode, StringComparison.Ordinal);
         Assert.Contains("document.AddDocumentRecoveryTo", restartCode, StringComparison.Ordinal);
-        Assert.Contains("SavedDocumentText = includeContent ? savedText : null", documentViewModel, StringComparison.Ordinal);
-        Assert.Contains("savedText = normalized.SavedDocumentText", documentViewModel, StringComparison.Ordinal);
+        Assert.Contains("SavedDocumentText = includeContent ? session.SavedText : null", documentViewModel, StringComparison.Ordinal);
+        Assert.Contains("ReplaceSession(normalized.DocumentText, normalized.SavedDocumentText)", documentViewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("closeApproved = true;\n            Close();", updateCode, StringComparison.Ordinal);
     }
 

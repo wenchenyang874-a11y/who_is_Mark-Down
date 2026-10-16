@@ -51,7 +51,8 @@ public sealed class MarkdownRenderWorkerTests
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             using CancellationTokenSource obsolete = new();
-            Task<string> queued = worker.RenderAsync("obsolete", null, null, obsolete.Token);
+            Task<MarkdownRenderResult> queued = worker.RenderSnapshotAsync(
+                () => throw new InvalidOperationException("Canceled queue must not materialize snapshot"), null, null, obsolete.Token);
             Task<string> latest = worker.RenderAsync("latest", null, null, TestContext.Current.CancellationToken);
             obsolete.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
@@ -97,6 +98,34 @@ public sealed class MarkdownRenderWorkerTests
             release.Set();
             Assert.Equal("active", await active);
         }
+    }
+
+    [Fact]
+    public async Task Snapshot_FailedMaterialization_ReleasesGateWithoutCreatingRenderer()
+    {
+        int creations = 0;
+        using MarkdownRenderWorker worker = new(() =>
+        {
+            creations++;
+            return new CallbackRenderer(value => value);
+        });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => worker.RenderSnapshotAsync(
+            () => throw new InvalidOperationException("Expected snapshot failure"), null, null, TestContext.Current.CancellationToken));
+        Assert.Equal(0, creations);
+        Assert.Equal("latest", (await worker.RenderSnapshotAsync(() => "latest", null, null, TestContext.Current.CancellationToken)).BodyHtml);
+        Assert.Equal(1, creations);
+    }
+
+    [Fact]
+    public async Task Snapshot_CanceledWhileMaterializing_DoesNotParse()
+    {
+        using CancellationTokenSource cancellation = new();
+        using MarkdownRenderWorker worker = new(() => throw new InvalidOperationException("Canceled snapshot must not create renderer"));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RenderSnapshotAsync(() =>
+        {
+            cancellation.Cancel();
+            return "obsolete";
+        }, null, null, cancellation.Token));
     }
 
     [Fact]
