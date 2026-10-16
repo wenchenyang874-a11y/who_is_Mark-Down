@@ -79,7 +79,7 @@ public partial class MainWindow
         ApplyShortcutSettings();
         if (settingsSaved)
         {
-            UpdateStatus("快捷键设置已保存");
+            UpdateStatus("快捷键设置已应用，正在后台保存");
         }
     }
 

@@ -67,7 +67,8 @@ public partial class MainWindow : Window
 
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
-        LoadApplicationSettings();
+        await (settingsInitialization ??= LoadApplicationSettingsAsync());
+        if (windowClosed) return;
         PreparePreviewForFileOpen();
         // Bug fix: startup arguments can point at unavailable network, cloud, or
         // filter-backed paths. Do not call File.Exists/Directory.Exists while the

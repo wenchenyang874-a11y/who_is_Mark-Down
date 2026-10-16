@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -22,30 +23,39 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
 
     private readonly object synchronizationRoot = new();
     private readonly string settingsPath;
+    private readonly string? legacySettingsPath;
+    private readonly string writerMutexName;
 
-    public JsonApplicationSettingsStore(string settingsPath)
+    public JsonApplicationSettingsStore(string settingsPath, string? legacySettingsPath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
         this.settingsPath = System.IO.Path.GetFullPath(settingsPath);
+        this.legacySettingsPath = legacySettingsPath is null ? null : System.IO.Path.GetFullPath(legacySettingsPath);
+        string identity = OperatingSystem.IsWindows() ? this.settingsPath.ToUpperInvariant() : this.settingsPath;
+        writerMutexName = "WIMD.Settings." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
     }
 
-    public ApplicationSettings Load()
+    public ApplicationSettings Load() => Load(sortRecentFiles: true);
+
+    private ApplicationSettings Load(bool sortRecentFiles)
     {
         lock (synchronizationRoot)
         {
-            if (!File.Exists(settingsPath))
+            string path = File.Exists(settingsPath) ? settingsPath : legacySettingsPath ?? settingsPath;
+            if (!File.Exists(path))
             {
                 return new ApplicationSettings();
             }
 
             try
             {
-                byte[] bytes = File.ReadAllBytes(settingsPath);
+                byte[] bytes = File.ReadAllBytes(path);
                 string json = StrictUtf8.GetString(bytes);
                 ApplicationSettings? settings = JsonSerializer.Deserialize<ApplicationSettings>(
                     json,
                     SerializerOptions);
-                return (settings ?? new ApplicationSettings()).Normalize();
+                ApplicationSettings loaded = settings ?? new ApplicationSettings();
+                return sortRecentFiles ? loaded.Normalize() : loaded.NormalizeForPersistence();
             }
             catch (Exception exception) when (exception is JsonException or DecoderFallbackException)
             {
@@ -61,7 +71,40 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
     public void Save(ApplicationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        WithWriterLock(() => SaveCore(settings));
+    }
 
+    public void SaveChanges(ApplicationSettings baseline, ApplicationSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        ArgumentNullException.ThrowIfNull(settings);
+        // Read + merge + atomic replacement must share one cross-process lock;
+        // an instance-only monitor cannot protect independent WIMD windows.
+        WithWriterLock(() => SaveCore(ApplicationSettingsChanges.Merge(Load(sortRecentFiles: false), baseline, settings)));
+    }
+
+    private void WithWriterLock(Action write)
+    {
+        lock (synchronizationRoot)
+        {
+            using Mutex writerMutex = new(false, writerMutexName);
+            bool acquired = false;
+            try
+            {
+                try { acquired = writerMutex.WaitOne(TimeSpan.FromSeconds(5)); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired) throw CreateException("等待其他窗口保存设置超时。", new TimeoutException());
+                write();
+            }
+            finally
+            {
+                if (acquired) writerMutex.ReleaseMutex();
+            }
+        }
+    }
+
+    private void SaveCore(ApplicationSettings settings)
+    {
         lock (synchronizationRoot)
         {
             string directory = System.IO.Path.GetDirectoryName(settingsPath)

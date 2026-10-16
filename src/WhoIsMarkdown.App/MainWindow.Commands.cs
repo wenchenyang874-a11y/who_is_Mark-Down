@@ -19,13 +19,42 @@ public partial class MainWindow
     /// <summary>
     /// Bug fix: the previous Closing handler cancelled every close request, even for
     /// clean documents, and immediately re-entered Close. Clean windows now close in
-    /// one pass; only dirty documents use the asynchronous confirmation workflow.
+    /// one pass when preferences are drained. Pending preferences are drained
+    /// asynchronously before the unchanged installer/dirty-document decisions.
     /// </summary>
     protected override async void OnClosing(CancelEventArgs e)
     {
         base.OnClosing(e);
         if (e.Cancel)
         {
+            return;
+        }
+
+        bool skipSettingsFlush = settingsCloseFlushApproved;
+        settingsCloseFlushApproved = false;
+        if (!closeApproved && !skipSettingsFlush
+            && (settingsWriter?.NeedsFlush == true || settingsWriter is null && settingsChangedBeforeLoad))
+        {
+            e.Cancel = true;
+            if (closeWorkflowRunning) return;
+            closeWorkflowRunning = true;
+            try
+            {
+                if (await FlushSettingsBeforeCloseAsync())
+                {
+                    // Re-enter the existing installer/dirty-document rules only
+                    // after draining preferences. Capture recovery text then, not
+                    // before an asynchronous wait in which the user can still edit.
+                    settingsCloseFlushApproved = true;
+                    _ = Dispatcher.InvokeAsync(new Action(Close));
+                }
+            }
+            catch (Exception exception)
+            {
+                // async-void close entry must never terminate other windows.
+                UpdateStatus($"关闭前保存设置失败（{exception.GetType().Name}），请稍后重试。");
+            }
+            finally { closeWorkflowRunning = false; }
             return;
         }
 
@@ -69,6 +98,7 @@ public partial class MainWindow
     protected override void OnClosed(EventArgs e)
     {
         windowClosed = true;
+        DisposeSettingsPersistence();
         windowLifetimeCancellation.Cancel();
         windowLifetimeCancellation.Dispose();
         Interlocked.Increment(ref documentOpenVersion);

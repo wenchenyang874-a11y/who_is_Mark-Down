@@ -48,7 +48,7 @@ public partial class MainWindow
         RefreshFileOpenViewModeMenu();
         if (TrySaveApplicationSettings())
         {
-            UpdateStatus("已保存打开文件时的显示模式，下次打开文件时生效");
+            UpdateStatus("已应用打开文件时的显示模式，正在后台保存；下次打开文件时生效");
         }
     }
 

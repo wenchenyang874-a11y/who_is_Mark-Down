@@ -20,21 +20,38 @@ public partial class MainWindow
     private readonly IFileExplorerService fileExplorerService = new WindowsFileExplorerService();
     private readonly IClipboardTextService clipboardTextService = new WindowsClipboardTextService();
     private ApplicationSettings applicationSettings = new();
+    private bool settingsChangedBeforeLoad;
 
     public ObservableCollection<RecentFileItemViewModel> RecentFiles { get; } = [];
 
-    private void LoadApplicationSettings()
+    private async Task LoadApplicationSettingsAsync()
     {
+        ApplicationSettings loaded;
         try
         {
-            applicationSettings = settingsStore.Load();
+            loaded = await Task.Run(settingsStore.Load)
+                .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token);
+        }
+        catch (OperationCanceledException) when (windowClosed) { return; }
+        catch (TimeoutException)
+        {
+            loaded = new ApplicationSettings();
+            UpdateStatus("读取设置等待超过 15 秒，使用默认设置；底层读取可能仍在执行。");
         }
         catch (ApplicationSettingsStoreException exception)
         {
-            applicationSettings = new ApplicationSettings();
+            loaded = new ApplicationSettings();
             UpdateStatus(exception.Message);
         }
 
+        if (windowClosed) return;
+        // The shell stays interactive while loading. Preserve explicit early
+        // changes relative to defaults instead of overwriting them with late I/O.
+        applicationSettings = settingsChangedBeforeLoad
+            ? ApplicationSettingsChanges.Merge(loaded, new ApplicationSettings(), applicationSettings) : loaded;
+        settingsWriter = new ApplicationSettingsWriter(settingsStore, loaded);
+        settingsWriter.WriteCompleted += SettingsWriter_WriteCompleted;
+        if (settingsChangedBeforeLoad) settingsWriter.Enqueue(applicationSettings);
         RefreshRecentFilesView();
         SetRecentPaneExpanded(applicationSettings.IsRecentPaneExpanded, persist: false);
         ApplyAppearanceSettings();
@@ -235,18 +252,17 @@ public partial class MainWindow
             : Visibility.Collapsed;
     }
 
+    /// <summary>True means queued, not durably saved. Worker failures are reported separately.</summary>
     private bool TrySaveApplicationSettings()
     {
-        try
+        if (windowClosed) return false;
+        if (settingsWriter is null)
         {
-            settingsStore.Save(applicationSettings);
+            settingsChangedBeforeLoad = true;
             return true;
         }
-        catch (ApplicationSettingsStoreException exception)
-        {
-            UpdateStatus(exception.Message);
-            return false;
-        }
+        settingsWriter.Enqueue(applicationSettings);
+        return true;
     }
 
     private void ShowRecentFileMissing(string path)
@@ -282,23 +298,8 @@ public partial class MainWindow
         string newSettingsPath = Path.Combine(localApplicationData, "WIMD", "settings.json");
         string oldSettingsPath = Path.Combine(localApplicationData, "WhoIsMarkdown", "settings.json");
 
-        if (!File.Exists(newSettingsPath) && File.Exists(oldSettingsPath))
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(newSettingsPath)!);
-                File.Copy(oldSettingsPath, newSettingsPath, overwrite: false);
-            }
-            catch (IOException)
-            {
-                // Another WIMD instance may have completed the one-time copy.
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // Loading defaults is safer than preventing application startup.
-            }
-        }
-
-        return new JsonApplicationSettingsStore(newSettingsPath);
+        // No startup disk probes on the dispatcher. Legacy fallback is read on
+        // the load worker and migrated by the first successful background write.
+        return new JsonApplicationSettingsStore(newSettingsPath, oldSettingsPath);
     }
 }

@@ -106,7 +106,7 @@ public partial class MainWindow
         applicationSettings = applicationSettings with { ImageInsertion = settings.Normalize() };
         if (TrySaveApplicationSettings())
         {
-            UpdateStatus("图片设置已保存");
+            UpdateStatus("图片设置已应用，正在后台保存");
         }
 
         // A trust-policy change also changes the preview page CSP. Scheduling one
