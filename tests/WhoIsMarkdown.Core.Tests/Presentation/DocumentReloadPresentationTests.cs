@@ -121,9 +121,25 @@ public sealed class DocumentReloadPresentationTests
         // A document switch during the background stamp read must not report a change
         // for the file that is no longer open.
         Assert.Contains(
-            "!string.Equals(document.FilePath, path, StringComparison.OrdinalIgnoreCase)",
+            "!IsCurrentExternalChangeTarget(path, openVersion)",
             reloadCode,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 外部修改_菜单区分默认与单文件且自动更新复核版本并保持位置()
+    {
+        string menu = ReadAppSource("MainWindow.xaml");
+        string reload = ReadAppSource("MainWindow.Reload.cs");
+        Assert.Contains("Header=\"文件在外部修改时\"", menu, StringComparison.Ordinal);
+        Assert.Contains("Header=\"所有文件默认行为\"", menu, StringComparison.Ordinal);
+        Assert.Contains("Header=\"当前文件单独设置\"", menu, StringComparison.Ordinal);
+        Assert.Contains("Header=\"跟随默认\"", menu, StringComparison.Ordinal);
+        Assert.Contains("&& !document.IsDirty && !documentSaveRunning", reload, StringComparison.Ordinal);
+        Assert.Contains("document.TryAutoReload(loaded, expected, baseline)", reload, StringComparison.Ordinal);
+        Assert.Contains("ApplyDocumentToEditor(forcePreviewUpdate: true, preserveEditorPosition: true)", reload, StringComparison.Ordinal);
+        Assert.Contains("externalChangeCheckRunning", reload, StringComparison.Ordinal);
+        Assert.Contains("WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token)", reload, StringComparison.Ordinal);
     }
 
     [Fact]

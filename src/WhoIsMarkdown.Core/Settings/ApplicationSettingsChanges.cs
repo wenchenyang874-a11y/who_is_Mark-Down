@@ -37,6 +37,7 @@ public static class ApplicationSettingsChanges
             CheckForUpdatesOnStartup = Select(disk.CheckForUpdatesOnStartup, before.CheckForUpdatesOnStartup, after.CheckForUpdatesOnStartup),
             FileOpenViewMode = Select(disk.FileOpenViewMode, before.FileOpenViewMode, after.FileOpenViewMode),
             LastViewMode = Select(disk.LastViewMode, before.LastViewMode, after.LastViewMode),
+            ExternalFileChanges = ExternalFileChangeSettings.Merge(disk.ExternalFileChanges, before.ExternalFileChanges, after.ExternalFileChanges),
             Appearance = disk.Appearance with
             {
                 Theme = Select(disk.Appearance.Theme, oldAppearance.Theme, newAppearance.Theme),

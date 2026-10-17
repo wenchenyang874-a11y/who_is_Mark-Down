@@ -57,6 +57,7 @@ public partial class MainWindow
         ApplyAppearanceSettings();
         ApplyShortcutSettings();
         RefreshFileOpenViewModeMenu();
+        RefreshExternalChangeMenu();
         ApplyFileOpenViewMode();
     }
 

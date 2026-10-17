@@ -4,6 +4,18 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.4] - 2026-10-18
+
+### 新增
+
+- “设置 → 文件在外部修改时”支持为所有文件选择“弹窗提醒”（默认）或“自动更新”；当前已保存文件可单独设置为跟随默认、弹窗提醒或自动更新，按完整路径在本机持久化。
+- 自动更新仅替换没有未保存修改且读取期间未变化的文档；保留显示模式、编辑光标及预览位置，不抢夺编辑焦点。有未保存修改时仍先询问，不自动覆盖。
+
+### 修复
+
+- 外部修改检查串行合并连续通知，避免慢读取或弹窗期间重复进入；保存、切换文件和关闭使旧结果失效，读取失败保留当前内容并报告。
+- 手动重新加载也复核读取期间新增的编辑与保存，避免确认后的慢读取覆盖新输入。
+
 ## [1.8.3] - 2026-10-17
 
 ### 优化
@@ -337,7 +349,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.3...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.4...HEAD
+[1.8.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.3...v1.8.4
 [1.8.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.0...v1.8.1

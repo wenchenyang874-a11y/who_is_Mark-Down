@@ -100,6 +100,21 @@ public sealed class DocumentEditorViewModel : ObservableObject
 
     public EditorTextSnapshot CaptureSnapshot() => session.Capture();
 
+    /// <summary>
+    /// Bug fix: a clean document can become dirty while an automatic reload reads
+    /// disk. Validate identity, revision and saved baseline again on the UI thread;
+    /// even a save completing during that read must invalidate the old result.
+    /// </summary>
+    public bool TryAutoReload(LoadedDocument loaded, EditorTextSnapshot expected, DocumentFileStamp? expectedStamp)
+    {
+        EditorTextSnapshot current = CaptureSnapshot();
+        if (IsDirty || !ReferenceEquals(current.DocumentIdentity, expected.DocumentIdentity)
+            || current.Revision != expected.Revision || stamp != expectedStamp
+            || !string.Equals(filePath, loaded.Path, StringComparison.OrdinalIgnoreCase)) return false;
+        Load(loaded);
+        return true;
+    }
+
     public bool MarkSaved(EditorTextSnapshot snapshot, string path, DocumentFileStamp newStamp)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

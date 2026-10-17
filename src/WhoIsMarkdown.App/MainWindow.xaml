@@ -251,6 +251,19 @@
                         <MenuItem Header="仅预览" Tag="PreviewOnly" IsCheckable="True" Click="FileOpenViewMode_Click" />
                         <MenuItem Header="沿用上次模式" Tag="RememberLast" IsCheckable="True" Click="FileOpenViewMode_Click" />
                     </MenuItem>
+                    <MenuItem Header="文件在外部修改时" AutomationProperties.Name="文件在外部修改时" SubmenuOpened="ExternalChangeMenu_SubmenuOpened">
+                        <MenuItem x:Name="ExternalChangeDefaultMenuItem" Header="所有文件默认行为">
+                            <MenuItem Header="弹窗提醒" Tag="Prompt" IsCheckable="True" Click="ExternalChangeDefault_Click" />
+                            <MenuItem Header="自动更新" Tag="AutoReload" IsCheckable="True" Click="ExternalChangeDefault_Click" />
+                        </MenuItem>
+                        <MenuItem x:Name="ExternalChangeFileMenuItem" Header="当前文件单独设置">
+                            <MenuItem Header="跟随默认" Tag="Default" IsCheckable="True" Click="ExternalChangeFile_Click" />
+                            <MenuItem Header="弹窗提醒" Tag="Prompt" IsCheckable="True" Click="ExternalChangeFile_Click" />
+                            <MenuItem Header="自动更新" Tag="AutoReload" IsCheckable="True" Click="ExternalChangeFile_Click" />
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="有未保存修改时始终询问，不自动覆盖" IsEnabled="False" />
+                    </MenuItem>
                     <Separator />
                     <MenuItem Header="图片设置..." Click="ImageSettings_Click" />
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />

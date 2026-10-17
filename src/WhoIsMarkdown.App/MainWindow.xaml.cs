@@ -353,6 +353,11 @@ public partial class MainWindow : Window
         finally
         {
             documentSaveRunning = false;
+            if (externalChangeCheckPending)
+            {
+                externalChangeCheckPending = false;
+                QueueExternalDocumentChangeCheck();
+            }
         }
     }
 
@@ -399,18 +404,31 @@ public partial class MainWindow : Window
         return dialog.ShowDialog(this) == true ? dialog.FileName : null;
     }
 
-    private void ApplyDocumentToEditor(bool forcePreviewUpdate = false)
+    private void ApplyDocumentToEditor(bool forcePreviewUpdate = false, bool preserveEditorPosition = false)
     {
         if (windowClosed)
         {
             return;
         }
 
+        int caretOffset = preserveEditorPosition ? Editor.CaretOffset : 0;
+        double verticalOffset = Editor.VerticalOffset;
+        double horizontalOffset = Editor.HorizontalOffset;
+        if (preserveEditorPosition)
+        {
+            suppressEditorDrivenPreviewSyncUntilReady = true;
+            editorScrollSyncTimer.Stop();
+        }
         applyingDocumentText = true;
         try
         {
             Editor.Document = document.EditorDocument;
-            Editor.CaretOffset = 0;
+            Editor.CaretOffset = Math.Min(caretOffset, Editor.Document.TextLength);
+            if (preserveEditorPosition)
+            {
+                Editor.ScrollToVerticalOffset(verticalOffset);
+                Editor.ScrollToHorizontalOffset(horizontalOffset);
+            }
         }
         finally
         {
@@ -420,9 +438,10 @@ public partial class MainWindow : Window
         // Single place where new document content is installed, so the external-change
         // watcher always follows the path that is actually being edited.
         AttachExternalDocumentWatcher();
+        RefreshExternalChangeMenu();
         SchedulePreview(synchronizePreviewToCaretWhenReady: !forcePreviewUpdate, forceBodyReplacement: forcePreviewUpdate);
         UpdateStatus();
-        Editor.Focus();
+        if (!preserveEditorPosition) Editor.Focus();
     }
 
     private void SchedulePreview(bool synchronizePreviewToCaretWhenReady = true, bool forceBodyReplacement = false)

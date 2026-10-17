@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Threading;
 using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Documents;
+using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
 
@@ -12,8 +13,8 @@ namespace WhoIsMarkdown.App;
 /// A directory watcher reports edits made by other programs. Without it a preview
 /// built from a file that changed outside WIMD is indistinguishable from an
 /// up-to-date one, which is exactly the stale-content problem this feature fixes.
-/// Detection only ever reports; nothing is reloaded until the user agrees, so an
-/// external write can never discard unsaved local edits on its own.
+/// Automatic reload is opt-in and only accepts an unchanged clean session after
+/// reading. Dirty documents always retain the ordinary confirmation protection.
 /// </summary>
 public partial class MainWindow
 {
@@ -31,6 +32,8 @@ public partial class MainWindow
     private bool reportedDocumentUnavailable;
     private bool applyingFileWrite;
     private bool previewImageRefreshRequested;
+    private bool externalChangeCheckRunning;
+    private bool externalChangeCheckPending;
 
     private async void Reload_Click(object sender, RoutedEventArgs eventArgs)
     {
@@ -45,10 +48,17 @@ public partial class MainWindow
     private async Task<bool> ReloadDocumentAsync()
     {
         string? path = document.FilePath;
+        object identity = document.CaptureSnapshot().DocumentIdentity;
+        long openVersion = Volatile.Read(ref documentOpenVersion);
         if (path is not null && !await ConfirmDiscardOrSaveAsync())
         {
             return false;
         }
+
+        // Saving in the confirmation dialog may yield to another open request.
+        // That old confirmation never authorizes replacing the newly opened file.
+        if (windowClosed || openVersion != Volatile.Read(ref documentOpenVersion)
+            || !ReferenceEquals(identity, document.CaptureSnapshot().DocumentIdentity)) return false;
 
         if (path is not null && !await ReadDocumentIntoEditorAsync(path))
         {
@@ -73,11 +83,23 @@ public partial class MainWindow
     private async Task<bool> ReadDocumentIntoEditorAsync(string path)
     {
         long requestVersion = Interlocked.Increment(ref documentOpenVersion);
+        EditorTextSnapshot expected = document.CaptureSnapshot();
+        DocumentFileStamp? expectedStamp = document.Stamp;
         try
         {
             LoadedDocument loaded = await ReadDocumentOffThreadAsync(path);
             if (windowClosed || requestVersion != Volatile.Read(ref documentOpenVersion))
             {
+                return false;
+            }
+
+            // Confirmation covers only the text present before the read. Do not
+            // discard input made while a slow reload was pending, even manually.
+            EditorTextSnapshot current = document.CaptureSnapshot();
+            if (!ReferenceEquals(expected.DocumentIdentity, current.DocumentIdentity)
+                || expected.Revision != current.Revision || document.Stamp != expectedStamp || documentSaveRunning)
+            {
+                UpdateStatus("重新加载期间文档有新的修改，已保留当前内容；请确认后重试");
                 return false;
             }
 
@@ -261,8 +283,13 @@ public partial class MainWindow
 
     private void QueueExternalDocumentChangeCheck()
     {
-        if (windowClosed || document.FilePath is null || applyingFileWrite)
+        if (windowClosed || document.FilePath is null)
         {
+            return;
+        }
+        if (applyingFileWrite)
+        {
+            externalChangeCheckPending = true;
             return;
         }
 
@@ -286,17 +313,50 @@ public partial class MainWindow
     private async void ExternalDocumentChangeTimer_Tick(object? sender, EventArgs eventArgs)
     {
         externalDocumentChangeTimer?.Stop();
+        if (externalChangeCheckRunning)
+        {
+            externalChangeCheckPending = true;
+            return;
+        }
         if (windowClosed || document.FilePath is not { } path || applyingFileWrite)
         {
             return;
         }
 
+        // A second watcher burst can arrive during read/prompt/viewer refresh.
+        // Serialize the entire workflow and replay only one pending notification.
+        externalChangeCheckRunning = true;
+        try
+        {
+            await CheckExternalDocumentChangeAsync(path);
+        }
+        catch (OperationCanceledException) when (windowClosed) { }
+        catch (Exception exception)
+        {
+            // An async-void watcher entry must never terminate the editor. Keep
+            // the user's text; errors report phase/path, never document contents.
+            if (!windowClosed) UpdateStatus($"检查外部修改失败（{path}）：{exception.Message}");
+        }
+        finally
+        {
+            externalChangeCheckRunning = false;
+            if (externalChangeCheckPending)
+            {
+                externalChangeCheckPending = false;
+                QueueExternalDocumentChangeCheck();
+            }
+        }
+    }
+
+    private async Task CheckExternalDocumentChangeAsync(string path)
+    {
+        long openVersion = Volatile.Read(ref documentOpenVersion);
         DocumentFileStamp current;
         try
         {
             IDocumentFileService service = fileService;
             current = await Task.Run(() => service.Inspect(path))
-                .WaitAsync(windowLifetimeCancellation.Token);
+                .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token);
         }
         catch (OperationCanceledException) when (windowClosed)
         {
@@ -304,7 +364,7 @@ public partial class MainWindow
         }
         catch (DocumentFileException)
         {
-            if (!windowClosed && string.Equals(document.FilePath, path, StringComparison.OrdinalIgnoreCase))
+            if (IsCurrentExternalChangeTarget(path, openVersion))
             {
                 ReportExternalDocumentLoss();
             }
@@ -312,8 +372,13 @@ public partial class MainWindow
         }
 
         // The document may have been switched or closed while the stamp was read.
-        if (windowClosed || !string.Equals(document.FilePath, path, StringComparison.OrdinalIgnoreCase))
+        if (!IsCurrentExternalChangeTarget(path, openVersion))
         {
+            return;
+        }
+        if (applyingFileWrite || documentSaveRunning)
+        {
+            externalChangeCheckPending = true;
             return;
         }
 
@@ -326,7 +391,69 @@ public partial class MainWindow
         }
 
         reportedExternalStamp = current;
+        reportedDocumentUnavailable = false;
+        if (applicationSettings.ExternalFileChanges.Resolve(path) == ExternalFileChangeBehavior.AutoReload
+            && !document.IsDirty && !documentSaveRunning)
+        {
+            await AutoReloadExternalDocumentAsync(path, current, openVersion);
+            return;
+        }
         await PromptExternalDocumentChangeAsync();
+    }
+
+    private bool IsCurrentExternalChangeTarget(string path, long openVersion) =>
+        !windowClosed && openVersion == Volatile.Read(ref documentOpenVersion)
+        && string.Equals(document.FilePath, path, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Bug fix: auto-reload must not race input, save, another open or a policy
+    /// change. Capture pure immutable data, read off-thread, then validate again.
+    /// Waiting has a deadline; it does not claim to abort a blocked driver read.
+    /// </summary>
+    private async Task AutoReloadExternalDocumentAsync(string path, DocumentFileStamp detectedStamp, long openVersion)
+    {
+        EditorTextSnapshot expected = document.CaptureSnapshot();
+        DocumentFileStamp? baseline = document.Stamp;
+        LoadedDocument loaded;
+        try
+        {
+            loaded = await ReadDocumentOffThreadAsync(path)
+                .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token);
+        }
+        catch (DocumentFileException exception)
+        {
+            if (IsCurrentExternalChangeTarget(path, openVersion))
+                UpdateStatus($"自动更新文档失败，已保留当前内容（{path}）：{exception.Message}");
+            return;
+        }
+        catch (TimeoutException)
+        {
+            if (IsCurrentExternalChangeTarget(path, openVersion))
+                UpdateStatus($"自动更新等待超过 15 秒，已保留当前内容（{path}）；底层读取可能仍在执行，可按 F5 重试");
+            return;
+        }
+
+        if (!IsCurrentExternalChangeTarget(path, openVersion)) return;
+        if (applyingFileWrite || documentSaveRunning || document.Stamp != baseline || loaded.Stamp != detectedStamp)
+        {
+            // A newer disk revision or our own save wins. Reinspect after settling
+            // rather than installing data captured before that operation completed.
+            reportedExternalStamp = null;
+            externalChangeCheckPending = true;
+            return;
+        }
+        if (applicationSettings.ExternalFileChanges.Resolve(path) != ExternalFileChangeBehavior.AutoReload
+            || !document.TryAutoReload(loaded, expected, baseline))
+        {
+            await PromptExternalDocumentChangeAsync();
+            return;
+        }
+
+        reportedExternalStamp = null;
+        reportedDocumentUnavailable = false;
+        ApplyDocumentToEditor(forcePreviewUpdate: true, preserveEditorPosition: true);
+        UpdateStatus("文档已自动更新为外部最新内容");
+        await RefreshOpenPreviewImageViewAsync();
     }
 
     /// <summary>
@@ -336,6 +463,8 @@ public partial class MainWindow
     /// </summary>
     private async Task PromptExternalDocumentChangeAsync()
     {
+        string? path = document.FilePath;
+        long openVersion = Volatile.Read(ref documentOpenVersion);
         UpdateStatus("当前文档已被其他程序修改，按 F5 或使用“文件 - 重新加载”获取最新内容");
         MessageBoxResult result = MessageBox.Show(
             this,
@@ -348,6 +477,8 @@ public partial class MainWindow
         {
             return;
         }
+
+        if (path is null || !IsCurrentExternalChangeTarget(path, openVersion)) return;
 
         await ReloadDocumentAsync();
     }
