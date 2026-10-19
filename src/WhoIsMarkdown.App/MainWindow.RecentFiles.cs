@@ -29,8 +29,8 @@ public partial class MainWindow
         ApplicationSettings loaded;
         try
         {
-            loaded = await Task.Run(settingsStore.Load)
-                .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token);
+            loaded = await DiagnosticLog.MeasureAsync(DiagnosticStage.SettingsLoad,
+                () => Task.Run(settingsStore.Load).WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token), diagnosticWindowId);
         }
         catch (OperationCanceledException) when (windowClosed) { return; }
         catch (TimeoutException)
@@ -45,11 +45,12 @@ public partial class MainWindow
         }
 
         if (windowClosed) return;
+        using DiagnosticOperation? apply = DiagnosticLog.Current?.Begin(DiagnosticStage.SettingsApply, diagnosticWindowId);
         // The shell stays interactive while loading. Preserve explicit early
         // changes relative to defaults instead of overwriting them with late I/O.
         applicationSettings = settingsChangedBeforeLoad
             ? ApplicationSettingsChanges.Merge(loaded, new ApplicationSettings(), applicationSettings) : loaded;
-        settingsWriter = new ApplicationSettingsWriter(settingsStore, loaded);
+        settingsWriter = new ApplicationSettingsWriter(new DiagnosticSettingsStore(settingsStore, diagnosticWindowId), loaded);
         settingsWriter.WriteCompleted += SettingsWriter_WriteCompleted;
         if (settingsChangedBeforeLoad) settingsWriter.Enqueue(applicationSettings);
         RefreshRecentFilesView();
@@ -59,6 +60,7 @@ public partial class MainWindow
         RefreshFileOpenViewModeMenu();
         RefreshExternalChangeMenu();
         ApplyFileOpenViewMode();
+        apply?.Succeed();
     }
 
     private void RecordRecentFile(string path)
@@ -90,7 +92,8 @@ public partial class MainWindow
         {
             // A disconnected recent path must not keep a closed window alive or
             // reopen a stale document after a newer open/new request has won.
-            exists = await Task.Run(() => File.Exists(path)).WaitAsync(windowLifetimeCancellation.Token);
+            exists = await DiagnosticLog.MeasureAsync(DiagnosticStage.RecentFileCheck,
+                () => Task.Run(() => File.Exists(path)).WaitAsync(windowLifetimeCancellation.Token), diagnosticWindowId);
         }
         catch (OperationCanceledException) when (windowClosed)
         {

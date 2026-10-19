@@ -319,6 +319,7 @@ public partial class PreviewImageWindow : Window
         }
 
         string phase = "浏览器环境";
+        using DiagnosticOperation? initialization = DiagnosticLog.Current?.Begin(DiagnosticStage.ImageViewerInitialize);
         try
         {
             CancellationToken cancellationToken = lifetimeCancellation.Token;
@@ -365,13 +366,16 @@ public partial class PreviewImageWindow : Window
             phase = "图片导航";
             NavigateToPreparedImage();
             initialized = true;
+            initialization?.Succeed();
         }
         catch (OperationCanceledException) when (closed)
         {
+            initialization?.Cancel();
             // Closing one viewer only cancels its wait, not shared initialization.
         }
         catch (Exception exception)
         {
+            initialization?.Fail(exception);
             if (closed) return;
             initializationFailed = true;
             DimensionsText.Text = $"图片加载失败（{phase}）：{exception.Message}";

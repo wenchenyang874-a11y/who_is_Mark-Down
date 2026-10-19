@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using WhoIsMarkdown.App.Services;
 
 namespace WhoIsMarkdown.App;
 
@@ -24,6 +25,7 @@ public partial class MainWindow
     /// </summary>
     protected override async void OnClosing(CancelEventArgs e)
     {
+        DiagnosticLog.Current?.Mark(DiagnosticStage.WindowClosing, diagnosticWindowId, document.IsDirty ? 1 : 0);
         base.OnClosing(e);
         if (e.Cancel)
         {
@@ -51,6 +53,7 @@ public partial class MainWindow
             }
             catch (Exception exception)
             {
+                DiagnosticLog.Current?.Error(DiagnosticStage.WindowClosing, exception, diagnosticWindowId);
                 // async-void close entry must never terminate other windows.
                 UpdateStatus($"关闭前保存设置失败（{exception.GetType().Name}），请稍后重试。");
             }
@@ -97,6 +100,7 @@ public partial class MainWindow
 
     protected override void OnClosed(EventArgs e)
     {
+        using DiagnosticOperation? cleanup = DiagnosticLog.Current?.Begin(DiagnosticStage.WindowClosed, diagnosticWindowId);
         windowClosed = true;
         CancelWorkspaceReads();
         DisposeSettingsPersistence();
@@ -137,6 +141,8 @@ public partial class MainWindow
         }
 
         Editor.TextArea.Caret.PositionChanged -= EditorCaret_PositionChanged;
+        cleanup?.Succeed();
+        cleanup?.Dispose();
         base.OnClosed(e);
     }
 }

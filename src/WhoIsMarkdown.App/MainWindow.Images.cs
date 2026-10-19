@@ -215,11 +215,11 @@ public partial class MainWindow
             FileShare.Read,
             bufferSize: 81920,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        HostedImage image = await imageHostClient.UploadAsync(
+        HostedImage image = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageUpload, () => imageHostClient.UploadAsync(
             stream,
             Path.GetFileName(sourcePath),
             apiKey,
-            cancellationToken);
+            cancellationToken), diagnosticWindowId);
         CompleteHostedImageInsertion(altText, image);
     }
 
@@ -237,11 +237,11 @@ public partial class MainWindow
 
         UpdateStatus("正在上传剪贴板图片到 ImgBB…");
         using MemoryStream stream = new(imageBytes, writable: false);
-        HostedImage image = await imageHostClient.UploadAsync(
+        HostedImage image = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageUpload, () => imageHostClient.UploadAsync(
             stream,
             fileName,
             apiKey,
-            cancellationToken);
+            cancellationToken), diagnosticWindowId);
         CompleteHostedImageInsertion(altText, image);
     }
 
@@ -345,7 +345,8 @@ public partial class MainWindow
         imageOperationCancellation = new CancellationTokenSource();
         try
         {
-            await operation(imageOperationCancellation.Token);
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageInsert,
+                () => operation(imageOperationCancellation.Token), diagnosticWindowId);
         }
         catch (OperationCanceledException) when (windowClosed)
         {

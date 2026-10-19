@@ -59,6 +59,7 @@ public partial class MainWindow
         previewImageOpenCancellation = new CancellationTokenSource();
         CancellationToken cancellationToken = previewImageOpenCancellation.Token;
         string? cacheDirectory = null;
+        using DiagnosticOperation? viewing = DiagnosticLog.Current?.Begin(DiagnosticStage.ImageViewer, diagnosticWindowId);
 
         try
         {
@@ -73,10 +74,11 @@ public partial class MainWindow
                     CreateRemoteImagePolicy());
             cacheDirectory = Path.Combine(GetPreviewImageCacheRoot(), Guid.NewGuid().ToString("N"));
             UpdateStatus(source.RequiresNetwork ? "正在下载图片并打开查看器…" : "正在打开图片查看器…");
-            PreparedPreviewImage preparedImage = await previewImageSaveService.PrepareAsync(
+            PreparedPreviewImage preparedImage = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImagePrepare,
+                () => previewImageSaveService.PrepareAsync(
                 source,
                 cacheDirectory,
-                cancellationToken);
+                cancellationToken), diagnosticWindowId);
 
             if (windowClosed
                 || cancellationToken.IsCancellationRequested
@@ -93,17 +95,21 @@ public partial class MainWindow
             previewImageRefreshRequested = false;
             UpdateStatus(refreshed ? "已刷新图片查看窗口" : "已在独立窗口中打开图片");
             cacheDirectory = null;
+            viewing?.Succeed();
         }
         catch (OperationCanceledException) when (windowClosed || cancellationToken.IsCancellationRequested)
         {
+            viewing?.Cancel();
             // A newer image request or application shutdown superseded this load.
         }
         catch (PreviewImageSaveException exception)
         {
+            viewing?.Fail(exception);
             ShowPreviewImageError(exception.Message, this, OpenPreviewImageErrorTitle);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            viewing?.Fail(exception);
             ShowPreviewImageError($"无法打开预览图片：{exception.Message}", this, OpenPreviewImageErrorTitle);
         }
         finally
@@ -352,12 +358,12 @@ public partial class MainWindow
         try
         {
             UpdateStatus("正在保存预览图片…");
-            bool saved = await PreviewImageExport.ExportAsync(
+            bool saved = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageExport, () => PreviewImageExport.ExportAsync(
                 preparedImage,
                 format,
                 targetPath,
                 GetPreviewImageRasterizer(),
-                previewImageSaveCancellation.Token);
+                previewImageSaveCancellation.Token), diagnosticWindowId);
             UpdateStatus(saved ? $"图片已保存：{targetPath}" : "图片已位于所选位置");
         }
         catch (OperationCanceledException) when (windowClosed)

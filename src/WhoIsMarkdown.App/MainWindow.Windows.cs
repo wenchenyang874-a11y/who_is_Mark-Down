@@ -36,7 +36,8 @@ public partial class MainWindow
         try
         {
             UpdateStatus("正在检查并打开新窗口…");
-            await Task.Run(() => applicationWindowLauncher.OpenDocumentInNewWindow(path));
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.OpenNewWindow,
+                () => Task.Run(() => applicationWindowLauncher.OpenDocumentInNewWindow(path)), diagnosticWindowId);
             UpdateStatus("已在新的 WIMD 窗口中打开文件");
         }
         catch (Exception exception) when (exception is ArgumentException

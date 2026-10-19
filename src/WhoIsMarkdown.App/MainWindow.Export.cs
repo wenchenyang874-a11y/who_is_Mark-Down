@@ -37,6 +37,7 @@ public partial class MainWindow
             $".{Path.GetFileNameWithoutExtension(targetPath)}.{Guid.NewGuid():N}.tmp.pdf");
 
         ExportPdfMenuItem.IsEnabled = false;
+        using DiagnosticOperation? export = DiagnosticLog.Current?.Begin(DiagnosticStage.PdfExport, diagnosticWindowId);
         UpdateStatus("正在准备最新预览并导出 PDF…");
         try
         {
@@ -50,9 +51,11 @@ public partial class MainWindow
             await service.ExportPdfAsync(temporaryPath, cancellationToken);
             File.Move(temporaryPath, targetPath, overwrite: true);
             UpdateStatus($"PDF 已导出：{targetPath}");
+            export?.Succeed();
         }
         catch (OperationCanceledException)
         {
+            export?.Cancel();
             UpdateStatus("PDF 导出已取消；文档在导出期间发生了新的修改");
         }
         catch (Exception exception) when (exception is IOException
@@ -61,6 +64,7 @@ public partial class MainWindow
             or TimeoutException
             or System.Runtime.InteropServices.COMException)
         {
+            export?.Fail(exception);
             if (windowClosed)
             {
                 return;

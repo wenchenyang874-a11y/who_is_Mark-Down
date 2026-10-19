@@ -441,11 +441,12 @@ public sealed class PreviewWebViewService : IDisposable
             return;
         }
 
-        CoreWebView2Environment environment = await WebView2EnvironmentProvider.GetAsync(
-            WebView2UserDataFolder.Resolve(), lifetimeCancellation.Token).ConfigureAwait(true);
+        CoreWebView2Environment environment = await DiagnosticLog.MeasureAsync(DiagnosticStage.WebViewEnvironment,
+            () => WebView2EnvironmentProvider.GetAsync(WebView2UserDataFolder.Resolve(), lifetimeCancellation.Token), DiagnosticWindowId).ConfigureAwait(true);
         ThrowIfDisposed();
-        await webView.EnsureCoreWebView2Async(environment)
-            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+        await DiagnosticLog.MeasureAsync(DiagnosticStage.WebViewControl,
+            () => webView.EnsureCoreWebView2Async(environment)
+                .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token), DiagnosticWindowId).ConfigureAwait(true);
         ThrowIfDisposed();
 
         core = webView.CoreWebView2;
@@ -476,8 +477,11 @@ public sealed class PreviewWebViewService : IDisposable
             CoreWebView2WebResourceContext.Image);
         core.WebResourceRequested += OnWebResourceRequested;
         core.ContextMenuRequested += OnContextMenuRequested;
+        core.ProcessFailed += OnBrowserProcessFailed;
         initialized = true;
     }
+
+    internal int DiagnosticWindowId { get; set; }
 
     /// <summary>
     /// Replaces WebView2's default menu over a preview image with WIMD's own choices.
@@ -944,6 +948,7 @@ public sealed class PreviewWebViewService : IDisposable
             core.WebMessageReceived -= OnWebMessageReceived;
             core.WebResourceRequested -= OnWebResourceRequested;
             core.ContextMenuRequested -= OnContextMenuRequested;
+            core.ProcessFailed -= OnBrowserProcessFailed;
             contextMenuItems.Clear();
             core.RemoveWebResourceRequestedFilter(
                 DocumentImageResourcePattern,
@@ -980,7 +985,9 @@ public sealed class PreviewWebViewService : IDisposable
                 activePreviewCancellation = cancellation;
                 try
                 {
-                    await ApplyPreviewSnapshotAsync(snapshot, cancellation.Token).ConfigureAwait(true);
+                    await DiagnosticLog.MeasureAsync(DiagnosticStage.PreviewDelivery,
+                        () => ApplyPreviewSnapshotAsync(snapshot, cancellation.Token), DiagnosticWindowId,
+                        onlySlow: previewPageReady).ConfigureAwait(true);
                     if (navigationInProgress) return;
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested || !IsCurrentPreview(snapshot))
@@ -1159,6 +1166,8 @@ public sealed class PreviewWebViewService : IDisposable
             return;
         }
 
+        using DiagnosticOperation? mermaid = DiagnosticLog.Current?.Begin(DiagnosticStage.MermaidRender, DiagnosticWindowId, onlySlow: true);
+
         // Host rendering is bounded so malformed or unexpectedly expensive diagrams
         // cannot permanently block typing, view switching, or PDF export.
         //
@@ -1180,6 +1189,7 @@ public sealed class PreviewWebViewService : IDisposable
             "window.wimdMermaidIdle",
             MermaidIdleTimeout,
             lifetimeCancellation.Token).ConfigureAwait(true);
+        mermaid?.Succeed();
     }
 
     private async Task EnsureMermaidForBodyAsync(bool containsMermaid)
@@ -1210,8 +1220,9 @@ public sealed class PreviewWebViewService : IDisposable
     private async Task RegisterHostScriptAsync(string script)
     {
         ThrowIfDisposed();
-        await core!.AddScriptToExecuteOnDocumentCreatedAsync(script)
-            .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token).ConfigureAwait(true);
+        await DiagnosticLog.MeasureAsync(DiagnosticStage.WebViewScripts,
+            () => core!.AddScriptToExecuteOnDocumentCreatedAsync(script)
+                .WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token), DiagnosticWindowId).ConfigureAwait(true);
     }
 
     private async Task ExecuteHostScriptAsync(string script)
@@ -1390,6 +1401,9 @@ public sealed class PreviewWebViewService : IDisposable
         navigationInProgress = false;
         processingPreview = false;
         previewPageReady = eventArgs.IsSuccess;
+        DiagnosticLog.Current?.Record(DiagnosticStage.PreviewNavigation,
+            eventArgs.IsSuccess ? DiagnosticOutcome.Succeeded : DiagnosticOutcome.Failed,
+            DiagnosticWindowId, value: (long)eventArgs.WebErrorStatus);
 
         if (!eventArgs.IsSuccess)
         {
@@ -1411,6 +1425,7 @@ public sealed class PreviewWebViewService : IDisposable
                 {
                     if (disposed) return;
                     string message = $"预览更新失败：{exception.Message}";
+                    DiagnosticLog.Current?.Error(DiagnosticStage.PreviewNavigation, exception, DiagnosticWindowId);
                     SignalPreviewFailure(message);
                     PreviewNavigationFailed?.Invoke(this, message);
                 }
@@ -1451,6 +1466,7 @@ public sealed class PreviewWebViewService : IDisposable
             if (!navigationInProgress) processingPreview = false;
             if (disposed) return;
             string message = $"预览更新失败：{exception.Message}";
+            DiagnosticLog.Current?.Error(DiagnosticStage.PreviewNavigation, exception, DiagnosticWindowId);
             SignalPreviewFailure(message);
             PreviewNavigationFailed?.Invoke(this, message);
         }
@@ -1513,7 +1529,9 @@ public sealed class PreviewWebViewService : IDisposable
             return;
         }
 
-        bool copied = await clipboardTextService.TrySetTextAsync(request.Code).ConfigureAwait(true);
+        bool copied = await DiagnosticLog.MeasureAsync(DiagnosticStage.CodeCopy,
+            () => clipboardTextService.TrySetTextAsync(request.Code), DiagnosticWindowId).ConfigureAwait(true);
+        if (!copied) DiagnosticLog.Current?.Record(DiagnosticStage.CodeCopy, DiagnosticOutcome.Failed, DiagnosticWindowId);
         await CompleteCodeCopyRequestAsync(request.RequestId, copied).ConfigureAwait(true);
         CodeBlockCopyStatusChanged?.Invoke(
             this,
@@ -1556,6 +1574,8 @@ public sealed class PreviewWebViewService : IDisposable
                 request.IsCompleted);
             PreviewTaskToggleRequested?.Invoke(this, eventArgs);
             succeeded = eventArgs.Succeeded;
+            DiagnosticLog.Current?.Record(DiagnosticStage.TaskToggle,
+                succeeded ? DiagnosticOutcome.Succeeded : DiagnosticOutcome.Failed, DiagnosticWindowId);
         }
         finally
         {
@@ -1619,7 +1639,8 @@ public sealed class PreviewWebViewService : IDisposable
 
         try
         {
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            DiagnosticLog.Measure(DiagnosticStage.ExternalLink,
+                () => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }), DiagnosticWindowId);
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -1631,6 +1652,10 @@ public sealed class PreviewWebViewService : IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
     }
+
+    private void OnBrowserProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs eventArgs)
+        => DiagnosticLog.Current?.Record(DiagnosticStage.BrowserProcessFailed, DiagnosticOutcome.Failed,
+            DiagnosticWindowId, value: (long)eventArgs.ProcessFailedKind);
 
     private static string Abbreviate(string value)
     {

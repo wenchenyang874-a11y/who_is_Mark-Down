@@ -4,6 +4,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Windows;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Updates;
 
 namespace WhoIsMarkdown.App;
@@ -60,9 +61,9 @@ public partial class MainWindow
             using CancellationTokenSource checkTimeout = CancellationTokenSource.CreateLinkedTokenSource(
                 updateCancellation.Token);
             checkTimeout.CancelAfter(TimeSpan.FromSeconds(20));
-            UpdateRelease? release = await updateService.CheckAsync(
+            UpdateRelease? release = await DiagnosticLog.MeasureAsync(DiagnosticStage.UpdateCheck, () => updateService.CheckAsync(
                 currentVersion,
-                checkTimeout.Token);
+                checkTimeout.Token), diagnosticWindowId);
             if (release is null)
             {
                 UpdateStatus($"WIMD v{currentVersion} 已是最新版本");
@@ -133,10 +134,10 @@ public partial class MainWindow
 
         try
         {
-            Process.Start(new ProcessStartInfo(dialog.InstallerPath)
+            DiagnosticLog.Measure(DiagnosticStage.UpdateInstall, () => Process.Start(new ProcessStartInfo(dialog.InstallerPath)
             {
                 UseShellExecute = true,
-            });
+            }), diagnosticWindowId);
             // The installer must initiate shutdown after creating the recovery
             // request. Closing here would bypass dirty-document hot-exit capture.
             UpdateStatus("安装程序已启动；请在安装程序中选择关闭 WIMD 并安装");

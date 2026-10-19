@@ -4,6 +4,18 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.6] - 2026-10-19
+
+### 新增
+
+- 本地结构化诊断日志覆盖启动与首帧、配置读取与应用、背景加载、文件读取/保存/重新加载、预览解析与交付、WebView2 初始化/异常、图片处理/上传/导出、PDF、工作区文件操作、更新、关闭与未处理异常；记录进程相对时间、阶段耗时、窗口/操作关联及成功/失败/取消，不记录正文、文件名/路径、URL、密钥或异常原文。
+- “帮助 → 打开日志文件夹”入口；后台有界队列写入并轮换日志，高频快速渲染限流，日志不可写时不阻断编辑，退出排空最多等待 500 毫秒。每分钟复用已有计数器记录主进程工作集与累计 CPU 时间，UI 采样间隔异常作为排查线索而非卡死结论。
+
+### 修复
+
+- 设置背景图片时先在后台复制、验证到 WIMD 本地背景目录，再保存副本路径，避免原图被移动或删除后新窗口丢失背景；复制失败保留原背景，重复选择不覆盖已有副本，移除背景不删除原图或其他窗口仍可能使用的副本。
+- 导入期间显示忙碌状态且保持背景设置窗口打开；关闭或更新选择后，不再把过时导入结果应用到当前窗口。
+
 ## [1.8.5] - 2026-10-19
 
 ### 修复
@@ -356,7 +368,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.5...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.6...HEAD
+[1.8.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.5...v1.8.6
 [1.8.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.4...v1.8.5
 [1.8.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.3...v1.8.4
 [1.8.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.2...v1.8.3

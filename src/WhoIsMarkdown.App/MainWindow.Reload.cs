@@ -82,6 +82,7 @@ public partial class MainWindow
     /// </summary>
     private async Task<bool> ReadDocumentIntoEditorAsync(string path)
     {
+        using DiagnosticOperation? reload = DiagnosticLog.Current?.Begin(DiagnosticStage.DocumentReload, diagnosticWindowId);
         long requestVersion = Interlocked.Increment(ref documentOpenVersion);
         EditorTextSnapshot expected = document.CaptureSnapshot();
         DocumentFileStamp? expectedStamp = document.Stamp;
@@ -107,14 +108,17 @@ public partial class MainWindow
             reportedExternalStamp = null;
             reportedDocumentUnavailable = false;
             ApplyDocumentToEditor(forcePreviewUpdate: true);
+            reload?.Succeed();
             return true;
         }
         catch (OperationCanceledException) when (windowClosed)
         {
+            reload?.Cancel();
             return false;
         }
         catch (DocumentFileException exception)
         {
+            reload?.Fail(exception);
             if (!windowClosed && requestVersion == Volatile.Read(ref documentOpenVersion))
             {
                 ShowFileError("无法重新加载文档", exception);
@@ -355,8 +359,9 @@ public partial class MainWindow
         try
         {
             IDocumentFileService service = fileService;
-            current = await Task.Run(() => service.Inspect(path))
-                .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token);
+            current = await DiagnosticLog.MeasureAsync(DiagnosticStage.ExternalChangeCheck,
+                () => Task.Run(() => service.Inspect(path))
+                    .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token), diagnosticWindowId);
         }
         catch (OperationCanceledException) when (windowClosed)
         {

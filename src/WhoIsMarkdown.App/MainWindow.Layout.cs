@@ -70,6 +70,8 @@ public partial class MainWindow
     private void SetWorkspaceViewMode(WorkspaceViewMode mode, bool persist = true)
     {
         workspaceViewMode = mode;
+        WhoIsMarkdown.App.Services.DiagnosticLog.Current?.Mark(
+            WhoIsMarkdown.App.Services.DiagnosticStage.LayoutChanged, diagnosticWindowId, (long)mode);
         applicationSettings = applicationSettings with { LastViewMode = mode };
         if (persist)
         {

@@ -51,10 +51,15 @@ public partial class MainWindow : Window
         UpdateRestartWindowState? state,
         UpdateRestartSessionStore updateRestartSessionStore)
     {
+        using DiagnosticOperation? construction = DiagnosticLog.Current?.Begin(DiagnosticStage.WindowConstructor, diagnosticWindowId);
         restoredWindowState = state?.Normalize();
         this.updateRestartSessionStore = updateRestartSessionStore
             ?? throw new ArgumentNullException(nameof(updateRestartSessionStore));
-        InitializeComponent();
+        using (DiagnosticOperation? xaml = DiagnosticLog.Current?.Begin(DiagnosticStage.WindowXaml, diagnosticWindowId))
+        {
+            InitializeComponent();
+            xaml?.Succeed();
+        }
         ApplyRestoredWindowPlacement();
         InitializeAppearanceController();
         InitializePerformanceMonitor();
@@ -63,10 +68,12 @@ public partial class MainWindow : Window
         document.StartNew(untitledCounter);
         Editor.Document = document.EditorDocument;
         Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
+        construction?.Succeed();
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs eventArgs)
     {
+        DiagnosticLog.Current?.Mark(DiagnosticStage.WindowLoaded, diagnosticWindowId);
         await (settingsInitialization ??= LoadApplicationSettingsAsync());
         if (windowClosed) return;
         PreparePreviewForFileOpen();
@@ -125,6 +132,9 @@ public partial class MainWindow : Window
 
         RestoreWindowInteractionState();
         windowStartupComplete = true;
+        DiagnosticLog.Current?.Mark(DiagnosticStage.StartupContentReady, diagnosticWindowId, (long)workspaceViewMode);
+        if (workspaceViewMode == WhoIsMarkdown.Core.Settings.WorkspaceViewMode.EditorOnly)
+            DiagnosticLog.Current?.Mark(DiagnosticStage.StartupPreviewDeferred, diagnosticWindowId);
         await EnsureVisiblePreviewAsync();
         if (!windowClosed)
         {
@@ -238,6 +248,7 @@ public partial class MainWindow : Window
         // latest request may update the editor; otherwise an older, slower read can
         // finish last and make switching appear to jump back to the previous file.
         long requestVersion = Interlocked.Increment(ref documentOpenVersion);
+        using DiagnosticOperation? opening = DiagnosticLog.Current?.Begin(DiagnosticStage.DocumentOpen, diagnosticWindowId);
         try
         {
             // Bug fix: opening a path can block before an asynchronous file read is
@@ -251,18 +262,25 @@ public partial class MainWindow : Window
                 return;
             }
 
-            document.Load(loadedDocument);
-            ApplyDocumentToEditor();
+            using (DiagnosticOperation? apply = DiagnosticLog.Current?.Begin(DiagnosticStage.DocumentApply, diagnosticWindowId))
+            {
+                document.Load(loadedDocument);
+                ApplyDocumentToEditor();
+                apply?.Succeed();
+            }
             ApplyFileOpenViewMode();
             RecordRecentFile(loadedDocument.Path);
             UpdateStatus("文档已打开");
+            opening?.Succeed();
         }
         catch (OperationCanceledException) when (windowClosed)
         {
+            opening?.Cancel();
             // Stop waiting on close; the underlying filesystem may still be busy.
         }
         catch (DocumentFileException exception)
         {
+            opening?.Fail(exception);
             if (!windowClosed && requestVersion == Volatile.Read(ref documentOpenVersion))
             {
                 ShowFileError("无法打开文档", exception);
@@ -276,7 +294,8 @@ public partial class MainWindow : Window
         // continuation on close even when a driver ignores read cancellation.
         IDocumentFileService service = fileService;
         CancellationToken token = windowLifetimeCancellation.Token;
-        return Task.Run(() => service.ReadAsync(path, token), token).WaitAsync(token);
+        return DiagnosticLog.MeasureAsync(DiagnosticStage.DocumentRead,
+            () => Task.Run(() => service.ReadAsync(path, token), token).WaitAsync(token), diagnosticWindowId);
     }
 
     private async Task<bool> SaveCurrentDocumentAsync(bool forceSaveAs)
@@ -296,6 +315,7 @@ public partial class MainWindow : Window
         }
 
         documentSaveRunning = true;
+        using DiagnosticOperation? saving = DiagnosticLog.Current?.Begin(DiagnosticStage.DocumentSave, diagnosticWindowId);
         EditorTextSnapshot snapshot = document.CaptureSnapshot();
         bool emitUtf8Bom = document.HasUtf8Bom;
         IDocumentFileService service = fileService;
@@ -338,15 +358,18 @@ public partial class MainWindow : Window
             // letting PreviewReady align it to a caret that may be near the top.
             SchedulePreview(synchronizePreviewToCaretWhenReady: false);
             UpdateStatus(document.IsDirty ? "已保存快照；仍有新的修改未保存" : "文档已保存");
+            saving?.Succeed();
             // Close/open confirmation must not discard edits made during save.
             return !document.IsDirty;
         }
         catch (OperationCanceledException) when (windowClosed)
         {
+            saving?.Cancel();
             return false;
         }
         catch (DocumentFileException exception)
         {
+            saving?.Fail(exception);
             ShowFileError("无法保存文档", exception);
             return false;
         }
@@ -480,6 +503,7 @@ public partial class MainWindow : Window
         bool forceBodyReplacement,
         CancellationToken cancellationToken)
     {
+        using DiagnosticOperation? rendering = DiagnosticLog.Current?.Begin(DiagnosticStage.PreviewRender, diagnosticWindowId, onlySlow: firstPreviewLogged);
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
@@ -488,8 +512,9 @@ public partial class MainWindow : Window
             // complete string on every input event. Only immutable data crosses
             // the worker boundary; queued obsolete snapshots stay unmaterialized.
             EditorTextSnapshot snapshot = document.CaptureSnapshot();
-            MarkdownRenderResult rendered = await markdownRenderer.RenderSnapshotAsync(snapshot.ReadText, documentPath, remoteImagePolicy, cancellationToken)
-                .WaitAsync(cancellationToken);
+            MarkdownRenderResult rendered = await DiagnosticLog.MeasureAsync(DiagnosticStage.MarkdownParse,
+                () => markdownRenderer.RenderSnapshotAsync(snapshot.ReadText, documentPath, remoteImagePolicy, cancellationToken)
+                    .WaitAsync(cancellationToken), diagnosticWindowId, onlySlow: firstPreviewLogged);
             cancellationToken.ThrowIfCancellationRequested();
 
             PreviewWebViewService? service = previewService;
@@ -510,13 +535,16 @@ public partial class MainWindow : Window
                     forceBodyReplacement,
                     cancellationToken);
             }
+            rendering?.Succeed();
         }
         catch (OperationCanceledException)
         {
+            rendering?.Cancel();
             // A newer editor snapshot superseded this render request.
         }
         catch (Exception exception)
         {
+            rendering?.Fail(exception);
             if (windowClosed || version != previewVersion)
             {
                 return;

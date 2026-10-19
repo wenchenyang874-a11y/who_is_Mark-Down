@@ -13,6 +13,7 @@ namespace WhoIsMarkdown.App;
 public partial class BackgroundSettingsWindow : Window
 {
     private readonly bool initializing;
+    private bool importing;
 
     public BackgroundSettingsWindow(string? backgroundPath, double visibilityPercentage)
     {
@@ -45,7 +46,15 @@ public partial class BackgroundSettingsWindow : Window
             : "尚未选择图片";
         BackgroundFileNameText.ToolTip = hasBackground ? path : null;
         BackgroundVisibilitySlider.IsEnabled = hasBackground;
-        RemoveBackgroundButton.IsEnabled = hasBackground;
+        RemoveBackgroundButton.IsEnabled = hasBackground && !importing;
+    }
+
+    public void SetImporting(bool value)
+    {
+        importing = value;
+        SelectBackgroundButton.IsEnabled = !value;
+        SelectBackgroundButton.Content = value ? "正在导入…" : "选择图片";
+        RemoveBackgroundButton.IsEnabled = !value && BackgroundVisibilitySlider.IsEnabled;
     }
 
     private void SelectBackground_Click(object sender, RoutedEventArgs eventArgs)

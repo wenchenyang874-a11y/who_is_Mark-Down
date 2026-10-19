@@ -41,17 +41,22 @@ internal static class WebViewScriptResult
         cancellationToken.ThrowIfCancellationRequested();
         if (timeout <= TimeSpan.Zero) return null;
         Stopwatch elapsed = Stopwatch.StartNew();
+        using DiagnosticOperation? wait = DiagnosticLog.Current?.Begin(DiagnosticStage.HostScriptWait, onlySlow: true);
         try
         {
             await core.ExecuteScriptAsync(script).WaitAsync(timeout, cancellationToken).ConfigureAwait(true);
         }
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
+            wait?.Fail(exception);
             return null;
         }
 
-        return await PollAsync(core, slotExpression, timeout - elapsed.Elapsed, cancellationToken)
+        string? result = await PollAsync(core, slotExpression, timeout - elapsed.Elapsed, cancellationToken)
             .ConfigureAwait(true);
+        if (result is null) wait?.Fail(new TimeoutException());
+        else wait?.Succeed();
+        return result;
     }
 
     /// <summary>

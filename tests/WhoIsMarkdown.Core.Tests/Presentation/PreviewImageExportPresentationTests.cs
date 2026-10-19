@@ -135,7 +135,7 @@ public sealed class PreviewImageExportPresentationTests
             previewImageCode,
             StringComparison.Ordinal);
         Assert.Contains(
-            "await PreviewImageExport.ExportAsync(",
+            "() => PreviewImageExport.ExportAsync(",
             previewImageCode,
             StringComparison.Ordinal);
         // The viewer no longer saves through the single-format event.

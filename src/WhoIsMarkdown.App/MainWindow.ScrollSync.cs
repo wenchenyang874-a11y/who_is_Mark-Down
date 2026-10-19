@@ -130,6 +130,11 @@ public partial class MainWindow
 
     private void PreviewService_PreviewReady(object? sender, PreviewReadyEventArgs eventArgs)
     {
+        if (!firstPreviewLogged)
+        {
+            firstPreviewLogged = true;
+            DiagnosticLog.Current?.Mark(DiagnosticStage.StartupPreviewReady, diagnosticWindowId);
+        }
         if (!eventArgs.SynchronizeToCaret)
         {
             // AvalonEdit can emit a delayed scroll-offset change after replacing

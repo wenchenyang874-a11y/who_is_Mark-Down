@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Updates;
 
 namespace WhoIsMarkdown.App;
@@ -57,11 +58,11 @@ public partial class UpdateAvailableWindow : Window
 
         try
         {
-            InstallerPath = await downloader.DownloadAsync(
+            InstallerPath = await DiagnosticLog.MeasureAsync(DiagnosticStage.UpdateDownload, () => downloader.DownloadAsync(
                 release,
                 outputDirectory,
                 progress,
-                cancellation.Token);
+                cancellation.Token));
             DownloadStatusText.Text = "下载完成，安装包 SHA-256 校验通过。";
             allowClose = true;
             DialogResult = true;

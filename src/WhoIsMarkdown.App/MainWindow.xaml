@@ -269,6 +269,8 @@
                     <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
                 <MenuItem Header="帮助(_H)" AutomationProperties.Name="帮助" Style="{StaticResource TopLevelMenuItemStyle}">
+                    <MenuItem Header="打开日志文件夹" AutomationProperties.Name="打开日志文件夹" Click="OpenLogDirectory_Click" />
+                    <Separator />
                     <MenuItem x:Name="CheckForUpdatesMenuItem" Header="检查更新..." Click="CheckForUpdates_Click" />
                     <MenuItem x:Name="CheckForUpdatesOnStartupMenuItem" Header="启动时检查更新" IsCheckable="True" Click="CheckForUpdatesOnStartup_Click" />
                     <Separator />

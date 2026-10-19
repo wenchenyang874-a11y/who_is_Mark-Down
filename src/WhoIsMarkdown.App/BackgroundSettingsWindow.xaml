@@ -49,7 +49,7 @@
                         Foreground="#596278"
                         Click="Close_Click" />
             </Grid>
-            <TextBlock Grid.Row="1" Margin="0,3,0,14" Foreground="#6D768B" Text="图片仅从本机读取，不会上传。" />
+            <TextBlock Grid.Row="1" Margin="0,3,0,14" Foreground="#6D768B" FontSize="12" Text="图片会复制到 WIMD 本地目录，不会上传。" />
             <TextBlock x:Name="BackgroundFileNameText" Grid.Row="2" Margin="0,0,0,10" Foreground="#1A2235" Text="尚未选择图片" TextTrimming="CharacterEllipsis" />
             <StackPanel Grid.Row="3" Orientation="Horizontal">
                 <Button x:Name="SelectBackgroundButton" AutomationProperties.Name="选择图片" Padding="12,6" Content="选择图片" Cursor="Hand" Click="SelectBackground_Click" />

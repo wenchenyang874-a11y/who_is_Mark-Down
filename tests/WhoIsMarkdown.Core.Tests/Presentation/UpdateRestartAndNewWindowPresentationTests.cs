@@ -136,7 +136,7 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
         Assert.Contains("startInfo.ArgumentList.Add(normalizedPath)", launcher, StringComparison.Ordinal);
         Assert.Contains("UseShellExecute = false", launcher, StringComparison.Ordinal);
         Assert.Contains(
-            "await Task.Run(() => applicationWindowLauncher.OpenDocumentInNewWindow(path))",
+            "() => Task.Run(() => applicationWindowLauncher.OpenDocumentInNewWindow(path))",
             File.ReadAllText(Path.Combine(
                 repositoryRoot,
                 "src",

@@ -1,4 +1,5 @@
 using System.Windows;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App;
@@ -36,6 +37,7 @@ public partial class MainWindow
 
     private async Task<bool> FlushSettingsBeforeCloseAsync()
     {
+        using DiagnosticOperation? flush = DiagnosticLog.Current?.Begin(DiagnosticStage.SettingsFlush, diagnosticWindowId);
         SettingsWriteResult result;
         string phase = "读取初始设置";
         try
@@ -48,9 +50,11 @@ public partial class MainWindow
         }
         catch (TimeoutException)
         {
+            flush?.Fail(new TimeoutException());
             result = new(false, $"{phase}等待已超过 5 秒；底层读写可能仍在执行，并未被强行终止。");
         }
-        if (result.Succeeded) return true;
+        if (result.Succeeded) { flush?.Succeed(); return true; }
+        DiagnosticLog.Current?.Record(DiagnosticStage.SettingsFlush, DiagnosticOutcome.Failed, diagnosticWindowId);
         UpdateStatus(result.ErrorMessage);
         return MessageBox.Show(this,
             $"{result.ErrorMessage}\n\n本次部分设置可能没有保存。是否仍然关闭 WIMD？\n选择“否”可返回，稍后关闭时会再次尝试保存设置。",

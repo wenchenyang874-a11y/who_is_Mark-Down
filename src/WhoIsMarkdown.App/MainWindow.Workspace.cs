@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 using Microsoft.Win32;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.App.ViewModels;
 using WhoIsMarkdown.Core.Workspace;
 
@@ -52,8 +53,8 @@ public partial class MainWindow
         try
         {
             IWorkspaceFileService service = workspaceFileService;
-            string root = await Task.Run(() => service.Open(path))
-                .WaitAsync(token);
+            string root = await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceOpen,
+                () => Task.Run(() => service.Open(path)).WaitAsync(token), diagnosticWindowId);
             if (windowClosed)
             {
                 return;
@@ -139,8 +140,8 @@ public partial class MainWindow
         (long version, CancellationToken token) = BeginWorkspaceRead();
         try
         {
-            IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
-                () => service.GetChildren(root, root, token), token).WaitAsync(token);
+            IReadOnlyList<WorkspaceEntry> entries = await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceRefresh,
+                () => Task.Run(() => service.GetChildren(root, root, token), token).WaitAsync(token), diagnosticWindowId);
             if (!IsCurrentWorkspaceRead(version, root)) return;
             await PopulateWorkspaceAsync(entries, version, root, token);
         }
@@ -174,8 +175,8 @@ public partial class MainWindow
         {
             string nodePath = node.Path;
             IWorkspaceFileService service = workspaceFileService;
-            IReadOnlyList<WorkspaceEntry> entries = await Task.Run(
-                () => service.GetChildren(root, nodePath, token), token).WaitAsync(token);
+            IReadOnlyList<WorkspaceEntry> entries = await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceExpand,
+                () => Task.Run(() => service.GetChildren(root, nodePath, token), token).WaitAsync(token), diagnosticWindowId);
             if (!IsCurrentWorkspaceRead(version, root))
             {
                 return;
@@ -343,11 +344,11 @@ public partial class MainWindow
         try
         {
             string root = workspaceRootPath;
-            string path = await Task.Run(
+            string path = await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceCreateFile, () => Task.Run(
                 () => workspaceFileService.CreateMarkdownFile(
                     root,
                     parentDirectory,
-                    enteredName));
+                    enteredName)), diagnosticWindowId);
             await RefreshWorkspaceCoreAsync();
             await OpenDocumentAsync(path);
             UpdateStatus($"已新建文件：{path}");
@@ -405,8 +406,8 @@ public partial class MainWindow
         try
         {
             string root = workspaceRootPath;
-            string path = await Task.Run(
-                () => workspaceFileService.CreateDirectory(root, parentDirectory, enteredName));
+            string path = await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceCreateDirectory, () => Task.Run(
+                () => workspaceFileService.CreateDirectory(root, parentDirectory, enteredName)), diagnosticWindowId);
             await RefreshWorkspaceCoreAsync();
             UpdateStatus($"已新建文件夹：{path}");
         }
@@ -449,8 +450,8 @@ public partial class MainWindow
         try
         {
             string root = workspaceRootPath;
-            string target = await Task.Run(
-                () => workspaceFileService.Rename(root, item.Path, enteredName));
+            string target = await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceRename, () => Task.Run(
+                () => workspaceFileService.Rename(root, item.Path, enteredName)), diagnosticWindowId);
             applicationSettings = applicationSettings.RelocateRecentFiles(item.Path, target);
             RefreshRecentFilesView();
             TrySaveApplicationSettings();
@@ -507,7 +508,8 @@ public partial class MainWindow
         try
         {
             string root = workspaceRootPath;
-            await Task.Run(() => workspaceFileService.Delete(root, item.Path));
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.WorkspaceDelete,
+                () => Task.Run(() => workspaceFileService.Delete(root, item.Path)), diagnosticWindowId);
             applicationSettings = applicationSettings.RemoveRecentFilesAtOrBelow(item.Path);
             RefreshRecentFilesView();
             TrySaveApplicationSettings();

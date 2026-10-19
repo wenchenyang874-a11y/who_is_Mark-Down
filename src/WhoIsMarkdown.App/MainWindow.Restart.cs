@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Lifecycle;
 using WhoIsMarkdown.Core.Settings;
 
@@ -103,9 +104,10 @@ public partial class MainWindow
             SavedAtUtc = DateTimeOffset.UtcNow,
         });
 
-        updateRestartStateSaved = updateRestartSessionStore.TrySaveRequestedWindow(
+        updateRestartStateSaved = DiagnosticLog.Measure(DiagnosticStage.CaptureSession,
+            () => updateRestartSessionStore.TrySaveRequestedWindow(
             updateRestartWindowId,
-            state);
+            state), diagnosticWindowId);
         return updateRestartStateSaved;
     }
 }

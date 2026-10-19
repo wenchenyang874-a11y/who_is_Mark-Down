@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Windows;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Lifecycle;
 
 namespace WhoIsMarkdown.App;
@@ -18,8 +19,27 @@ public partial class App : Application
     private Mutex? runningProcessMutex;
     private UpdateRestartSessionStore? updateRestartSessionStore;
 
+    public App()
+    {
+        // Capture the earliest application-owned entry, not just Window.Loaded.
+        // The writer computes the pre-managed launch gap using process metadata.
+        DiagnosticLog.Start();
+        DiagnosticLog.Current?.Mark(DiagnosticStage.ApplicationConstructor);
+        DispatcherUnhandledException += (_, args) =>
+            DiagnosticLog.Current?.Error(DiagnosticStage.DispatcherUnhandled, args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception exception)
+                DiagnosticLog.Current?.Error(DiagnosticStage.ProcessUnhandled, exception);
+            FlushDiagnosticsOnExit();
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+            DiagnosticLog.Current?.Error(DiagnosticStage.UnobservedTask, args.Exception);
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        using DiagnosticOperation? startup = DiagnosticLog.Current?.Begin(DiagnosticStage.ApplicationStartup);
         base.OnStartup(e);
 
         // This mutex is a running-process signal for Inno Setup, not a
@@ -29,22 +49,34 @@ public partial class App : Application
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WIMD"));
 
-        IReadOnlyList<UpdateRestartWindowState> restoredStates =
-            updateRestartSessionStore.ConsumeRequestedWindows();
+        IReadOnlyList<UpdateRestartWindowState> restoredStates = DiagnosticLog.Measure(DiagnosticStage.RestoreSession,
+            updateRestartSessionStore.ConsumeRequestedWindows);
         if (restoredStates.Count > 0)
         {
             RestoreRequestedWindows(updateRestartSessionStore, restoredStates);
+            startup?.Succeed();
             return;
         }
 
         ShowWindow(state: null, updateRestartSessionStore);
+        startup?.Succeed();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        DiagnosticLog.Current?.Mark(DiagnosticStage.ApplicationExit, value: e.ApplicationExitCode);
         runningProcessMutex?.Dispose();
         runningProcessMutex = null;
         base.OnExit(e);
+        FlushDiagnosticsOnExit();
+    }
+
+    private static void FlushDiagnosticsOnExit()
+    {
+        // WPF's exit callback is synchronous. Bound this final best-effort drain;
+        // an unavailable disk must never keep the process alive indefinitely.
+        Task? drain = DiagnosticLog.Current?.StopAsync();
+        if (drain is not null) _ = drain.Wait(TimeSpan.FromMilliseconds(500));
     }
 
     private void RestoreRequestedWindows(

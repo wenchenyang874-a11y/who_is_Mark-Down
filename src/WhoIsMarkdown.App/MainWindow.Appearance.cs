@@ -11,9 +11,9 @@ using WhoIsMarkdown.Core.Settings;
 namespace WhoIsMarkdown.App;
 
 /// <summary>
-/// Applies a user-selected local image behind the complete editor and preview
-/// workspace. Only the path and opacity are stored; the source image is neither
-/// copied, modified, nor uploaded.
+/// Bug fix: import a local wallpaper copy before persisting its path, so moving
+/// the selected source cannot break future windows. Original files are never
+/// modified/deleted/uploaded; only the managed path and visibility are settings.
 /// </summary>
 public partial class MainWindow
 {
@@ -28,6 +28,9 @@ public partial class MainWindow
     private long backgroundLoadVersion;
     private string? loadedBackgroundPath;
     private string? pendingBackgroundPath;
+    private long backgroundImportVersion;
+    private readonly BackgroundImageStore backgroundImageStore = new(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WIMD", "Backgrounds"));
 
     private void InitializeAppearanceController()
     {
@@ -131,25 +134,52 @@ public partial class MainWindow
 
     private async void ApplySelectedBackground(BackgroundSettingsWindow dialog, string path)
     {
-        if (!await LoadBackgroundImageAsync(path, forceReload: true))
+        long version = ++backgroundImportVersion;
+        DpiScale dpi = VisualTreeHelper.GetDpi(this);
+        int width = (int)Math.Clamp(Math.Max(ActualWidth, SystemParameters.PrimaryScreenWidth) * dpi.DpiScaleX, 1, 4096);
+        int height = (int)Math.Clamp(Math.Max(ActualHeight, SystemParameters.PrimaryScreenHeight) * dpi.DpiScaleY, 1, 4096);
+        BackgroundImageStore store = backgroundImageStore;
+        dialog.SetImporting(true);
+        try
         {
-            return;
+            // File open, copy and WPF decoding all run on a worker. Publish the
+            // bitmap and managed path together only if this choice is still valid.
+            CancellationToken token = windowLifetimeCancellation.Token;
+            StoredBackgroundImage imported = await DiagnosticLog.MeasureAsync(DiagnosticStage.BackgroundImport,
+                () => Task.Run(() => store.ImportAsync(path, width, height, token), token).WaitAsync(token), diagnosticWindowId);
+            if (windowClosed || version != backgroundImportVersion) return;
+            backgroundLoadVersion++;
+            loadedBackgroundPath = imported.Path;
+            pendingBackgroundPath = null;
+            AppBackgroundImage.Source = imported.Image;
+            applicationSettings = applicationSettings with { BackgroundImagePath = imported.Path };
+            if (dialog.IsVisible) dialog.SetBackgroundPath(imported.Path);
+            if (TrySaveApplicationSettings())
+            {
+                UpdateStatus("背景已复制到 WIMD 本地目录，正在保存设置");
+            }
         }
-
-        applicationSettings = applicationSettings with
+        catch (OperationCanceledException) when (windowClosed) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or NotSupportedException or FormatException or ArgumentException or InvalidOperationException
+            or System.Runtime.InteropServices.COMException or System.Security.SecurityException)
         {
-            BackgroundImagePath = path,
-        };
-        if (dialog.IsVisible)
-        {
-            dialog.SetBackgroundPath(path);
+            if (!windowClosed && version == backgroundImportVersion)
+            {
+                string message = $"无法导入背景图片，已保留原背景：{exception.Message}";
+                UpdateStatus(message);
+                if (dialog.IsVisible) MessageBox.Show(dialog, message, "背景导入失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
-        TrySaveApplicationSettings();
-        UpdateStatus("已应用本地背景图片");
+        finally
+        {
+            if (dialog.IsVisible) dialog.SetImporting(false);
+        }
     }
 
     private void RemoveBackground(BackgroundSettingsWindow dialog)
     {
+        backgroundImportVersion++;
         backgroundLoadVersion++;
         loadedBackgroundPath = null;
         pendingBackgroundPath = null;
@@ -206,8 +236,9 @@ public partial class MainWindow
         int height = (int)Math.Clamp(Math.Max(ActualHeight, SystemParameters.PrimaryScreenHeight) * dpi.DpiScaleY, 1, 4096);
         try
         {
-            BitmapImage image = await Task.Run(() => BackgroundImageLoader.Load(path, width, height))
-                .WaitAsync(windowLifetimeCancellation.Token);
+            BitmapImage image = await DiagnosticLog.MeasureAsync(DiagnosticStage.BackgroundLoad,
+                () => Task.Run(() => BackgroundImageLoader.Load(path, width, height))
+                    .WaitAsync(windowLifetimeCancellation.Token), diagnosticWindowId);
             if (windowClosed || version != backgroundLoadVersion)
             {
                 return false;
@@ -271,6 +302,7 @@ public partial class MainWindow
 
     private void DisposeAppearanceController()
     {
+        backgroundImportVersion++;
         backgroundLoadVersion++;
         AppBackgroundImage.Source = null;
         loadedBackgroundPath = null;

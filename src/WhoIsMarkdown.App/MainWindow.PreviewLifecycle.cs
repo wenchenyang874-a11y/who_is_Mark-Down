@@ -53,10 +53,12 @@ public partial class MainWindow
     private async Task InitializePreviewAsync()
     {
         ObjectDisposedException.ThrowIf(windowClosed, this);
-        previewStyleSheet = ReadComponentTextResource("preview.css", "找不到预览样式资源。");
+        previewStyleSheet = DiagnosticLog.Measure(DiagnosticStage.PreviewResources,
+            () => ReadComponentTextResource("preview.css", "找不到预览样式资源。"), diagnosticWindowId);
         // Ordinary documents do not pay the multi-megabyte Mermaid load/parse cost.
         PreviewWebViewService service = new(Preview, clipboardTextService,
             () => ReadComponentTextResource("mermaid.min.js", "找不到 Mermaid 离线渲染资源。"));
+        service.DiagnosticWindowId = diagnosticWindowId;
         previewService = service;
         service.ExternalNavigationFailed += PreviewService_ExternalNavigationFailed;
         service.PreviewNavigationFailed += PreviewService_PreviewNavigationFailed;
@@ -67,7 +69,7 @@ public partial class MainWindow
         service.ScrollRatioChanged += PreviewService_ScrollRatioChanged;
         service.PreviewReady += PreviewService_PreviewReady;
         service.PreviewContentApplying += PreviewService_PreviewContentApplying;
-        await service.InitializeAsync();
+        await DiagnosticLog.MeasureAsync(DiagnosticStage.PreviewInitialize, service.InitializeAsync, diagnosticWindowId);
         ObjectDisposedException.ThrowIf(windowClosed, this);
         previewInitialized = true;
     }

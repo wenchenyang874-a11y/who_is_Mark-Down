@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Threading;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.Core.Diagnostics;
 
 namespace WhoIsMarkdown.App;
@@ -23,6 +24,7 @@ public partial class MainWindow
     private TimeSpan previousProcessorTime;
     private long previousPerformanceTimestamp;
     private bool hasPreviousPerformanceSample;
+    private long lastDiagnosticPerformanceTimestamp;
 
     private void InitializePerformanceMonitor()
     {
@@ -51,10 +53,22 @@ public partial class MainWindow
             long timestamp = Stopwatch.GetTimestamp();
             TimeSpan processorTime = process.TotalProcessorTime;
             long workingSetBytes = process.WorkingSet64;
+            if (lastDiagnosticPerformanceTimestamp == 0
+                || Stopwatch.GetElapsedTime(lastDiagnosticPerformanceTimestamp, timestamp) >= TimeSpan.FromSeconds(60))
+            {
+                // Reuse existing counters once per minute; no extra process scan
+                // or timer. These are main-process metrics, not per-window or
+                // Chromium memory. A sampling gap can also mean sleep/debugging.
+                DiagnosticLog.Current?.Mark(DiagnosticStage.ProcessWorkingSetBytes, diagnosticWindowId, workingSetBytes);
+                DiagnosticLog.Current?.Mark(DiagnosticStage.ProcessCpuTotalMilliseconds, diagnosticWindowId, (long)processorTime.TotalMilliseconds);
+                lastDiagnosticPerformanceTimestamp = timestamp;
+            }
 
             if (hasPreviousPerformanceSample)
             {
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(previousPerformanceTimestamp, timestamp);
+                if (elapsed >= TimeSpan.FromSeconds(3))
+                    DiagnosticLog.Current?.Mark(DiagnosticStage.DispatcherSampleGap, diagnosticWindowId, (long)elapsed.TotalMilliseconds);
                 ProcessResourceUsage usage = ProcessResourceUsageCalculator.Calculate(
                     previousProcessorTime,
                     processorTime,
