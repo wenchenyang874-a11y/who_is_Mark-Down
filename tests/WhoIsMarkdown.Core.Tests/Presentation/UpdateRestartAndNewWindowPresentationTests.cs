@@ -50,6 +50,19 @@ public sealed class UpdateRestartAndNewWindowPresentationTests
     }
 
     [Fact]
+    public void 安装更新_只检测应用入口避免两次扫描整套自包含运行库()
+    {
+        string installer = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "packaging", "WIMD.iss"));
+        Assert.Contains("CloseApplicationsFilter={#MyAppExeName},WIMD.dll", installer, StringComparison.Ordinal);
+        Assert.Contains("CloseApplications=yes", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("CloseApplications=force", installer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SetupLogging=yes", installer, StringComparison.Ordinal);
+        Assert.Contains("Log('WIMD: preparing update recovery", installer, StringComparison.Ordinal);
+        Assert.Contains("WriteRestartRequest('capture')", installer, StringComparison.Ordinal);
+        Assert.Contains("WriteRestartRequest('restore')", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 安装更新_未保存正文先写入临时恢复区且恢复后仍为未保存()
     {
         string repositoryRoot = FindRepositoryRoot();

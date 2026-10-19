@@ -4,6 +4,13 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.5] - 2026-10-19
+
+### 修复
+
+- 安装器的占用检测仅注册 WIMD 程序与主程序集，不再把整套自包含运行库 DLL 加入 Restart Manager，减少准备安装与确认关闭后重复扫描的等待；保留一次关闭确认和未保存文档恢复，不强制结束进程。
+- 安装器默认保留本地安装日志，并标记恢复请求准备阶段，便于区分占用检测、窗口关闭和文件安装耗时；不上传日志。
+
 ## [1.8.4] - 2026-10-18
 
 ### 新增
@@ -349,7 +356,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.4...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.5...HEAD
+[1.8.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.4...v1.8.5
 [1.8.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.3...v1.8.4
 [1.8.3]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.1...v1.8.2

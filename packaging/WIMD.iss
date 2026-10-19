@@ -31,7 +31,14 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 CloseApplications=yes
+; Bug fix: the self-contained runtime contains hundreds of DLLs. Registering all
+; of them makes BOTH Preparing and RmShutdown rescan every dependency. The apphost
+; and managed entry assembly identify WIMD (including dotnet-hosted launches)
+; without probing all runtime/satellite DLLs or changing graceful close behavior.
+CloseApplicationsFilter={#MyAppExeName},WIMD.dll
 RestartApplications=no
+; Local-only, timestamped phase logs make future installer delays diagnosable.
+SetupLogging=yes
 VersionInfoVersion={#MyAppVersion}.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=WIMD Windows 安装程序
@@ -163,13 +170,20 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  Log('WIMD: preparing update recovery before application-use detection.');
   Result := '';
   NeedsRestart := False;
   if RestartRequestCreated then
+  begin
+    Log('WIMD: reusing the existing capture request.');
     Exit;
+  end;
 
   if not CheckForMutexes(WimdRunningMutexName) then
+  begin
+    Log('WIMD: no running process marker; no recovery request needed.');
     Exit;
+  end;
 
   { Bug fix: CloseApplications already owns the single interactive choice on
     Inno Setup's Preparing to Install page. Prepare the capture request here,
@@ -181,6 +195,8 @@ begin
     GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' +
     IntToStr(Random(1000000000));
   RestartRequestCreated := WriteRestartRequest('capture');
+  if RestartRequestCreated then
+    Log('WIMD: recovery capture request ready; continuing to the single close confirmation.');
   if not RestartRequestCreated then
     Result :=
       '无法创建 WIMD 临时恢复区。为避免丢失未保存的文档，安装已暂停。' + #13#10 + #13#10 +
