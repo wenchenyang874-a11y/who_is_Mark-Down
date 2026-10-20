@@ -5,8 +5,8 @@ namespace WhoIsMarkdown.Core.Markdown;
 
 /// <summary>
 /// Resolves Markdown image paths against the current document directory and
-/// converts them to a WebView2 virtual-host URL. Paths that escape that directory,
-/// unsupported formats, and remote URLs are replaced with an inert pixel.
+/// converts local paths to a WebView2 virtual-host URL. Web images, SVG and data
+/// images are passed through without extension-based or SVG-content filtering.
 /// </summary>
 public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
 {
@@ -14,31 +14,6 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
 
     private const string InertPixel =
         "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
-
-    private static readonly HashSet<string> SupportedLocalExtensions = new(
-        StringComparer.OrdinalIgnoreCase)
-    {
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".bmp",
-        ".webp",
-        ".svg",
-    };
-
-    private static readonly HashSet<string> SupportedRemoteExtensions = new(
-        SupportedLocalExtensions.Where(extension => extension != ".svg"),
-        StringComparer.OrdinalIgnoreCase);
-
-    private static readonly string[] SupportedDataImagePrefixes =
-    [
-        "data:image/png;base64,",
-        "data:image/jpeg;base64,",
-        "data:image/gif;base64,",
-        "data:image/bmp;base64,",
-        "data:image/webp;base64,",
-    ];
 
     public string RewriteGeneratedHtml(string bodyHtml, string? documentPath,
         RemoteImagePolicy? remoteImagePolicy = null)
@@ -57,7 +32,7 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
                 RewriteSource(
                     match.Groups[2].Value,
                     documentDirectory,
-                    remoteImagePolicy ?? RemoteImagePolicy.BlockAll),
+                    remoteImagePolicy ?? RemoteImagePolicy.TrustAll),
                 match.Groups[3].Value));
     }
 
@@ -67,10 +42,7 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
         RemoteImagePolicy remoteImagePolicy)
     {
         string source = WebUtility.HtmlDecode(encodedSource);
-        // Bug fix: a broad data:image/* exception also admitted SVG, whose nested
-        // resources conflict with WIMD's offline boundary. Keep only raster formats.
-        if (SupportedDataImagePrefixes.Any(
-            prefix => source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        if (source.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
         {
             return encodedSource;
         }
@@ -80,11 +52,11 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
             return InertPixel;
         }
 
+        if (source.StartsWith("//", StringComparison.Ordinal)) source = "https:" + source;
         if (Uri.TryCreate(source, UriKind.Absolute, out Uri? absoluteUri)
             && !absoluteUri.IsFile)
         {
             return remoteImagePolicy.Allows(absoluteUri)
-                && SupportedRemoteExtensions.Contains(Path.GetExtension(absoluteUri.AbsolutePath))
                 ? WebUtility.HtmlEncode(absoluteUri.AbsoluteUri)
                 : InertPixel;
         }
@@ -101,8 +73,7 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
                 ? Path.GetFullPath(pathPart)
                 : Path.GetFullPath(pathPart, documentDirectory);
 
-            if (!IsWithinDirectory(candidate, documentDirectory)
-                || !SupportedLocalExtensions.Contains(Path.GetExtension(candidate)))
+            if (!IsWithinDirectory(candidate, documentDirectory))
             {
                 return InertPixel;
             }
@@ -114,9 +85,8 @@ public sealed partial class LocalImageUrlResolver : ILocalImageUrlResolver
                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                     StringSplitOptions.RemoveEmptyEntries)
                     .Select(Uri.EscapeDataString));
-            // Local SVG remains confined to the virtual host and is requested only
-            // as an <img>. PreviewWebViewService intercepts that image request and
-            // returns sanitized static bytes; remote and data SVG stay blocked.
+            // SVG uses Chromium's native image mode, exactly like raster images;
+            // no application sanitizer rewrites or rejects the SVG document.
             return $"https://{VirtualHostName}/{escapedPath}";
         }
         catch (Exception exception) when (exception is ArgumentException

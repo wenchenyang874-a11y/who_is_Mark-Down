@@ -46,7 +46,7 @@ public sealed class RemoteImagePolicyTests
         RemoteImagePolicy policy = new(mode, []);
 
         Assert.Equal(expected, policy.Allows(new Uri("https://example.com/image.png")));
-        Assert.False(policy.Allows(new Uri("http://example.com/image.png")));
+        Assert.Equal(expected, policy.Allows(new Uri("http://example.com/image.png")));
     }
 
     [Fact]

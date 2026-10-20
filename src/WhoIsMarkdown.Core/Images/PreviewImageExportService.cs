@@ -78,7 +78,7 @@ public sealed class PreviewImageExportService
         {
             PreviewImageExportFormat.Original => isSvg
                 ? "SVG 矢量图（.svg）"
-                : $"原格式（{extension}）",
+                : extension == ".img" ? "原格式（自动识别）" : $"原格式（{extension}）",
             PreviewImageExportFormat.Png => "PNG 图片（.png）",
             PreviewImageExportFormat.Html => "HTML 网页（.html）",
             _ => throw new ArgumentOutOfRangeException(nameof(format)),
@@ -152,7 +152,7 @@ public sealed class PreviewImageExportService
         if (format == PreviewImageExportFormat.Original)
         {
             // The original encoding already owns the atomic copy, the extension match
-            // check and the SVG re-sanitization.
+            // check. Author SVG content is not sanitized on export.
             return await saveService.SavePreparedAsync(image, targetPath, cancellationToken)
                 .ConfigureAwait(false);
         }

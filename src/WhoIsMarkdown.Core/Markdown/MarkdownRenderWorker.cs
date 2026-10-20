@@ -1,3 +1,5 @@
+using WhoIsMarkdown.Core.Diagnostics;
+
 namespace WhoIsMarkdown.Core.Markdown;
 
 /// <summary>
@@ -45,9 +47,11 @@ public sealed class MarkdownRenderWorker : IDisposable
         return queue.RunAsync(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            string markdown = readSnapshot();
+            string markdown = CoreOperationTrace.Measure("RenderSnapshot", readSnapshot);
             cancellationToken.ThrowIfCancellationRequested();
-            return renderer.Value.RenderDocument(markdown, documentPath, policy, cancellationToken);
+            IMarkdownRenderer current = renderer.IsValueCreated ? renderer.Value
+                : CoreOperationTrace.Measure("RendererCreate", () => renderer.Value);
+            return current.RenderDocument(markdown, documentPath, policy, cancellationToken);
         }, cancellationToken);
     }
 

@@ -12,14 +12,17 @@ internal static class DiagnosticLog
 
     internal static void Start()
     {
+        CoreDiagnosticBridge.Start();
         Current ??= new LocalDiagnosticLog(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WIMD", "Logs"),
-            typeof(App).Assembly.GetName().Version?.ToString() ?? "unknown");
+            typeof(DiagnosticLog).Assembly.GetName().Version?.ToString() ?? "unknown");
     }
 
     internal static async Task<T> MeasureAsync<T>(DiagnosticStage stage, Func<Task<T>> action, int window = 0,
         bool onlySlow = false)
     {
+        bool previousDetail = CoreDiagnosticBridge.Detailed.Value;
+        if (!onlySlow && Current is not null) CoreDiagnosticBridge.Detailed.Value = true;
         using DiagnosticOperation? operation = Current?.Begin(stage, window, onlySlow);
         try
         {
@@ -36,6 +39,7 @@ internal static class DiagnosticLog
             operation?.Fail(exception);
             throw;
         }
+        finally { CoreDiagnosticBridge.Detailed.Value = previousDetail; }
     }
 
     internal static async Task MeasureAsync(DiagnosticStage stage, Func<Task> action, int window = 0,

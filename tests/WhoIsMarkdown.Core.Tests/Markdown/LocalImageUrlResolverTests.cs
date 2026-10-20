@@ -23,10 +23,7 @@ public sealed class LocalImageUrlResolverTests : IDisposable
     }
 
     [Theory]
-    [InlineData("https://example.com/tracker.png")]
-    [InlineData("https://example.com/vector.svg")]
     [InlineData("../outside.png")]
-    [InlineData("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")]
     public void RewriteGeneratedHtml_UnsafeOrUnsupportedImage_BecomesInert(string source)
     {
         string documentPath = Path.Combine(temporaryDirectory.Path, "指南.md");
@@ -37,6 +34,23 @@ public sealed class LocalImageUrlResolverTests : IDisposable
         Assert.Contains("data:image/gif;base64,", result, StringComparison.Ordinal);
         Assert.DoesNotContain(source, result, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("https://example.com/vector.svg")]
+    [InlineData("https://trendshift.io/api/badge/repositories/43622/daily")]
+    [InlineData("http://localhost:7351/badge")]
+    [InlineData("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")]
+    [InlineData("data:image/svg+xml,%3Csvg%2F%3E")]
+    public void DefaultImageLoading_DoesNotFilterSvgHttpOrExtensionlessUrls(string source)
+    {
+        string html = $"<img src=\"{WebUtility.HtmlEncode(source)}\" />";
+        Assert.Equal(html, resolver.RewriteGeneratedHtml(html, null));
+    }
+
+    [Fact]
+    public void ProtocolRelativeImage_UsesHttps()
+        => Assert.Contains("src=\"https://example.com/badge\"",
+            resolver.RewriteGeneratedHtml("<img src=\"//example.com/badge\" />", null), StringComparison.Ordinal);
 
     [Fact]
     public void RewriteGeneratedHtml_本地Svg_使用受限虚拟主机()

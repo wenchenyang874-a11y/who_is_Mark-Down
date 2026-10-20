@@ -9,6 +9,66 @@ namespace WhoIsMarkdown.Core.Tests.Images;
 
 public sealed class PreviewImageSaveServiceTests
 {
+    [Theory]
+    [InlineData("https://example.com/api/badge")]
+    [InlineData("https://example.com/badge.svg?branch=main")]
+    [InlineData("http://localhost:7351/badge.png")]
+    public async Task RemoteBadge_UsesResponseFormatRatherThanUrlSuffix(string url)
+    {
+        const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 120 40\"><animate attributeName=\"x\"/><rect width=\"120\" height=\"40\"/></svg>";
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(svg, Encoding.UTF8, "image/svg+xml"),
+        });
+        using PreviewImageSaveService service = new(handler);
+        using TemporaryDirectory temporary = new();
+        PreviewImageSaveSource source = service.Resolve(url, null, "badge", RemoteImagePolicy.TrustAll);
+        PreparedPreviewImage image = await service.PrepareAsync(source, Path.Combine(temporary.Path, "cache"),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(".svg", image.Extension);
+        Assert.EndsWith(".svg", image.SuggestedFileName, StringComparison.Ordinal);
+        string target = Path.Combine(temporary.Path, "saved.svg");
+        Assert.True(await service.SavePreparedAsync(image, target, TestContext.Current.CancellationToken));
+        Assert.Contains("<animate", await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task ExtensionlessBadge_MissingMimeType_DetectsPngSignature()
+    {
+        byte[] bytes = [137, 80, 78, 71, 13, 10, 26, 10];
+        using PreviewImageSaveService service = new(new RecordingHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) }));
+        using TemporaryDirectory temporary = new();
+        PreviewImageSaveSource source = service.Resolve("https://example.com/api/badge", null, "badge", RemoteImagePolicy.TrustAll);
+        PreparedPreviewImage image = await service.PrepareAsync(source, temporary.Path, TestContext.Current.CancellationToken);
+        Assert.Equal(".png", image.Extension);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(image.FilePath, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SvgDataUri_PercentEncoding_PreservesContentWithoutFiltering()
+    {
+        const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"40\"><foreignObject width=\"120\" height=\"40\"/></svg>";
+        using PreviewImageSaveService service = new();
+        using TemporaryDirectory temporary = new();
+        PreviewImageSaveSource source = service.Resolve("data:image/svg+xml," + Uri.EscapeDataString(svg), null, null, RemoteImagePolicy.TrustAll);
+        PreparedPreviewImage image = await service.PrepareAsync(source, temporary.Path, TestContext.Current.CancellationToken);
+        Assert.Equal(".svg", image.Extension);
+        Assert.Contains("foreignObject", await File.ReadAllTextAsync(image.FilePath, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AuthorSvg_SizeReaderCannotParse_DoesNotBecomeContentFilter()
+    {
+        const string svg = "<!DOCTYPE svg [<!ENTITY label 'badge'>]><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"40\"><text>&label;</text></svg>";
+        using PreviewImageSaveService service = new();
+        using TemporaryDirectory temporary = new();
+        PreviewImageSaveSource source = service.Resolve("data:image/svg+xml;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(svg)), null, null, RemoteImagePolicy.TrustAll);
+        PreparedPreviewImage image = await service.PrepareAsync(source, temporary.Path, TestContext.Current.CancellationToken);
+        Assert.Equal(svg, await File.ReadAllTextAsync(image.FilePath, TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task 保存_文档虚拟主机图片_复制中文路径文件()
     {
@@ -218,7 +278,7 @@ public sealed class PreviewImageSaveServiceTests
     }
 
     [Fact]
-    public async Task 本地Svg_打开查看器并另存_复用安全过滤后的静态字节()
+    public async Task 本地Svg_打开查看器并另存_不做内容过滤()
     {
         using TemporaryDirectory temporary = new();
         string documentPath = Path.Combine(temporary.Path, "README.md");
@@ -248,8 +308,8 @@ public sealed class PreviewImageSaveServiceTests
         string saved = await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken);
 
         Assert.Equal(".svg", prepared.Extension);
-        Assert.DoesNotContain("script", saved, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("onclick", saved, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<script>alert(1)</script>", saved, StringComparison.Ordinal);
+        Assert.Contains("onclick=\"alert(2)\"", saved, StringComparison.Ordinal);
         Assert.Contains("<rect", saved, StringComparison.Ordinal);
     }
 
@@ -269,17 +329,18 @@ public sealed class PreviewImageSaveServiceTests
     }
 
     [Fact]
-    public void 普通图片解析_用户提供Svg数据_仍然拒绝()
+    public void 普通图片解析_用户提供Svg数据_允许()
     {
         const string dataUri = "data:image/svg+xml;base64,PHN2Zy8+";
         using PreviewImageSaveService service = new(new RecordingHandler(
             _ => throw new InvalidOperationException("不应联网")));
 
-        Assert.Throws<PreviewImageSaveException>(() => service.Resolve(
+        PreviewImageSaveSource source = service.Resolve(
             dataUri,
             null,
             null,
-            RemoteImagePolicy.BlockAll));
+            RemoteImagePolicy.TrustAll);
+        Assert.Equal(".svg", source.Extension);
     }
 
     [Fact]

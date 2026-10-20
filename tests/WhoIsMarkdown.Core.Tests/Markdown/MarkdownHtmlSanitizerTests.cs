@@ -52,7 +52,7 @@ public sealed class MarkdownHtmlSanitizerTests
         Assert.DoesNotContain("onerror", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("javascript:", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("target=", html, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("example.com/tracker.png", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("example.com/tracker.png", html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

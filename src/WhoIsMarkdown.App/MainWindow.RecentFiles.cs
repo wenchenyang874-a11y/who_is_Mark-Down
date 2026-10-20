@@ -53,13 +53,19 @@ public partial class MainWindow
         settingsWriter = new ApplicationSettingsWriter(new DiagnosticSettingsStore(settingsStore, diagnosticWindowId), loaded);
         settingsWriter.WriteCompleted += SettingsWriter_WriteCompleted;
         if (settingsChangedBeforeLoad) settingsWriter.Enqueue(applicationSettings);
-        RefreshRecentFilesView();
-        SetRecentPaneExpanded(applicationSettings.IsRecentPaneExpanded, persist: false);
-        ApplyAppearanceSettings();
-        ApplyShortcutSettings();
-        RefreshFileOpenViewModeMenu();
-        RefreshExternalChangeMenu();
-        ApplyFileOpenViewMode();
+        DiagnosticLog.Measure(DiagnosticStage.SettingsProjection, () =>
+        {
+            RefreshRecentFilesView();
+            SetRecentPaneExpanded(applicationSettings.IsRecentPaneExpanded, persist: false);
+        }, diagnosticWindowId);
+        DiagnosticLog.Measure(DiagnosticStage.ThemeAndFonts, ApplyAppearanceSettings, diagnosticWindowId);
+        DiagnosticLog.Measure(DiagnosticStage.ShortcutBindings, ApplyShortcutSettings, diagnosticWindowId);
+        DiagnosticLog.Measure(DiagnosticStage.SettingsLayout, () =>
+        {
+            RefreshFileOpenViewModeMenu();
+            RefreshExternalChangeMenu();
+            ApplyFileOpenViewMode();
+        }, diagnosticWindowId);
         apply?.Succeed();
     }
 

@@ -37,6 +37,7 @@ public sealed class MarkdownHtmlSanitizer
 
     public MarkdownHtmlSanitizer()
     {
+        using System.Diagnostics.Activity? initialization = WhoIsMarkdown.Core.Diagnostics.CoreOperationTrace.Start("HtmlSanitizerCreate");
         sanitizer = new HtmlSanitizer();
         sanitizer.AllowedTags.Clear();
         sanitizer.AllowedTags.UnionWith(SafeTags);

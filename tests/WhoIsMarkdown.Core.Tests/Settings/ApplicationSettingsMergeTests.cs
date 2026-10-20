@@ -77,9 +77,9 @@ public sealed class ApplicationSettingsMergeTests
             ImageInsertion = new() { TrustMode = RemoteImageTrustMode.BlockAll },
             ShortcutOverrides = new Dictionary<string, ShortcutGesture> { ["italic"] = new() { Key = "Q", Control = true } }
         };
-        // An unchanged group preserves the external policy; a changed group replaces
-        // it atomically rather than combining incompatible gestures or trust modes.
-        Assert.Equal(RemoteImageTrustMode.AllowList, ApplicationSettingsChanges.Merge(disk, before, local).ImageInsertion.TrustMode);
+        // Legacy trust groups normalize to the new image-compatible default;
+        // shortcut groups still merge atomically, never per gesture.
+        Assert.Equal(RemoteImageTrustMode.TrustAll, ApplicationSettingsChanges.Merge(disk, before, local).ImageInsertion.TrustMode);
         ApplicationSettings changed = local with { ImageInsertion = local.ImageInsertion with { TrustMode = RemoteImageTrustMode.TrustAll } };
         ApplicationSettings merged = ApplicationSettingsChanges.Merge(disk, before, changed);
         Assert.Equal(RemoteImageTrustMode.TrustAll, merged.ImageInsertion.TrustMode);

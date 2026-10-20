@@ -1,3 +1,5 @@
+using WhoIsMarkdown.Core.Diagnostics;
+
 namespace WhoIsMarkdown.Core.Markdown;
 
 /// <summary>Serializes pure-data preview packaging without retaining UI objects.</summary>
@@ -12,7 +14,8 @@ public sealed class PreviewPreparationWorker(IPreviewContentBuilder? builder = n
         bool navigate,
         bool forceBodyReplacement,
         CancellationToken cancellationToken)
-        => queue.RunAsync(() => builder.Prepare(content, previousBlocks, navigate, forceBodyReplacement, cancellationToken), cancellationToken);
+        => queue.RunAsync(() => CoreOperationTrace.Measure("PreviewContentPrepare",
+            () => builder.Prepare(content, previousBlocks, navigate, forceBodyReplacement, cancellationToken)), cancellationToken);
 
     public Task<string> BuildReplacementAsync(PreviewContent content, CancellationToken cancellationToken)
         => queue.RunAsync(() => builder.BuildReplacement(content, cancellationToken), cancellationToken);

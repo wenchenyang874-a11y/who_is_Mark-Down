@@ -70,7 +70,7 @@ public sealed class LocalImageStorageServiceTests
     }
 
     [Fact]
-    public async Task 保存Svg_含活动内容_只落盘安全静态副本()
+    public async Task 保存Svg_保留用户选择的原始内容()
     {
         using TemporaryDirectory temporaryDirectory = new();
         string documentPath = Path.Combine(temporaryDirectory.Path, "说明.md");
@@ -97,8 +97,6 @@ public sealed class LocalImageStorageServiceTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal("./img/流程图.svg", image.MarkdownPath);
-        Assert.DoesNotContain("script", stored, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("onmouseover", stored, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("<rect", stored, StringComparison.Ordinal);
+        Assert.Equal(svg, stored);
     }
 }

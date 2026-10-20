@@ -51,7 +51,7 @@ public sealed class ImageAndPdfPresentationTests
         Assert.Contains("Click=\"InsertImage_Click\"", mainWindow, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"InsertImageToolbarButton\"", mainWindow, StringComparison.Ordinal);
         Assert.Contains("*.webp;*.svg", imageCode, StringComparison.Ordinal);
-        Assert.Contains("不会上传到 ImgBB", imageCode, StringComparison.Ordinal);
+        Assert.Contains("ImgBB 不支持 SVG", imageCode, StringComparison.Ordinal);
 
         XDocument document = XDocument.Parse(mainWindow);
         XElement settingsMenu = Assert.Single(
@@ -269,7 +269,7 @@ public sealed class ImageAndPdfPresentationTests
     }
 
     [Fact]
-    public void 图片设置_远程规则行_提供匹配方式下拉内容和删除操作()
+    public void 图片设置_默认允许图片且不再提供黑白名单()
     {
         string repositoryRoot = FindRepositoryRoot();
         string settingsWindow = File.ReadAllText(Path.Combine(
@@ -289,14 +289,10 @@ public sealed class ImageAndPdfPresentationTests
             "ViewModels",
             "RemoteImageRuleEditorItemViewModel.cs"));
 
-        Assert.Contains("Content=\"添加规则\"", settingsWindow, StringComparison.Ordinal);
-        Assert.Contains("SelectedValuePath=\"Id\"", settingsWindow, StringComparison.Ordinal);
-        Assert.Contains("DisplayMemberPath=\"DisplayName\"", settingsWindow, StringComparison.Ordinal);
-        Assert.Contains("Content=\"删除\"", settingsWindow, StringComparison.Ordinal);
-        Assert.Contains("不信任 - 阻止全部远程图片", settingsWindow, StringComparison.Ordinal);
-        Assert.Contains("信任所有 - 加载任意 HTTPS 图片", settingsWindow, StringComparison.Ordinal);
-        Assert.Contains("public ObservableCollection<RemoteImageRuleEditorItemViewModel> Rules", settingsCode, StringComparison.Ordinal);
-        Assert.Contains("public IReadOnlyList<RemoteImageMatchOption> MatchOptions", settingsCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrustModeComboBox", settingsWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("RulesPanel", settingsWindow, StringComparison.Ordinal);
+        Assert.Contains("HTTP、HTTPS、SVG", settingsWindow, StringComparison.Ordinal);
+        Assert.Contains("TrustMode = RemoteImageTrustMode.TrustAll", settingsCode, StringComparison.Ordinal);
         Assert.Contains("public sealed class RemoteImageRuleEditorItemViewModel", ruleViewModel, StringComparison.Ordinal);
         Assert.Contains("public sealed record RemoteImageMatchOption", ruleViewModel, StringComparison.Ordinal);
     }
@@ -357,9 +353,9 @@ public sealed class ImageAndPdfPresentationTests
 
         Assert.Contains("open-preview-image", previewCode, StringComparison.Ordinal);
         Assert.Contains("PreviewImageOpenRequested", previewCode, StringComparison.Ordinal);
-        Assert.Contains("OnWebResourceRequested", previewCode, StringComparison.Ordinal);
-        Assert.Contains("SafeSvgSanitizer.SanitizeFileAsync", previewCode, StringComparison.Ordinal);
-        Assert.Contains("or InvalidOperationException", previewCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnWebResourceRequested", previewCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("SafeSvgSanitizer.SanitizeFileAsync", previewCode, StringComparison.Ordinal);
+        Assert.Contains("InvalidOperationException", previewCode, StringComparison.Ordinal);
         Assert.Contains("image.draggable = false", previewCode, StringComparison.Ordinal);
         Assert.Contains("ResizeMode=\"CanResize\"", viewerXaml, StringComparison.Ordinal);
         Assert.Contains("ShowInTaskbar=\"True\"", viewerXaml, StringComparison.Ordinal);

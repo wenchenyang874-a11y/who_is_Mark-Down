@@ -25,6 +25,8 @@ public sealed class LocalDiagnosticLogTests
         Assert.Equal(rows[1].GetProperty("operation").GetInt64(), rows[2].GetProperty("operation").GetInt64());
         Assert.Equal(7, rows[2].GetProperty("window").GetInt32());
         Assert.True(rows[2].GetProperty("duration_ms").GetDouble() >= 0);
+        Assert.True(rows[2].GetProperty("jit_ms").GetDouble() >= 0);
+        Assert.True(rows[2].GetProperty("compiled_methods").GetInt64() >= 0);
         Assert.True(rows[2].GetProperty("process_elapsed_ms").GetDouble() >= rows[2].GetProperty("log_elapsed_ms").GetDouble());
     }
 
@@ -230,6 +232,47 @@ public sealed class LocalDiagnosticLogTests
         await second.StopAsync();
         Assert.Equal(2, Directory.GetFiles(directory.Path).Length);
         await first.StopAsync();
+    }
+
+    [Fact]
+    public async Task CorePhases_FirstRender_KeepCorrelatedDurationsAndTypedFailure()
+    {
+        using LogDirectory directory = new();
+        LocalDiagnosticLog log = new(directory.Path, "qa");
+        DiagnosticLog.Current = log;
+        CoreDiagnosticBridge.Start();
+        try
+        {
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.MarkdownParse, () => Task.Run(() =>
+            {
+                WhoIsMarkdown.Core.Markdown.MarkdownRenderer renderer = new();
+                return renderer.RenderBody("# synthetic\n\nparagraph");
+            }), window: 9);
+            await Assert.ThrowsAsync<IOException>(() => DiagnosticLog.MeasureAsync(DiagnosticStage.DocumentRead,
+                () => Task.Run(() => WhoIsMarkdown.Core.Diagnostics.CoreOperationTrace.Measure<int>("DocumentFileBytes",
+                    () => throw new IOException("SECRET_DO_NOT_LOG")))));
+        }
+        finally { DiagnosticLog.Current = null; await log.StopAsync(); }
+        JsonElement[] rows = directory.Read();
+        foreach (string stage in new[] { "HtmlSanitizerCreate", "MarkdownPipelineBuild", "MarkdownAstParse",
+            "MarkdownHtmlDetection", "MarkdownHtmlRender", "MarkdownHtmlFilter", "MarkdownImageResolve", "MarkdownResultBuild" })
+            Assert.Contains(rows, row => row.TryGetProperty("stage", out JsonElement name) && name.GetString() == stage
+                && row.TryGetProperty("duration_ms", out JsonElement duration) && duration.GetDouble() >= 0);
+        Assert.Contains(rows, row => row.TryGetProperty("stage", out JsonElement name) && name.GetString() == "DocumentFileBytes"
+            && row.GetProperty("outcome").GetString() == "Failed");
+        Assert.DoesNotContain("SECRET_DO_NOT_LOG", string.Join("\n", rows.Select(row => row.GetRawText())), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ManagedEntry_HeaderSeparatesProcessLoadFromWpfConstruction()
+    {
+        using LogDirectory directory = new();
+        LocalDiagnosticLog log = new(directory.Path, "qa") { ManagedEntryUtc = DateTimeOffset.UtcNow };
+        log.Mark(DiagnosticStage.ManagedEntry);
+        await log.StopAsync();
+        JsonElement header = directory.Read()[0];
+        Assert.True(header.GetProperty("process_to_managed_ms").GetDouble() >= 0);
+        Assert.NotEqual(JsonValueKind.Null, header.GetProperty("managed_entry_utc").ValueKind);
     }
 
     private sealed class LogDirectory : IDisposable

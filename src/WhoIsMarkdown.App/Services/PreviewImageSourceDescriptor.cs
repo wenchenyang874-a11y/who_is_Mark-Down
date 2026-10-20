@@ -29,7 +29,7 @@ internal readonly record struct PreviewImageSourceDescriptor(string Extension, b
             ? Path.GetExtension(uri.AbsolutePath)
             : Path.GetExtension(candidate);
         return new PreviewImageSourceDescriptor(
-            extension.ToLowerInvariant(),
+            extension.Length == 0 ? ".img" : extension.ToLowerInvariant(),
             extension.Equals(".svg", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -40,7 +40,7 @@ internal readonly record struct PreviewImageSourceDescriptor(string Extension, b
     /// </summary>
     private static PreviewImageSourceDescriptor FromDataUri(string candidate)
     {
-        int separator = candidate.IndexOf(';');
+        int separator = candidate.IndexOfAny([';', ',']);
         string mediaType = separator > 0
             ? candidate[DataUriPrefix.Length..separator]
             : candidate[DataUriPrefix.Length..];

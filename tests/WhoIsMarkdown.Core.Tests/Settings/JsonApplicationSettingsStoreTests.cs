@@ -65,8 +65,8 @@ public sealed class JsonApplicationSettingsStoreTests
         Assert.Equal(18, result.Appearance.PreviewFontSize);
         Assert.Equal(ImageStorageMode.ImgBb, result.ImageInsertion.StorageMode);
         Assert.Equal("./assets/images/", result.ImageInsertion.LocalDirectory);
-        Assert.Equal(RemoteImageTrustMode.AllowList, result.ImageInsertion.TrustMode);
-        Assert.Equal(["domain:i.ibb.co", "keyword:public-image"], result.ImageInsertion.RemoteImageRules);
+        Assert.Equal(RemoteImageTrustMode.TrustAll, result.ImageInsertion.TrustMode);
+        Assert.Empty(result.ImageInsertion.RemoteImageRules);
         Assert.Equal("ciphertext", result.ImageInsertion.ProtectedImgBbApiKey);
         ShortcutGesture strike = Assert.Single(result.ShortcutOverrides).Value;
         Assert.Equal("Oem3", strike.Key);

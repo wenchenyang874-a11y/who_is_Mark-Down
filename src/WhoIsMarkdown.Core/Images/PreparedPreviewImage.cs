@@ -11,13 +11,13 @@ public sealed class PreparedPreviewImage
         string extension,
         string suggestedFileName,
         bool isGeneratedSvg = false,
-        bool isSanitizedSvg = false)
+        bool isSourceSvg = false)
     {
         FilePath = filePath;
         Extension = extension;
         SuggestedFileName = suggestedFileName;
         IsGeneratedSvg = isGeneratedSvg;
-        IsSanitizedSvg = isSanitizedSvg;
+        IsSourceSvg = isSourceSvg;
     }
 
     public string Extension { get; }
@@ -28,7 +28,7 @@ public sealed class PreparedPreviewImage
 
     internal bool IsGeneratedSvg { get; }
 
-    internal bool IsSanitizedSvg { get; }
+    internal bool IsSourceSvg { get; }
 
-    internal bool IsSvg => IsGeneratedSvg || IsSanitizedSvg;
+    internal bool IsSvg => IsGeneratedSvg || IsSourceSvg;
 }

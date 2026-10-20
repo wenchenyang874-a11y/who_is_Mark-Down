@@ -38,33 +38,8 @@ public sealed class LocalImageStorageService
 
         string extension = ValidateExtension(Path.GetExtension(source));
         string preferredName = Path.GetFileNameWithoutExtension(source);
-        if (extension == ".svg")
-        {
-            try
-            {
-                // User-selected SVG is never copied verbatim. Persisting only the
-                // static-profile output prevents a later browser or design tool from
-                // reactivating scripts, links or external resources from WIMD's copy.
-                SafeSvgSanitizationResult safeSvg = await SafeSvgSanitizer.SanitizeFileAsync(
-                    source,
-                    cancellationToken).ConfigureAwait(false);
-                MemoryStream safeStream = new(safeSvg.Bytes, writable: false);
-                return await StoreOwnedStreamAsync(
-                    documentPath,
-                    relativeDirectory,
-                    preferredName,
-                    extension,
-                    safeStream,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (SafeSvgException exception)
-            {
-                throw new LocalImageStorageException(
-                    $"SVG 无法按安全静态模式保存：{exception.Message}",
-                    exception);
-            }
-        }
-
+        // Copy SVG verbatim, just like other selected images. Native image-mode
+        // rendering is responsible for display; insertion never strips content.
         await using FileStream stream = new(
             source,
             FileMode.Open,

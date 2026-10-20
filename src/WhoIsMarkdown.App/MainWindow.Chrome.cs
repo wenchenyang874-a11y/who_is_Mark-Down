@@ -17,6 +17,7 @@ public partial class MainWindow
 
     private void Window_SourceInitialized(object? sender, EventArgs eventArgs)
     {
+        Services.DiagnosticLog.Current?.Mark(Services.DiagnosticStage.WindowNativeCreated, diagnosticWindowId);
         chromeWindowSource = PresentationSource.FromVisual(this) as HwndSource;
         chromeWindowSource?.AddHook(WindowChromeMessageHook);
     }

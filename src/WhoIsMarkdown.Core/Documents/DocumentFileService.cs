@@ -1,4 +1,5 @@
 using System.Text;
+using WhoIsMarkdown.Core.Diagnostics;
 
 namespace WhoIsMarkdown.Core.Documents;
 
@@ -24,18 +25,20 @@ public sealed class DocumentFileService : IDocumentFileService
 
         try
         {
-            byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken)
-                .ConfigureAwait(false);
+            byte[] bytes;
+            using (CoreOperationTrace.Start("DocumentFileBytes"))
+                bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
             bool hasBom = HasUtf8Bom(bytes);
             int contentOffset = hasBom ? Utf8Bom.Length : 0;
-            string text = StrictUtf8.GetString(bytes, contentOffset, bytes.Length - contentOffset);
+            string text = CoreOperationTrace.Measure("DocumentDecode",
+                () => StrictUtf8.GetString(bytes, contentOffset, bytes.Length - contentOffset));
 
             return new LoadedDocument(
                 fullPath,
                 text,
                 hasBom,
-                DetectLineEnding(text),
-                Inspect(fullPath));
+                CoreOperationTrace.Measure("DocumentLineEndings", () => DetectLineEnding(text)),
+                CoreOperationTrace.Measure("DocumentFileStamp", () => Inspect(fullPath)));
         }
         catch (OperationCanceledException)
         {

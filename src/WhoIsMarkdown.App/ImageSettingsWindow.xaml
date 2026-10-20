@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="图片设置"
         Width="680"
-        Height="700"
+        Height="560"
         MinWidth="620"
-        MinHeight="600"
+        MinHeight="480"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
@@ -56,51 +56,9 @@
                     </StackPanel>
                 </Border>
 
-                <Border Margin="0,14,0,0" Padding="16" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10">
-                    <StackPanel>
-                        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="远程图片信任策略" />
-                        <ComboBox x:Name="TrustModeComboBox" Margin="0,9,0,0" Padding="8,6" SelectionChanged="TrustMode_SelectionChanged">
-                            <ComboBoxItem Tag="BlockAll" Content="不信任 - 阻止全部远程图片（默认）" />
-                            <ComboBoxItem Tag="AllowList" Content="白名单 - 只加载命中规则的图片" />
-                            <ComboBoxItem Tag="BlockList" Content="黑名单 - 阻止命中规则的图片" />
-                            <ComboBoxItem Tag="TrustAll" Content="信任所有 - 加载任意 HTTPS 图片" />
-                        </ComboBox>
-                        <TextBlock x:Name="TrustModeDescriptionText" Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-
-                        <StackPanel x:Name="RulesPanel" Margin="0,14,0,0">
-                            <Grid>
-                                <TextBlock x:Name="RulesTitleText" VerticalAlignment="Center" FontWeight="SemiBold" Text="匹配规则" />
-                                <Button HorizontalAlignment="Right" Padding="11,4" Content="添加规则" Click="AddRule_Click" />
-                            </Grid>
-                            <TextBlock Margin="0,5,0,8" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                       Text="规则命中任意一条即生效。域名匹配主机名，其余方式匹配完整 HTTPS 图片地址。" />
-                            <ItemsControl ItemsSource="{Binding Rules}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,0,0,7">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="135" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <ComboBox Padding="7,5"
-                                                      ItemsSource="{Binding DataContext.MatchOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                      DisplayMemberPath="DisplayName"
-                                                      SelectedValuePath="Id"
-                                                      SelectedValue="{Binding KindId, Mode=TwoWay}" />
-                                            <TextBox Grid.Column="1" Margin="7,0,0,0" Padding="8,6" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" />
-                                            <Button Grid.Column="2" Margin="7,0,0,0" Padding="9,4" Content="删除" Tag="{Binding}" Click="RemoveRule_Click" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <Border Padding="10" Background="#FFF5F6FB" CornerRadius="6">
-                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
-                                           Text="示例：域名 i.ibb.co；前缀 https://cdn.example.com/；后缀 /cover.png；关键词 avatar；正则 ^https://images\.example\.com/.+\.(png|jpg)$" />
-                            </Border>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+                <TextBlock Margin="0,14,0,0" TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Text="图片链接默认允许加载，支持 HTTP、HTTPS、SVG 和没有文件后缀的图片地址。" />
             </StackPanel>
         </ScrollViewer>
 

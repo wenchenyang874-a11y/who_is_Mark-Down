@@ -35,13 +35,12 @@ public sealed class RemoteImageResolutionTests
     }
 
     [Fact]
-    public void 渲染Markdown_未授权远程图片_保持默认离线()
+    public void 渲染Markdown_默认允许远程图片()
     {
         MarkdownRenderer renderer = new();
 
         string result = renderer.RenderBody("![远程](https://i.ibb.co/demo/image.png)");
 
-        Assert.Contains("data:image/gif;base64,", result, StringComparison.Ordinal);
-        Assert.DoesNotContain("i.ibb.co", result, StringComparison.Ordinal);
+        Assert.Contains("https://i.ibb.co/demo/image.png", result, StringComparison.Ordinal);
     }
 }

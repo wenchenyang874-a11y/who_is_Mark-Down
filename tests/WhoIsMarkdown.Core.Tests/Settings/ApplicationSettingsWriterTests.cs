@@ -88,7 +88,8 @@ public sealed class ApplicationSettingsWriterTests
         Assert.True((await writer.FlushAsync(TestContext.Current.CancellationToken)).Succeeded);
         Assert.Single(store.Load().RecentFiles);
         Assert.Single(store.Load().ShortcutOverrides);
-        Assert.Single(store.Load().ImageInsertion.RemoteImageRules);
+        Assert.Empty(store.Load().ImageInsertion.RemoteImageRules);
+        Assert.Equal(RemoteImageTrustMode.TrustAll, store.Load().ImageInsertion.TrustMode);
         writer.Stop();
     }
 

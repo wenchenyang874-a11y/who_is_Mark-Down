@@ -4,6 +4,18 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.7] - 2026-10-20
+
+### 修复
+
+- 图片链接默认信任，支持 HTTP/HTTPS、远程 SVG、SVG data URI 和没有文件后缀的徽章接口；移除 SVG 图片链路的内容过滤与设置中的黑白名单，升级后旧规则不再阻止图片。
+- 图片查看与另存按远程响应识别实际格式，不再要求 URL 后缀与图片格式相同；本地 SVG 插入保留原内容。
+
+### 诊断
+
+- 日志前移到自定义进程入口，分开记录 WPF 应用构造、全局资源、窗口分配、XAML、控制器、文档绑定、原生窗口、显示和首帧；阶段记录增加 JIT 编译耗时和方法数量。
+- 首次渲染细分队列等待、线程池调度、快照、渲染器/HTML 过滤器/管线初始化、Markdown 解析、HTML 生成/过滤、图片地址与语义块处理；区分浏览器导航开始、DOM 就绪和导航结束。日志增强不等于真实冷启动卡顿已修复。
+
 ## [1.8.6] - 2026-10-19
 
 ### 新增
@@ -369,6 +381,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
 [未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.6...HEAD
+[1.8.7]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.6...v1.8.7
 [1.8.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.5...v1.8.6
 [1.8.5]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.4...v1.8.5
 [1.8.4]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.3...v1.8.4

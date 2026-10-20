@@ -70,7 +70,7 @@ public sealed class MarkdownBlockRenderingTests
         const string markdown = "![image](https://example.com/image.png)";
         RemoteImagePolicy trust = new(RemoteImageTrustMode.TrustAll, null);
         Assert.Contains("https://example.com/image.png", renderer.RenderBody(markdown, null, trust), StringComparison.Ordinal);
-        Assert.DoesNotContain("https://example.com/image.png", renderer.RenderBody(markdown), StringComparison.Ordinal);
+        Assert.DoesNotContain("https://example.com/image.png", renderer.RenderBody(markdown, null, RemoteImagePolicy.BlockAll), StringComparison.Ordinal);
         string path = Path.Combine(Path.GetTempPath(), "document.md");
         Assert.Contains("wimd-document.invalid", renderer.RenderBody("![local](one.png)", path), StringComparison.Ordinal);
         Assert.DoesNotContain("wimd-document.invalid", renderer.RenderBody("![local](one.png)", null), StringComparison.Ordinal);

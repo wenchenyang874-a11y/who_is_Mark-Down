@@ -21,8 +21,8 @@ public partial class App : Application
 
     public App()
     {
-        // Capture the earliest application-owned entry, not just Window.Loaded.
-        // The writer computes the pre-managed launch gap using process metadata.
+        // Program logs before WPF construction. Keep an idempotent fallback for
+        // hosts constructing App directly rather than entering through Main.
         DiagnosticLog.Start();
         DiagnosticLog.Current?.Mark(DiagnosticStage.ApplicationConstructor);
         DispatcherUnhandledException += (_, args) =>
@@ -95,13 +95,14 @@ public partial class App : Application
         UpdateRestartWindowState? state,
         UpdateRestartSessionStore sessionStore)
     {
-        MainWindow window = new(state, sessionStore);
+        MainWindow window = DiagnosticLog.Measure(DiagnosticStage.WindowAllocation,
+            () => new MainWindow(state, sessionStore));
         if (MainWindow is null)
         {
             MainWindow = window;
         }
 
-        window.Show();
+        DiagnosticLog.Measure(DiagnosticStage.WindowShow, window.Show);
     }
 
 }

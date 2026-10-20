@@ -14,7 +14,7 @@ public sealed record ImageInsertionSettings
 
     public string LocalDirectory { get; init; } = LocalImageStorageService.DefaultRelativeDirectory;
 
-    public RemoteImageTrustMode TrustMode { get; init; } = RemoteImageTrustMode.BlockAll;
+    public RemoteImageTrustMode TrustMode { get; init; } = RemoteImageTrustMode.TrustAll;
 
     public IReadOnlyList<string> RemoteImageRules { get; init; } = [];
 
@@ -35,19 +35,9 @@ public sealed record ImageInsertionSettings
             localDirectory = LocalImageStorageService.DefaultRelativeDirectory;
         }
 
-        RemoteImageTrustMode remoteImageTrustMode = Enum.IsDefined(TrustMode)
-            ? TrustMode
-            : RemoteImageTrustMode.BlockAll;
-        IReadOnlyList<string> remoteImageRules;
-        try
-        {
-            remoteImageRules = RemoteImagePolicy.NormalizeRules(RemoteImageRules);
-        }
-        catch (ArgumentException)
-        {
-            remoteImageTrustMode = RemoteImageTrustMode.BlockAll;
-            remoteImageRules = [];
-        }
+        // Product policy changed: old serialized deny/allow lists must not keep
+        // breaking images after upgrading. Keep the fields for JSON compatibility
+        // but normalize them to the single current, unrestricted web-image mode.
 
         string? protectedApiKey = string.IsNullOrWhiteSpace(ProtectedImgBbApiKey)
             || ProtectedImgBbApiKey.Length > 16_384
@@ -58,8 +48,8 @@ public sealed record ImageInsertionSettings
         {
             StorageMode = storageMode,
             LocalDirectory = localDirectory,
-            TrustMode = remoteImageTrustMode,
-            RemoteImageRules = remoteImageRules,
+            TrustMode = RemoteImageTrustMode.TrustAll,
+            RemoteImageRules = [],
             ProtectedImgBbApiKey = protectedApiKey,
         };
     }

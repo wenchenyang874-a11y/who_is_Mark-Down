@@ -11,6 +11,7 @@ namespace WhoIsMarkdown.Core.Markdown;
 /// </summary>
 public sealed class RemoteImagePolicy
 {
+    public static RemoteImagePolicy TrustAll { get; } = new(RemoteImageTrustMode.TrustAll, []);
     public const int MaximumRuleCount = 100;
     public const int MaximumRuleLength = 512;
 
@@ -36,6 +37,11 @@ public sealed class RemoteImagePolicy
     public bool Allows(Uri uri)
     {
         ArgumentNullException.ThrowIfNull(uri);
+        // Compatibility default: web images may use HTTP, HTTPS, custom ports,
+        // redirects, SVG or extensionless endpoints. Do not infer their format
+        // or trust from the URL spelling. Legacy rule objects remain readable.
+        if (Mode == RemoteImageTrustMode.TrustAll)
+            return uri.IsAbsoluteUri && uri.Scheme is "http" or "https";
         if (!uri.IsAbsoluteUri
             || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             || !uri.IsDefaultPort
@@ -69,7 +75,8 @@ public sealed class RemoteImagePolicy
         return Mode switch
         {
             RemoteImageTrustMode.AllowList when compiledRules.Length > 0 => ["https:"],
-            RemoteImageTrustMode.BlockList or RemoteImageTrustMode.TrustAll => ["https:"],
+            RemoteImageTrustMode.TrustAll => ["http:", "https:"],
+            RemoteImageTrustMode.BlockList => ["https:"],
             _ => [],
         };
     }

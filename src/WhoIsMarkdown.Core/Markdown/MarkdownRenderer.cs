@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using Markdig;
 using Markdig.Renderers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using WhoIsMarkdown.Core.Diagnostics;
 
 namespace WhoIsMarkdown.Core.Markdown;
 
@@ -36,10 +38,10 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
             ?? throw new ArgumentNullException(nameof(imageUrlResolver));
         this.htmlSanitizer = htmlSanitizer
             ?? throw new ArgumentNullException(nameof(htmlSanitizer));
-        pipeline = new MarkdownPipelineBuilder()
+        pipeline = CoreOperationTrace.Measure("MarkdownPipelineBuild", () => new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
             .UsePragmaLines()
-            .Build();
+            .Build());
     }
 
     public string RenderBody(
@@ -66,19 +68,21 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
             cancellationToken.ThrowIfCancellationRequested();
             // Always parse the complete document: reference links, abbreviations,
             // footnotes and heading identifiers can depend on later source blocks.
-            MarkdownDocument document = Markdig.Markdown.Parse(markdown, pipeline);
+            MarkdownDocument document = CoreOperationTrace.Measure("MarkdownAstParse",
+                () => Markdig.Markdown.Parse(markdown, pipeline));
             // A parse already executing cannot be interrupted safely, but an old
             // request must not continue into filtering or packaging afterwards.
             cancellationToken.ThrowIfCancellationRequested();
-            if (document.Descendants().Any(IsAuthorHtml))
+            if (CoreOperationTrace.Measure("MarkdownHtmlDetection", () => document.Descendants().Any(IsAuthorHtml)))
             {
                 // HTML may open in one Markdown block and close in another. Never
                 // sanitize such fragments independently or infer balance with regex.
-                string html = Markdig.Markdown.ToHtml(document, pipeline);
+                string html = CoreOperationTrace.Measure("MarkdownHtmlRender", () => Markdig.Markdown.ToHtml(document, pipeline));
                 cancellationToken.ThrowIfCancellationRequested();
-                string safe = htmlSanitizer.Sanitize(html);
+                string safe = CoreOperationTrace.Measure("MarkdownHtmlFilter", () => htmlSanitizer.Sanitize(html));
                 cancellationToken.ThrowIfCancellationRequested();
-                return MarkdownRenderResult.Create([Rewrite(safe)], cancellationToken);
+                string rewritten = CoreOperationTrace.Measure("MarkdownImageResolve", () => Rewrite(safe));
+                return CoreOperationTrace.Measure("MarkdownResultBuild", () => MarkdownRenderResult.Create([rewritten], cancellationToken));
             }
 
             using StringWriter writer = new(System.Globalization.CultureInfo.InvariantCulture);
@@ -90,12 +94,15 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
             // and DOM wrappers; never cut inside a list, table, fence or container.
             int blocksPerFragment = document.Count > 256 ? 32 : 1;
             int pendingBlocks = 0;
+            double htmlMilliseconds = 0, filterMilliseconds = 0, imageMilliseconds = 0;
             foreach (Block block in document)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // Reuse one renderer so extension state and output ordering match
                 // a full-document render, but cache only complete top-level blocks.
+                long htmlStart = Stopwatch.GetTimestamp();
                 renderer.Render(block);
+                htmlMilliseconds += Stopwatch.GetElapsedTime(htmlStart).TotalMilliseconds;
                 if (++pendingBlocks == blocksPerFragment)
                 {
                     FlushFragment();
@@ -104,7 +111,12 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
 
             if (pendingBlocks > 0) FlushFragment();
 
-            return MarkdownRenderResult.Create(safeBlocks, cancellationToken);
+            // Aggregate by phase, not by block: large documents must not enqueue
+            // thousands of diagnostic records during their first render.
+            CoreOperationTrace.Report("MarkdownHtmlRender", htmlMilliseconds);
+            CoreOperationTrace.Report("MarkdownHtmlFilter", filterMilliseconds);
+            CoreOperationTrace.Report("MarkdownImageResolve", imageMilliseconds);
+            return CoreOperationTrace.Measure("MarkdownResultBuild", () => MarkdownRenderResult.Create(safeBlocks, cancellationToken));
 
             void FlushFragment()
             {
@@ -114,9 +126,13 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                 if (!string.IsNullOrWhiteSpace(generated))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    long filterStart = Stopwatch.GetTimestamp();
                     string safe = blockCache.GetOrAdd(generated, htmlSanitizer.Sanitize);
+                    filterMilliseconds += Stopwatch.GetElapsedTime(filterStart).TotalMilliseconds;
                     cancellationToken.ThrowIfCancellationRequested();
+                    long imageStart = Stopwatch.GetTimestamp();
                     safeBlocks.Add(Rewrite(safe));
+                    imageMilliseconds += Stopwatch.GetElapsedTime(imageStart).TotalMilliseconds;
                 }
             }
         }

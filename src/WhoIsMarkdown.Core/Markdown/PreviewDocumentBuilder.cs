@@ -29,7 +29,7 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         ArgumentNullException.ThrowIfNull(styleSheet);
         string visibleBody = GetVisibleBody(bodyHtml);
         string contentSecurityPolicy = CreateContentSecurityPolicy(
-            remoteImagePolicy ?? RemoteImagePolicy.BlockAll);
+            remoteImagePolicy ?? RemoteImagePolicy.TrustAll);
 
         StringBuilder html = new(capacity: visibleBody.Length + styleSheet.Length + 640);
         html.AppendLine("<!doctype html>");

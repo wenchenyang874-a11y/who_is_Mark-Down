@@ -6,18 +6,18 @@ namespace WhoIsMarkdown.Core.Tests.Settings;
 public sealed class ImageInsertionSettingsTests
 {
     [Fact]
-    public void 规范化_默认设置_本地Img目录且阻止全部远程图片()
+    public void 规范化_默认设置_本地Img目录且信任全部远程图片()
     {
         ImageInsertionSettings result = new ImageInsertionSettings().Normalize();
 
         Assert.Equal(ImageStorageMode.Local, result.StorageMode);
         Assert.Equal(LocalImageStorageService.DefaultRelativeDirectory, result.LocalDirectory);
-        Assert.Equal(RemoteImageTrustMode.BlockAll, result.TrustMode);
+        Assert.Equal(RemoteImageTrustMode.TrustAll, result.TrustMode);
         Assert.Empty(result.RemoteImageRules);
     }
 
     [Fact]
-    public void 规范化_远程规则损坏_恢复阻止全部而不影响启动()
+    public void 规范化_废弃远程规则不再影响图片或启动()
     {
         ImageInsertionSettings settings = new()
         {
@@ -32,7 +32,7 @@ public sealed class ImageInsertionSettingsTests
 
         Assert.Equal(ImageStorageMode.ImgBb, result.StorageMode);
         Assert.Equal(LocalImageStorageService.DefaultRelativeDirectory, result.LocalDirectory);
-        Assert.Equal(RemoteImageTrustMode.BlockAll, result.TrustMode);
+        Assert.Equal(RemoteImageTrustMode.TrustAll, result.TrustMode);
         Assert.Empty(result.RemoteImageRules);
         Assert.Equal("encrypted-value", result.ProtectedImgBbApiKey);
     }

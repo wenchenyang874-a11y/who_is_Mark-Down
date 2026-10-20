@@ -1,3 +1,5 @@
+using WhoIsMarkdown.Core.Diagnostics;
+
 namespace WhoIsMarkdown.Core.Markdown;
 
 /// <summary>
@@ -22,11 +24,20 @@ internal sealed class BackgroundWorkQueue : IDisposable
 
         try
         {
-            await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            using (CoreOperationTrace.Start("RenderQueueWait"))
+                await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return await Task.Run(operation, cancellationToken).ConfigureAwait(false);
+                // Measure scheduling separately from execution: a saturated pool
+                // must not be misdiagnosed as slow Markdown parsing.
+                long scheduled = System.Diagnostics.Stopwatch.GetTimestamp();
+                return await Task.Run(() =>
+                {
+                    CoreOperationTrace.Report("RenderThreadPoolWait",
+                        System.Diagnostics.Stopwatch.GetElapsedTime(scheduled).TotalMilliseconds);
+                    return operation();
+                }, cancellationToken).ConfigureAwait(false);
             }
             finally
             {

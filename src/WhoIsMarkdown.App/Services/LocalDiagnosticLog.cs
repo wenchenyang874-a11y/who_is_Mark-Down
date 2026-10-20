@@ -58,6 +58,7 @@ internal sealed class LocalDiagnosticLog
     internal Task Completion => writer;
     internal string? FailureType { get; private set; }
     internal long DroppedEntries => Interlocked.Read(ref dropped);
+    internal DateTimeOffset? ManagedEntryUtc { get; set; }
 
     internal int AllocateWindowId() => Interlocked.Increment(ref nextWindow);
 
@@ -71,7 +72,8 @@ internal sealed class LocalDiagnosticLog
         => Record(stage, DiagnosticOutcome.Failed, window, exception: exception);
 
     internal void Record(DiagnosticStage stage, DiagnosticOutcome outcome, int window = 0,
-        long operation = 0, double? duration = null, long? value = null, Exception? exception = null)
+        long operation = 0, double? duration = null, long? value = null, Exception? exception = null,
+        double? jitMilliseconds = null, long? compiledMethods = null)
     {
         if (Volatile.Read(ref stopped) != 0) return;
         // Deliberately omit Exception.Message/ToString, source file names and
@@ -84,7 +86,8 @@ internal sealed class LocalDiagnosticLog
         DiagnosticEntry entry = new(DateTimeOffset.UtcNow,
             Stopwatch.GetElapsedTime(origin).TotalMilliseconds, stage.ToString(), outcome.ToString(),
             window == 0 ? Context.Value.Window : window, operation, Context.Value.Operation, duration, value, exception?.GetType().FullName, exception?.HResult,
-            exception?.InnerException?.GetType().FullName, exception?.InnerException?.HResult, errorFrames);
+            exception?.InnerException?.GetType().FullName, exception?.InnerException?.HResult, errorFrames,
+            jitMilliseconds, compiledMethods);
         if (!queue.Writer.TryWrite(entry)) Interlocked.Increment(ref dropped);
     }
 
@@ -122,6 +125,9 @@ internal sealed class LocalDiagnosticLog
                         version,
                         started_utc = startedUtc,
                         launch_to_logger_ms = launchToLoggerMs,
+                        managed_entry_utc = ManagedEntryUtc,
+                        process_to_managed_ms = ManagedEntryUtc is { } managed
+                            ? Math.Max(0, (managed - process.StartTime.ToUniversalTime()).TotalMilliseconds) : (double?)null,
                         runtime = Environment.Version.ToString(),
                         processors = Environment.ProcessorCount,
                         timing = "process_elapsed_ms includes pre-managed launch; duration_ms measures host waits, not OS I/O termination",
@@ -139,6 +145,8 @@ internal sealed class LocalDiagnosticLog
                     operation = entry.Operation,
                     parent_operation = entry.ParentOperation,
                     duration_ms = entry.DurationMs,
+                    jit_ms = entry.JitMilliseconds,
+                    compiled_methods = entry.CompiledMethods,
                     value = entry.Value,
                     error_type = entry.ErrorType,
                     hresult = entry.HResult,
@@ -206,7 +214,7 @@ internal sealed class LocalDiagnosticLog
 
     private sealed record DiagnosticEntry(DateTimeOffset Utc, double ElapsedMs, string Stage, string Outcome,
         int Window, long Operation, long ParentOperation, double? DurationMs, long? Value, string? ErrorType, int? HResult,
-        string? InnerErrorType, int? InnerHResult, string? Frames);
+        string? InnerErrorType, int? InnerHResult, string? Frames, double? JitMilliseconds, long? CompiledMethods);
 }
 
 internal sealed class DiagnosticOperation : IDisposable
@@ -217,6 +225,8 @@ internal sealed class DiagnosticOperation : IDisposable
     private readonly long operation;
     private readonly bool onlySlow;
     private readonly long started = Stopwatch.GetTimestamp();
+    private readonly TimeSpan jitStarted = System.Runtime.JitInfo.GetCompilationTime();
+    private readonly long methodsStarted = System.Runtime.JitInfo.GetCompiledMethodCount();
     private readonly (long Operation, int Window) previous;
     private DiagnosticOutcome outcome = DiagnosticOutcome.Abandoned;
     private Exception? error;
@@ -253,7 +263,9 @@ internal sealed class DiagnosticOperation : IDisposable
         // Typing, scroll and mouse events must not produce a log storm. Slow
         // render waits and all failures remain visible; first renders opt out.
         if (!onlySlow || duration >= 500 || outcome == DiagnosticOutcome.Failed)
-            log.Record(stage, outcome, window, operation, duration, exception: error);
+            log.Record(stage, outcome, window, operation, duration, exception: error,
+                jitMilliseconds: Math.Max(0, (System.Runtime.JitInfo.GetCompilationTime() - jitStarted).TotalMilliseconds),
+                compiledMethods: Math.Max(0, System.Runtime.JitInfo.GetCompiledMethodCount() - methodsStarted));
         error = null;
     }
 }
@@ -262,6 +274,15 @@ internal enum DiagnosticOutcome { Point, Started, Succeeded, Failed, Canceled, A
 
 internal enum DiagnosticStage
 {
+    ManagedEntry, ApplicationAllocation, ApplicationResources, ApplicationRunRequested,
+    WindowAllocation, WindowShow, WindowNativeCreated, WindowControllers, WindowDocumentBinding,
+    RenderQueueWait, RenderThreadPoolWait, RenderSnapshot, RendererCreate, HtmlSanitizerCreate,
+    MarkdownPipelineBuild, MarkdownAstParse, MarkdownHtmlDetection, MarkdownHtmlRender,
+    MarkdownHtmlFilter, MarkdownImageResolve, MarkdownResultBuild,
+    PreviewNavigationStarting, PreviewDomContentLoaded,
+    SettingsProjection, ThemeAndFonts, ShortcutBindings, SettingsLayout,
+    DocumentFileBytes, DocumentDecode, DocumentLineEndings, DocumentFileStamp, PreviewContentPrepare,
+    DocumentCharacters, DocumentLines, PreviewBlocks, PreviewBodyCharacters,
     ApplicationConstructor, ApplicationStartup, RestoreSession, CaptureSession, WindowConstructor, WindowXaml,
     WindowLoaded, WindowFirstFrame, StartupContentReady, StartupPreviewDeferred, StartupPreviewReady,
     SettingsLoad, SettingsApply, SettingsWrite, SettingsFlush, BackgroundLoad, BackgroundImport,

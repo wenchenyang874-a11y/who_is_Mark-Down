@@ -67,7 +67,7 @@ internal static class SvgPixelSizeNormalizer
         {
             XmlReaderSettings settings = new()
             {
-                DtdProcessing = DtdProcessing.Prohibit,
+                DtdProcessing = DtdProcessing.Ignore,
                 XmlResolver = null,
                 MaxCharactersInDocument = PreviewImageSaveService.MaximumImageBytes,
             };

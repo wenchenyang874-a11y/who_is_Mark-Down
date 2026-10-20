@@ -60,14 +60,20 @@ public partial class MainWindow : Window
             InitializeComponent();
             xaml?.Succeed();
         }
-        ApplyRestoredWindowPlacement();
-        InitializeAppearanceController();
-        InitializePerformanceMonitor();
-        InitializeScrollSynchronization();
-        DataContext = document;
-        document.StartNew(untitledCounter);
-        Editor.Document = document.EditorDocument;
-        Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
+        DiagnosticLog.Measure(DiagnosticStage.WindowControllers, () =>
+        {
+            ApplyRestoredWindowPlacement();
+            InitializeAppearanceController();
+            InitializePerformanceMonitor();
+            InitializeScrollSynchronization();
+        }, diagnosticWindowId);
+        DiagnosticLog.Measure(DiagnosticStage.WindowDocumentBinding, () =>
+        {
+            DataContext = document;
+            document.StartNew(untitledCounter);
+            Editor.Document = document.EditorDocument;
+            Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
+        }, diagnosticWindowId);
         construction?.Succeed();
     }
 
@@ -266,6 +272,8 @@ public partial class MainWindow : Window
             {
                 document.Load(loadedDocument);
                 ApplyDocumentToEditor();
+                DiagnosticLog.Current?.Mark(DiagnosticStage.DocumentCharacters, diagnosticWindowId, loadedDocument.Text.Length);
+                DiagnosticLog.Current?.Mark(DiagnosticStage.DocumentLines, diagnosticWindowId, Editor.Document.LineCount);
                 apply?.Succeed();
             }
             ApplyFileOpenViewMode();
@@ -435,6 +443,7 @@ public partial class MainWindow : Window
         }
 
         int caretOffset = preserveEditorPosition ? Editor.CaretOffset : 0;
+        detailedRenderGeneration++;
         double verticalOffset = Editor.VerticalOffset;
         double horizontalOffset = Editor.HorizontalOffset;
         if (preserveEditorPosition)
@@ -503,7 +512,11 @@ public partial class MainWindow : Window
         bool forceBodyReplacement,
         CancellationToken cancellationToken)
     {
-        using DiagnosticOperation? rendering = DiagnosticLog.Current?.Begin(DiagnosticStage.PreviewRender, diagnosticWindowId, onlySlow: firstPreviewLogged);
+        long diagnosticGeneration = detailedRenderGeneration;
+        bool detailed = diagnosticGeneration != lastDetailedRenderGeneration;
+        bool previousDetail = CoreDiagnosticBridge.Detailed.Value;
+        CoreDiagnosticBridge.Detailed.Value = detailed;
+        using DiagnosticOperation? rendering = DiagnosticLog.Current?.Begin(DiagnosticStage.PreviewRender, diagnosticWindowId, onlySlow: !detailed);
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, cancellationToken);
@@ -514,10 +527,15 @@ public partial class MainWindow : Window
             EditorTextSnapshot snapshot = document.CaptureSnapshot();
             MarkdownRenderResult rendered = await DiagnosticLog.MeasureAsync(DiagnosticStage.MarkdownParse,
                 () => markdownRenderer.RenderSnapshotAsync(snapshot.ReadText, documentPath, remoteImagePolicy, cancellationToken)
-                    .WaitAsync(cancellationToken), diagnosticWindowId, onlySlow: firstPreviewLogged);
+                    .WaitAsync(cancellationToken), diagnosticWindowId, onlySlow: !detailed);
             cancellationToken.ThrowIfCancellationRequested();
 
             PreviewWebViewService? service = previewService;
+            if (detailed)
+            {
+                DiagnosticLog.Current?.Mark(DiagnosticStage.PreviewBlocks, diagnosticWindowId, rendered.Blocks.Count);
+                DiagnosticLog.Current?.Mark(DiagnosticStage.PreviewBodyCharacters, diagnosticWindowId, rendered.BodyHtml.Length);
+            }
             if (!cancellationToken.IsCancellationRequested
                 && version == previewVersion
                 && service is not null)
@@ -534,6 +552,7 @@ public partial class MainWindow : Window
                     synchronizePreviewToCaretWhenReady,
                     forceBodyReplacement,
                     cancellationToken);
+                lastDetailedRenderGeneration = diagnosticGeneration;
             }
             rendering?.Succeed();
         }
@@ -560,6 +579,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            CoreDiagnosticBridge.Detailed.Value = previousDetail;
             if (version == previewVersion)
             {
                 previewRenderPending = false;

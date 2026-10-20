@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -27,6 +26,7 @@ public sealed class PreviewImageSaveService : IDisposable
         ".gif",
         ".bmp",
         ".webp",
+        ".svg",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = CreateReservedDeviceNames();
@@ -82,7 +82,8 @@ public sealed class PreviewImageSaveService : IDisposable
             throw new PreviewImageSaveException("当前远程图片信任策略不允许保存此地址。");
         }
 
-        string extension = ValidateExtension(Path.GetExtension(uri.AbsolutePath));
+        string urlExtension = Path.GetExtension(uri.AbsolutePath);
+        string extension = SupportedExtensions.Contains(urlExtension) ? urlExtension.ToLowerInvariant() : ".img";
         string sourceName = Uri.UnescapeDataString(Path.GetFileName(uri.AbsolutePath));
         return new PreviewImageSaveSource(
             PreviewImageSourceKind.RemoteHttps,
@@ -93,9 +94,8 @@ public sealed class PreviewImageSaveService : IDisposable
     }
 
     /// <summary>
-    /// Accepts only the base64 SVG emitted by WIMD's trusted Mermaid bridge. This
-    /// path is deliberately separate from Resolve so Markdown-authored SVG data
-    /// URIs and local SVG files remain blocked.
+    /// Accepts base64 SVG emitted by WIMD's Mermaid bridge. Its own output
+    /// contract is checked separately from unrestricted author-provided images.
     /// </summary>
     public PreviewImageSaveSource ResolveGeneratedSvgDataUri(
         string source,
@@ -127,6 +127,14 @@ public sealed class PreviewImageSaveService : IDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+
+        // URL suffixes are only hints. Materialize once and use the response's
+        // actual image encoding for both the viewer and the save dialog.
+        if (source.RequiresNetwork)
+        {
+            (byte[] bytes, string extension) = await MaterializeRemoteAsync(source, cancellationToken).ConfigureAwait(false);
+            return await SaveBytesAsync(bytes, extension, targetPath, cancellationToken).ConfigureAwait(false);
+        }
 
         string target = Path.GetFullPath(targetPath);
         string targetExtension = Path.GetExtension(target);
@@ -209,6 +217,15 @@ public sealed class PreviewImageSaveService : IDisposable
             throw new PreviewImageSaveException("图片查看器缓存目录不能是符号链接或目录联接。");
         }
 
+        if (source.RequiresNetwork)
+        {
+            (byte[] bytes, string extension) = await MaterializeRemoteAsync(source, cancellationToken).ConfigureAwait(false);
+            string name = CreateSuggestedFileName(source.SuggestedFileName, null, extension);
+            string remoteTarget = Path.Combine(directory, name);
+            await SaveBytesAsync(bytes, extension, remoteTarget, cancellationToken).ConfigureAwait(false);
+            return new PreparedPreviewImage(remoteTarget, extension, name, isSourceSvg: extension == ".svg");
+        }
+
         string targetPath = Path.Combine(directory, source.SuggestedFileName);
         await SaveAsync(source, targetPath, cancellationToken).ConfigureAwait(false);
         return new PreparedPreviewImage(
@@ -216,7 +233,7 @@ public sealed class PreviewImageSaveService : IDisposable
             source.Extension,
             source.SuggestedFileName,
             source.Kind is PreviewImageSourceKind.GeneratedSvg,
-            source.Kind is PreviewImageSourceKind.LocalSvg);
+            source.Extension == ".svg" && source.Kind is not PreviewImageSourceKind.GeneratedSvg);
     }
 
     /// <summary>
@@ -252,23 +269,9 @@ public sealed class PreviewImageSaveService : IDisposable
             extension = Path.GetExtension(preparedPath).Equals(".svg", StringComparison.OrdinalIgnoreCase)
                 ? ".svg"
                 : throw new PreviewImageSaveException("图片查看器中的 SVG 类型已改变。");
-            if (preparedImage.IsGeneratedSvg)
-            {
-                ValidateGeneratedSvg(await File.ReadAllBytesAsync(preparedPath, cancellationToken)
-                    .ConfigureAwait(false));
-            }
-            else
-            {
-                try
-                {
-                    await SafeSvgSanitizer.SanitizeFileAsync(preparedPath, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (SafeSvgException exception)
-                {
-                    throw new PreviewImageSaveException("图片查看器中的 SVG 未通过安全复检。", exception);
-                }
-            }
+            // Preserve author SVG content. Cache existence/type/size checks above
+            // protect file operations, not a content allowlist. Chromium displays
+            // the resulting SVG as an image, never as a navigable document.
         }
         else
         {
@@ -299,7 +302,7 @@ public sealed class PreviewImageSaveService : IDisposable
             preparedImage,
             cancellationToken).ConfigureAwait(false);
         PreviewImageSaveSource source = new(
-            preparedImage.IsSanitizedSvg
+            preparedImage.IsSourceSvg
                 ? PreviewImageSourceKind.LocalSvg
                 : PreviewImageSourceKind.LocalFile,
             preparedPath,
@@ -405,22 +408,22 @@ public sealed class PreviewImageSaveService : IDisposable
         string? alternativeText)
     {
         int separator = source.IndexOf(',');
-        if (separator <= 0)
-        {
-            throw new PreviewImageSaveException("内嵌图片数据格式无效。");
-        }
-
+        if (separator <= 0) throw new PreviewImageSaveException("内嵌图片地址无效。");
         string header = source[..separator];
-        string extension = header.ToLowerInvariant() switch
+        string mediaType = header.Split(';')[0].ToLowerInvariant();
+        string extension = mediaType switch
         {
-            "data:image/png;base64" => ".png",
-            "data:image/jpeg;base64" => ".jpg",
-            "data:image/gif;base64" => ".gif",
-            "data:image/bmp;base64" => ".bmp",
-            "data:image/webp;base64" => ".webp",
-            _ => throw new PreviewImageSaveException("仅支持保存 PNG、JPEG、GIF、BMP 和 WebP 图片。"),
+            "data:image/png" => ".png",
+            "data:image/jpeg" => ".jpg",
+            "data:image/gif" => ".gif",
+            "data:image/bmp" => ".bmp",
+            "data:image/webp" => ".webp",
+            "data:image/svg+xml" => ".svg",
+            _ => throw new PreviewImageSaveException("无法识别内嵌图片的格式。"),
         };
         string payload = source[(separator + 1)..];
+        if (!header.Contains(";base64", StringComparison.OrdinalIgnoreCase))
+            payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(Uri.UnescapeDataString(payload)));
         long estimatedBytes = ((long)payload.Length + 3) / 4 * 3;
         if (payload.Length == 0 || estimatedBytes > MaximumImageBytes)
         {
@@ -516,21 +519,11 @@ public sealed class PreviewImageSaveService : IDisposable
                 break;
 
             case PreviewImageSourceKind.LocalSvg:
-                try
-                {
-                    SafeSvgSanitizationResult safeSvg = await SafeSvgSanitizer.SanitizeFileAsync(
-                        source.Value,
-                        cancellationToken).ConfigureAwait(false);
-                    await WriteVectorAsync(safeSvg.Bytes, destination, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (SafeSvgException exception)
-                {
-                    throw new PreviewImageSaveException(
-                        $"SVG 无法通过安全静态过滤：{exception.Message}",
-                        exception);
-                }
-
+                if (new FileInfo(source.Value).Length is <= 0 or > MaximumImageBytes)
+                    throw new PreviewImageSaveException("预览图片为空或超过 32 MB，无法保存。");
+                await WriteVectorAsync(
+                    await File.ReadAllBytesAsync(source.Value, cancellationToken).ConfigureAwait(false),
+                    destination, cancellationToken).ConfigureAwait(false);
                 break;
 
             case PreviewImageSourceKind.GeneratedSvg:
@@ -541,7 +534,10 @@ public sealed class PreviewImageSaveService : IDisposable
                 break;
 
             case PreviewImageSourceKind.DataUri:
-                await WriteDataUriAsync(source.Value, destination, cancellationToken).ConfigureAwait(false);
+                if (source.Extension == ".svg")
+                    await WriteVectorAsync(DecodeDataUriBytes(source.Value), destination, cancellationToken).ConfigureAwait(false);
+                else
+                    await WriteDataUriAsync(source.Value, destination, cancellationToken).ConfigureAwait(false);
                 break;
 
             case PreviewImageSourceKind.RemoteHttps:
@@ -554,7 +550,7 @@ public sealed class PreviewImageSaveService : IDisposable
     }
 
     /// <summary>
-    /// Writes a sanitized SVG after resolving its own pixel size.
+    /// Writes an SVG after resolving its pixel size, without filtering its content.
     ///
     /// The size has to be baked in here rather than by each consumer: an image element
     /// cannot read the vector's viewBox back, and Chromium reports its 300x150 default
@@ -567,8 +563,17 @@ public sealed class PreviewImageSaveService : IDisposable
         Stream destination,
         CancellationToken cancellationToken)
     {
-        byte[] sized = SvgPixelSizeNormalizer.Apply(svgBytes).Bytes;
+        byte[] sized = NormalizeSvgSize(svgBytes);
         await destination.WriteAsync(sized, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static byte[] NormalizeSvgSize(byte[] svgBytes)
+    {
+        // Sizing is a display aid, never an admission test for author SVG. A valid
+        // browser SVG may use XML constructs our small size reader does not know;
+        // preserve its bytes rather than turning that limitation into a block.
+        try { return SvgPixelSizeNormalizer.Apply(svgBytes).Bytes; }
+        catch (PreviewImageSaveException) { return svgBytes; }
     }
 
     private static async Task WriteDataUriAsync(
@@ -698,7 +703,7 @@ public sealed class PreviewImageSaveService : IDisposable
         return false;
     }
 
-    private async Task DownloadRemoteAsync(
+    private async Task<string> DownloadRemoteAsync(
         PreviewImageSaveSource source,
         Stream destination,
         CancellationToken cancellationToken)
@@ -739,41 +744,59 @@ public sealed class PreviewImageSaveService : IDisposable
                     $"远程图片下载失败（HTTP {(int)response.StatusCode}）。");
             }
 
-            ValidateRemoteResponse(response.Content.Headers, source.Extension);
+            if (response.Content.Headers.ContentLength is <= 0 or > MaximumImageBytes)
+                throw new PreviewImageSaveException("远程图片为空或超过 32 MB，无法保存。");
+            string extension = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() switch
+            {
+                "image/png" => ".png",
+                "image/jpeg" => ".jpg",
+                "image/gif" => ".gif",
+                "image/bmp" or "image/x-ms-bmp" => ".bmp",
+                "image/webp" => ".webp",
+                "image/svg+xml" => ".svg",
+                _ => source.Extension,
+            };
             await using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken)
                 .ConfigureAwait(false);
             await CopyWithLimitAsync(input, destination, cancellationToken).ConfigureAwait(false);
-            return;
+            return extension;
         }
+        throw new PreviewImageSaveException("远程图片重定向次数过多。");
     }
 
-    private static void ValidateRemoteResponse(HttpContentHeaders headers, string extension)
+    private async Task<(byte[] Bytes, string Extension)> MaterializeRemoteAsync(
+        PreviewImageSaveSource source, CancellationToken cancellationToken)
     {
-        if (headers.ContentLength is <= 0 or > MaximumImageBytes)
+        using MemoryStream destination = new();
+        string extension;
+        try
         {
-            throw new PreviewImageSaveException("远程图片为空或超过 32 MB，无法保存。");
+            extension = await DownloadRemoteAsync(source, destination, cancellationToken).ConfigureAwait(false);
         }
-
-        string? mediaType = headers.ContentType?.MediaType;
-        bool mediaTypeMatches = extension.ToLowerInvariant() switch
+        catch (HttpRequestException exception)
         {
-            ".png" => MediaTypeEquals(mediaType, "image/png"),
-            ".jpg" or ".jpeg" => MediaTypeEquals(mediaType, "image/jpeg"),
-            ".gif" => MediaTypeEquals(mediaType, "image/gif"),
-            ".bmp" => MediaTypeEquals(mediaType, "image/bmp")
-                || MediaTypeEquals(mediaType, "image/x-ms-bmp"),
-            ".webp" => MediaTypeEquals(mediaType, "image/webp"),
-            _ => false,
-        };
-        if (!mediaTypeMatches)
-        {
-            throw new PreviewImageSaveException("远程服务器返回的内容类型与图片扩展名不一致。");
+            throw new PreviewImageSaveException("远程图片下载失败，请检查网络连接。", exception);
         }
-    }
-
-    private static bool MediaTypeEquals(string? value, string expected)
-    {
-        return value?.Equals(expected, StringComparison.OrdinalIgnoreCase) == true;
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new PreviewImageSaveException("远程图片下载超时。", exception);
+        }
+        byte[] bytes = destination.ToArray();
+        // Some badge/CDN endpoints omit a useful Content-Type as well as a suffix.
+        // Sniff common image signatures only for naming; never reject SVG elements.
+        if (extension == ".img")
+        {
+            extension = bytes.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71 }) ? ".png"
+                : bytes.AsSpan().StartsWith(new byte[] { 255, 216, 255 }) ? ".jpg"
+                : bytes.AsSpan().StartsWith("GIF8"u8) ? ".gif"
+                : bytes.AsSpan().StartsWith("BM"u8) ? ".bmp"
+                : bytes.Length >= 12 && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8) ? ".webp"
+                : System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 16384))
+                    .Contains("<svg", StringComparison.OrdinalIgnoreCase) ? ".svg"
+                : throw new PreviewImageSaveException("服务器没有返回可识别的图片格式。");
+        }
+        if (extension == ".svg") bytes = NormalizeSvgSize(bytes);
+        return (bytes, extension);
     }
 
     private static async Task CopyWithLimitAsync(
@@ -811,7 +834,7 @@ public sealed class PreviewImageSaveService : IDisposable
     {
         if (!SupportedExtensions.Contains(extension))
         {
-            throw new PreviewImageSaveException("仅支持保存 PNG、JPEG、GIF、BMP 和 WebP 图片。");
+            throw new PreviewImageSaveException("仅支持保存 PNG、JPEG、GIF、BMP、WebP 和 SVG 图片。");
         }
 
         return extension.ToLowerInvariant();

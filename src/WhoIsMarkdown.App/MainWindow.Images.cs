@@ -44,8 +44,8 @@ public partial class MainWindow
         {
             MessageBoxResult choice = MessageBox.Show(
                 this,
-                "SVG 只支持经过安全过滤后保存到当前文档的本地图片目录，不会上传到 ImgBB。是否继续本地插入？",
-                "安全插入 SVG",
+                "ImgBB 不支持 SVG，将原样保存到当前文档的本地图片目录。是否继续？",
+                "插入 SVG",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information,
                 MessageBoxResult.Yes);
@@ -162,7 +162,7 @@ public partial class MainWindow
         bool isSvg = Path.GetExtension(sourcePath).Equals(
             ".svg",
             StringComparison.OrdinalIgnoreCase);
-        UpdateStatus(isSvg ? "正在安全过滤并保存 SVG…" : "正在保存图片…");
+        UpdateStatus("正在保存图片…");
         StoredLocalImage image = await LocalImageStorageService.StoreFileAsync(
             document.FilePath!,
             applicationSettings.ImageInsertion.LocalDirectory,
@@ -170,7 +170,7 @@ public partial class MainWindow
             cancellationToken);
         InsertMarkdownImage(MarkdownImageFormatter.CreateLocal(altText, image.MarkdownPath));
         UpdateStatus(isSvg
-            ? $"SVG 已按安全静态模式保存到 {image.MarkdownPath}"
+            ? $"SVG 已保存到 {image.MarkdownPath}"
             : $"图片已保存到 {image.MarkdownPath}");
     }
 

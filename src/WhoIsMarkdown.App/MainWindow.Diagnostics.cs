@@ -15,6 +15,8 @@ public partial class MainWindow
     private readonly int diagnosticWindowId = DiagnosticLog.Current?.AllocateWindowId() ?? 0;
     private bool firstPreviewLogged;
     private bool firstFrameLogged;
+    private long detailedRenderGeneration = 1;
+    private long lastDetailedRenderGeneration;
 
     protected override void OnContentRendered(EventArgs e)
     {
