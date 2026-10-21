@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.IO;
@@ -62,6 +63,7 @@ public partial class PreviewImageWindow : Window
           const clampScale = value => Math.min(maximumScale, Math.max(minimumScale, value));
           const notify = () => window.chrome.webview.postMessage({
             type: 'viewer-state',
+            loadId: Number(document.documentElement.dataset.wimdLoadId),
             zoomPercent: Math.round(scale * 100),
             width: image?.naturalWidth || 0,
             height: image?.naturalHeight || 0
@@ -116,16 +118,27 @@ public partial class PreviewImageWindow : Window
             image = document.getElementById('image');
             image.draggable = false;
             image.addEventListener('dragstart', event => event.preventDefault());
+            const reportDecoded = () => {
+              if (!image.naturalWidth || !image.naturalHeight) { reportError(); return; }
+              const state = type => ({ type, loadId: Number(document.documentElement.dataset.wimdLoadId) });
+              window.chrome.webview.postMessage(state('viewer-decoded'));
+              requestAnimationFrame(() => requestAnimationFrame(() => window.chrome.webview.postMessage(state('viewer-ready'))));
+            };
+            const reportError = () => window.chrome.webview.postMessage({ type: 'viewer-error', loadId: Number(document.documentElement.dataset.wimdLoadId) });
+            image.addEventListener('error', reportError);
             // Bug fix 2: a viewer-cache image commonly completes before
             // DOMContentLoaded, and a 'load' listener registered afterwards never
             // fires. Detect that case up front, otherwise the viewer stays at 100%
             // in the top-left corner.
             if (image.complete && image.naturalWidth > 0) {
               fitAfterLayout();
+              reportDecoded();
+            } else if (image.complete) {
+              reportError();
             } else {
               image.addEventListener('load', fitAfterLayout, { once: true });
+              image.addEventListener('load', reportDecoded, { once: true });
             }
-            image.addEventListener('error', () => window.chrome.webview.postMessage({ type: 'viewer-error' }));
 
             viewport.addEventListener('wheel', event => {
               event.preventDefault();
@@ -178,7 +191,18 @@ public partial class PreviewImageWindow : Window
         })();
         """;
 
-    private PreparedPreviewImage preparedImage;
+    private PreparedPreviewImage? preparedImage;
+    private TaskCompletionSource<bool> imageReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private long imageLoadVersion = 1;
+    private long diagnosticParent;
+    private int diagnosticWindow;
+    private long imageStarted = Stopwatch.GetTimestamp();
+    private long navigationStarted;
+    private long readyTimestamp;
+    private ulong navigationId;
+    private bool firstFrameLogged;
+    private bool waitingForMaterialization;
+    private bool imageDecoded;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly PreviewNavigationGate navigationGate = new();
 
@@ -207,12 +231,19 @@ public partial class PreviewImageWindow : Window
     private bool initializationFailed;
     private bool closed;
 
-    public PreviewImageWindow(PreparedPreviewImage preparedImage, string? alternativeText)
+    public PreviewImageWindow(PreparedPreviewImage preparedImage, string? alternativeText) : this(alternativeText)
     {
         this.preparedImage = preparedImage ?? throw new ArgumentNullException(nameof(preparedImage));
+        ApplyImageIdentity(alternativeText);
+    }
+
+    internal PreviewImageWindow(string? alternativeText)
+    {
         InitializeComponent();
         ApplyImageIdentity(alternativeText);
         Loaded += Window_Loaded;
+        ContentRendered += Viewer_ContentRendered;
+        StateChanged += Viewer_StateChanged;
     }
 
     /// <summary>
@@ -221,7 +252,65 @@ public partial class PreviewImageWindow : Window
     /// </summary>
     public event EventHandler<PreviewImageExportRequestedEventArgs>? ExportRequested;
 
-    public PreparedPreviewImage PreparedImage => preparedImage;
+    public PreparedPreviewImage PreparedImage => preparedImage ?? throw new InvalidOperationException("图片仍在加载。");
+
+    internal PreparedPreviewImage? PreparedImageOrNull => preparedImage;
+
+    /// <summary>
+    /// Show before disk/network work. Reject messages from the old page as soon as
+    /// the new request starts, so stale pixels cannot enable saving the wrong image.
+    /// </summary>
+    internal void BeginLoading(string? alternativeText, int window, long parent)
+    {
+        diagnosticWindow = window; diagnosticParent = parent;
+        waitingForMaterialization = true;
+        imageStarted = Stopwatch.GetTimestamp();
+        ResetReadiness();
+        exportOptions = [];
+        ApplyImageIdentity(alternativeText);
+        ResetViewerState();
+    }
+
+    internal Task WaitForImageReadyAsync(CancellationToken cancellationToken) =>
+        imageReady.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+
+    internal double ReadyDispatchMilliseconds => readyTimestamp == 0 ? 0 : Stopwatch.GetElapsedTime(readyTimestamp).TotalMilliseconds;
+
+    internal void ReportLoadFailure(Exception exception)
+    {
+        DimensionsText.Text = "图片加载失败";
+        imageReady.TrySetException(exception);
+        _ = imageReady.Task.Exception;
+    }
+
+    private void ResetReadiness()
+    {
+        imageLoadVersion++;
+        imageDecoded = false;
+        readyTimestamp = 0;
+        imageReady.TrySetCanceled();
+        imageReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private void Viewer_ContentRendered(object? sender, EventArgs args)
+    {
+        if (firstFrameLogged) return;
+        firstFrameLogged = true;
+        RecordViewer(DiagnosticStage.ImageViewerWindowFirstFrame, Stopwatch.GetElapsedTime(imageStarted).TotalMilliseconds);
+    }
+
+    private void Viewer_StateChanged(object? sender, EventArgs args)
+    {
+        // Chromium can suspend animation frames while minimized. Decoded data is
+        // usable, but do not claim it has been presented or time out a healthy load.
+        if (WindowState != WindowState.Minimized || !imageDecoded || imageReady.Task.IsCompleted) return;
+        readyTimestamp = Stopwatch.GetTimestamp();
+        RecordViewer(DiagnosticStage.ImageViewerRenderDeferred, Stopwatch.GetElapsedTime(imageStarted).TotalMilliseconds);
+        imageReady.TrySetResult(true);
+    }
+
+    private void RecordViewer(DiagnosticStage stage, double? duration = null, DiagnosticOutcome outcome = DiagnosticOutcome.Point) =>
+        DiagnosticLog.Current?.Record(stage, outcome, diagnosticWindow, duration: duration, parentOperation: diagnosticParent);
 
     /// <summary>
     /// Publishes the save-as entries for the displayed image. Called whenever the
@@ -260,11 +349,19 @@ public partial class PreviewImageWindow : Window
             return null;
         }
 
-        PreparedPreviewImage previous = preparedImage;
+        PreparedPreviewImage? previous = preparedImage;
         preparedImage = image;
+        // BeginLoading already owns the pending completion. Materialization is
+        // another phase of that same request, not a replacement that cancels waiters.
+        if (!waitingForMaterialization)
+        {
+            imageStarted = Stopwatch.GetTimestamp();
+            ResetReadiness();
+        }
+        waitingForMaterialization = false;
         ApplyImageIdentity(alternativeText);
 
-        if (core is null)
+        if (core is null || !initialized)
         {
             // Initialization is still running. The first navigation reads
             // preparedImage, so it already renders this newest image.
@@ -292,9 +389,15 @@ public partial class PreviewImageWindow : Window
         lifetimeCancellation.Cancel();
         lifetimeCancellation.Dispose();
         Loaded -= Window_Loaded;
+        ContentRendered -= Viewer_ContentRendered;
+        StateChanged -= Viewer_StateChanged;
+        imageReady.TrySetCanceled();
+        RecordViewer(DiagnosticStage.ImageViewerClosed);
         if (core is not null)
         {
             core.NavigationStarting -= Core_NavigationStarting;
+            core.NavigationCompleted -= Core_NavigationCompleted;
+            core.DOMContentLoaded -= Core_DomContentLoaded;
             core.NewWindowRequested -= Core_NewWindowRequested;
             core.WebMessageReceived -= Core_WebMessageReceived;
             core.ContextMenuRequested -= Core_ContextMenuRequested;
@@ -323,16 +426,16 @@ public partial class PreviewImageWindow : Window
         try
         {
             CancellationToken cancellationToken = lifetimeCancellation.Token;
-            CoreWebView2Environment environment = await WebView2EnvironmentProvider.GetAsync(
-                WebView2UserDataFolder.Resolve(), cancellationToken);
+            CoreWebView2Environment environment = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageViewerEnvironment,
+                () => WebView2EnvironmentProvider.GetAsync(WebView2UserDataFolder.Resolve(), cancellationToken), diagnosticWindow);
             if (closed)
             {
                 return;
             }
 
             phase = "图片控件";
-            await ImageWebView.EnsureCoreWebView2Async(environment)
-                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageViewerControl, () => ImageWebView.EnsureCoreWebView2Async(environment)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken), diagnosticWindow);
 
             // The window can be closed while the environment is still starting.
             if (closed)
@@ -347,8 +450,8 @@ public partial class PreviewImageWindow : Window
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsWebMessageEnabled = true;
             phase = "宿主脚本注册";
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(ViewerInteractionScript)
-                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageViewerScripts, () => core.AddScriptToExecuteOnDocumentCreatedAsync(ViewerInteractionScript)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken), diagnosticWindow);
             // Closing during registration must not reattach callbacks to a dead view.
             if (closed)
             {
@@ -356,6 +459,8 @@ public partial class PreviewImageWindow : Window
             }
 
             core.NavigationStarting += Core_NavigationStarting;
+            core.NavigationCompleted += Core_NavigationCompleted;
+            core.DOMContentLoaded += Core_DomContentLoaded;
             core.NewWindowRequested += Core_NewWindowRequested;
             core.WebMessageReceived += Core_WebMessageReceived;
             // Default context menus stay enabled: WIMD replaces the entries through the
@@ -364,7 +469,7 @@ public partial class PreviewImageWindow : Window
             core.ContextMenuRequested += Core_ContextMenuRequested;
 
             phase = "图片导航";
-            NavigateToPreparedImage();
+            if (preparedImage is not null && !waitingForMaterialization) NavigateToPreparedImage();
             initialized = true;
             initialization?.Succeed();
         }
@@ -379,6 +484,8 @@ public partial class PreviewImageWindow : Window
             if (closed) return;
             initializationFailed = true;
             DimensionsText.Text = $"图片加载失败（{phase}）：{exception.Message}";
+            imageReady.TrySetException(exception);
+            _ = imageReady.Task.Exception;
         }
     }
 
@@ -388,7 +495,7 @@ public partial class PreviewImageWindow : Window
     /// </summary>
     private void NavigateToPreparedImage()
     {
-        if (core is null)
+        if (core is null || preparedImage is null)
         {
             return;
         }
@@ -409,6 +516,9 @@ public partial class PreviewImageWindow : Window
 
         viewerHostName = hostName;
         ResetViewerState();
+        navigationStarted = Stopwatch.GetTimestamp();
+        navigationId = 0;
+        RecordViewer(DiagnosticStage.ImageViewerNavigation, outcome: DiagnosticOutcome.Started);
         navigationGate.BeginGeneratedNavigation();
         core.NavigateToString(BuildViewerDocument(hostName));
     }
@@ -423,7 +533,7 @@ public partial class PreviewImageWindow : Window
     private void ApplyImageIdentity(string? alternativeText)
     {
         string displayName = string.IsNullOrWhiteSpace(alternativeText)
-            ? Path.GetFileNameWithoutExtension(preparedImage.SuggestedFileName)
+            ? Path.GetFileNameWithoutExtension(preparedImage?.SuggestedFileName ?? "图片")
             : alternativeText.Trim();
         ImageNameText.Text = displayName;
         Title = $"{displayName} - WIMD 图片预览";
@@ -431,12 +541,12 @@ public partial class PreviewImageWindow : Window
 
     private string BuildViewerDocument(string hostName)
     {
-        string fileName = Uri.EscapeDataString(Path.GetFileName(preparedImage.FilePath));
+        string fileName = Uri.EscapeDataString(Path.GetFileName(PreparedImage.FilePath));
         string source = $"https://{hostName}/{fileName}";
         string title = WebUtility.HtmlEncode(ImageNameText.Text);
         return $$"""
             <!doctype html>
-            <html lang="zh-CN">
+            <html lang="zh-CN" data-wimd-load-id="{{imageLoadVersion}}">
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -481,6 +591,20 @@ public partial class PreviewImageWindow : Window
         {
             eventArgs.Cancel = true;
         }
+        else navigationId = eventArgs.NavigationId;
+    }
+
+    private void Core_DomContentLoaded(object? sender, CoreWebView2DOMContentLoadedEventArgs args)
+    {
+        if (args.NavigationId == navigationId) RecordViewer(DiagnosticStage.ImageViewerDomReady, Stopwatch.GetElapsedTime(navigationStarted).TotalMilliseconds);
+    }
+
+    private void Core_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+    {
+        if (args.NavigationId != navigationId) return;
+        RecordViewer(DiagnosticStage.ImageViewerNavigation, Stopwatch.GetElapsedTime(navigationStarted).TotalMilliseconds,
+            args.IsSuccess ? DiagnosticOutcome.Succeeded : DiagnosticOutcome.Failed);
+        if (!args.IsSuccess) ReportLoadFailure(new IOException($"图片页面加载失败：{args.WebErrorStatus}"));
     }
 
     private static void Core_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs eventArgs)
@@ -494,12 +618,31 @@ public partial class PreviewImageWindow : Window
         {
             using JsonDocument message = JsonDocument.Parse(eventArgs.WebMessageAsJson);
             JsonElement root = message.RootElement;
+            if (!root.TryGetProperty("loadId", out JsonElement loadElement) || !loadElement.TryGetInt64(out long loadId) || loadId != imageLoadVersion) return;
             string? type = root.TryGetProperty("type", out JsonElement typeElement)
                 ? typeElement.GetString()
                 : null;
             if (type == "viewer-error")
             {
                 DimensionsText.Text = "图片加载失败";
+                RecordViewer(DiagnosticStage.ImageViewerDecoded, outcome: DiagnosticOutcome.Failed);
+                imageReady.TrySetException(new IOException("图片解码失败。"));
+                _ = imageReady.Task.Exception;
+                return;
+            }
+
+            if (type == "viewer-decoded")
+            {
+                imageDecoded = true;
+                RecordViewer(DiagnosticStage.ImageViewerDecoded, Stopwatch.GetElapsedTime(navigationStarted).TotalMilliseconds);
+                Viewer_StateChanged(this, EventArgs.Empty);
+                return;
+            }
+            if (type == "viewer-ready")
+            {
+                readyTimestamp = Stopwatch.GetTimestamp();
+                RecordViewer(DiagnosticStage.ImageViewerFrameReady, Stopwatch.GetElapsedTime(imageStarted).TotalMilliseconds);
+                imageReady.TrySetResult(true);
                 return;
             }
 
@@ -614,8 +757,11 @@ public partial class PreviewImageWindow : Window
         }
     }
 
-    private void RequestExport(PreviewImageExportFormat format) =>
-        ExportRequested?.Invoke(this, new PreviewImageExportRequestedEventArgs(preparedImage, format));
+    private void RequestExport(PreviewImageExportFormat format)
+    {
+        if (preparedImage is not null && imageReady.Task.Status == TaskStatus.RanToCompletion)
+            ExportRequested?.Invoke(this, new PreviewImageExportRequestedEventArgs(preparedImage, format));
+    }
 
     private async Task ExecuteViewerCommandAsync(string command)
     {

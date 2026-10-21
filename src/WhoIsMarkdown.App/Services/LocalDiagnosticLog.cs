@@ -73,7 +73,7 @@ internal sealed class LocalDiagnosticLog
 
     internal void Record(DiagnosticStage stage, DiagnosticOutcome outcome, int window = 0,
         long operation = 0, double? duration = null, long? value = null, Exception? exception = null,
-        double? jitMilliseconds = null, long? compiledMethods = null)
+        double? jitMilliseconds = null, long? compiledMethods = null, long? parentOperation = null)
     {
         if (Volatile.Read(ref stopped) != 0) return;
         // Deliberately omit Exception.Message/ToString, source file names and
@@ -85,7 +85,7 @@ internal sealed class LocalDiagnosticLog
                 .Select(method => method!.DeclaringType?.FullName + "." + method.Name));
         DiagnosticEntry entry = new(DateTimeOffset.UtcNow,
             Stopwatch.GetElapsedTime(origin).TotalMilliseconds, stage.ToString(), outcome.ToString(),
-            window == 0 ? Context.Value.Window : window, operation, Context.Value.Operation, duration, value, exception?.GetType().FullName, exception?.HResult,
+            window == 0 ? Context.Value.Window : window, operation, parentOperation ?? Context.Value.Operation, duration, value, exception?.GetType().FullName, exception?.HResult,
             exception?.InnerException?.GetType().FullName, exception?.InnerException?.HResult, errorFrames,
             jitMilliseconds, compiledMethods);
         if (!queue.Writer.TryWrite(entry)) Interlocked.Increment(ref dropped);
@@ -120,6 +120,7 @@ internal sealed class LocalDiagnosticLog
                     await WriteLineAsync(output, new
                     {
                         schema = 1,
+                        image_pipeline_revision = 2,
                         session,
                         pid = Environment.ProcessId,
                         version,
@@ -219,6 +220,7 @@ internal sealed class LocalDiagnosticLog
 
 internal sealed class DiagnosticOperation : IDisposable
 {
+    internal long Id => operation;
     private readonly LocalDiagnosticLog log;
     private readonly DiagnosticStage stage;
     private readonly int window;
@@ -290,6 +292,19 @@ internal enum DiagnosticStage
     PreviewInitialize, PreviewResources, WebViewEnvironment, WebViewControl, WebViewScripts,
     PreviewRender, MarkdownParse, PreviewDelivery, PreviewReady, PreviewNavigation, MermaidRender, BrowserProcessFailed,
     ImageInsert, ImagePrepare, ImageUpload, ImageViewer, ImageViewerInitialize, ImageExport, PdfExport,
+    ImageRequestReceived, ImageRequestOrigin, ImageSourceKind, ImageSourceResolve, ImageContextTarget,
+    ImageCacheLookup, ImageCacheHit, ImageCacheMiss, ImageCacheCapture, ImageCacheCaptureSkipped,
+    ImageCacheWaitExpired, ImageViewerApply, ImageViewerReadyDispatch,
+    ImageViewerRenderDeferred,
+    ImageCacheIdentity,
+    ImageHttpTimeout,
+    ImageCacheResponseStream, ImageCacheResponseRead, ImageCacheStored, ImageCacheEvicted, ImageCacheCleared,
+    ImageCacheDirectory, ImageCacheWrite, ImageCacheFlush, ImageCachePublish, ImageCacheBytes,
+    ImageHttpHeaders, ImageHttpStatus, ImageHttpRedirect, ImageResponseStream, ImageDownloadBody,
+    ImageFormatDetect, ImageVectorNormalize, ImageSourceCopy, ImageStreamRead, ImageStreamWrite, ImageBytes,
+    ImageViewerAllocation, ImageViewerShow, ImageViewerWindowFirstFrame, ImageViewerEnvironment,
+    ImageViewerControl, ImageViewerScripts, ImageViewerNavigation, ImageViewerDomReady,
+    ImageViewerDecoded, ImageViewerFrameReady, ImageViewerReady, ImageViewerSuperseded, ImageViewerClosed,
     WorkspaceOpen, WorkspaceRefresh, WorkspaceExpand, WorkspaceCreateFile, WorkspaceCreateDirectory,
     WorkspaceRename, WorkspaceDelete, UpdateCheck, UpdateDownload, UpdateInstall,
     TaskToggle, CodeCopy, ExternalLink, OpenNewWindow, OpenLogDirectory, HostScriptWait,

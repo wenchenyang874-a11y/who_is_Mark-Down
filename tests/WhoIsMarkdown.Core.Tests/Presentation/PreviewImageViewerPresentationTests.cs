@@ -9,6 +9,34 @@ namespace WhoIsMarkdown.Core.Tests.Presentation;
 public sealed class PreviewImageViewerPresentationTests
 {
     [Fact]
+    public void 预览图片_包含超链接_鼠标和键盘不拦截原生链接行为()
+    {
+        string previewCode = ReadAppSource(Path.Combine("Services", "PreviewWebViewService.cs"));
+        string css = ReadAppSource(Path.Combine("Resources", "preview.css"));
+
+        Assert.Contains("const isLinkedImage = image => image.closest('a[href]') !== null;", previewCode, StringComparison.Ordinal);
+        int clickStart = previewCode.IndexOf("document.addEventListener('click'", StringComparison.Ordinal);
+        int preventClick = previewCode.IndexOf("event.preventDefault();", clickStart, StringComparison.Ordinal);
+        int linkGuard = previewCode.IndexOf("if (!image || isLinkedImage(image)) return;", clickStart, StringComparison.Ordinal);
+        Assert.True(linkGuard > clickStart && linkGuard < preventClick);
+        Assert.Contains("if (isLinkedImage(event.target)) return;", previewCode, StringComparison.Ordinal);
+        Assert.Contains("if (isLinkedImage(image)) return;", previewCode, StringComparison.Ordinal);
+        Assert.Contains(".preview-document a[href] img {\n  cursor: pointer;", css.Replace("\r\n", "\n", StringComparison.Ordinal), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 预览图片_右键链接图片_同时提供打开图片和打开链接()
+    {
+        string previewCode = ReadAppSource(Path.Combine("Services", "PreviewWebViewService.cs"));
+
+        Assert.Contains("linkUri: image.closest('a[href]')?.href || null", previewCode, StringComparison.Ordinal);
+        Assert.Contains("\"打开图片\"", previewCode, StringComparison.Ordinal);
+        Assert.Contains("if (target.LinkUri is { } linkUri)", previewCode, StringComparison.Ordinal);
+        Assert.Contains("\"打开链接\"", previewCode, StringComparison.Ordinal);
+        Assert.Contains("() => TryOpenExternalUri(linkUri)", previewCode, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 预览图片查看窗口_图片在DOMContentLoaded之前完成_仍按适应窗口居中显示()
     {
         string viewerCode = ReadAppSource("PreviewImageWindow.xaml.cs");
@@ -99,12 +127,14 @@ public sealed class PreviewImageViewerPresentationTests
             "private async void PreviewService_PreviewImageOpenRequested",
             StringComparison.Ordinal);
         int obtainHandlerStart = previewImageCode.IndexOf(
-            "private void ObtainPreviewImageWindow(",
+            "private PreviewImageWindow BeginPreviewImageLoading(",
             StringComparison.Ordinal);
         Assert.True(openHandlerStart >= 0 && obtainHandlerStart > openHandlerStart);
         string openHandler = previewImageCode[openHandlerStart..obtainHandlerStart];
+        Assert.True(openHandler.IndexOf("BeginPreviewImageLoading(", StringComparison.Ordinal)
+            < openHandler.IndexOf("DiagnosticStage.ImagePrepare", StringComparison.Ordinal));
         Assert.Contains(
-            "ObtainPreviewImageWindow(preparedImage, eventArgs.AlternativeText);",
+            "() => ObtainPreviewImageWindow(preparedImage, eventArgs.AlternativeText)",
             openHandler,
             StringComparison.Ordinal);
         // The open path must never create or show a window itself; that would
@@ -143,7 +173,7 @@ public sealed class PreviewImageViewerPresentationTests
             previewImageCode,
             StringComparison.Ordinal);
         Assert.Contains(
-            "ReleaseReplacedPreviewImageCache(viewer.PreparedImage);",
+            "if (viewer.PreparedImageOrNull is { } image) ReleaseReplacedPreviewImageCache(image);",
             previewImageCode,
             StringComparison.Ordinal);
         // An image that is still being copied to the user's destination must keep

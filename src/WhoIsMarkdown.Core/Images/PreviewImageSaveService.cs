@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using WhoIsMarkdown.Core.Diagnostics;
 using WhoIsMarkdown.Core.Markdown;
 
 namespace WhoIsMarkdown.Core.Images;
@@ -167,11 +169,11 @@ public sealed class PreviewImageSaveService : IDisposable
                 bufferSize: 81920,
                 FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await WriteSourceAsync(source, destination, cancellationToken).ConfigureAwait(false);
-                await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await CoreOperationTrace.MeasureAsync("ImageSourceCopy", () => WriteSourceAsync(source, destination, cancellationToken)).ConfigureAwait(false);
+                await CoreOperationTrace.MeasureAsync("ImageCacheFlush", () => destination.FlushAsync(cancellationToken)).ConfigureAwait(false);
             }
 
-            File.Move(temporaryPath, target, overwrite: true);
+            CoreOperationTrace.Measure("ImageCachePublish", () => { File.Move(temporaryPath, target, overwrite: true); return true; });
             return true;
         }
         catch (OperationCanceledException)
@@ -210,19 +212,14 @@ public sealed class PreviewImageSaveService : IDisposable
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheDirectory);
 
-        string directory = Path.GetFullPath(cacheDirectory);
-        Directory.CreateDirectory(directory);
-        if (File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint))
-        {
-            throw new PreviewImageSaveException("图片查看器缓存目录不能是符号链接或目录联接。");
-        }
+        string directory = CreateCacheDirectory(cacheDirectory);
 
         if (source.RequiresNetwork)
         {
             (byte[] bytes, string extension) = await MaterializeRemoteAsync(source, cancellationToken).ConfigureAwait(false);
             string name = CreateSuggestedFileName(source.SuggestedFileName, null, extension);
             string remoteTarget = Path.Combine(directory, name);
-            await SaveBytesAsync(bytes, extension, remoteTarget, cancellationToken).ConfigureAwait(false);
+            await SaveBytesCoreAsync(bytes, extension, remoteTarget, durable: false, cancellationToken).ConfigureAwait(false);
             return new PreparedPreviewImage(remoteTarget, extension, name, isSourceSvg: extension == ".svg");
         }
 
@@ -235,6 +232,38 @@ public sealed class PreviewImageSaveService : IDisposable
             source.Kind is PreviewImageSourceKind.GeneratedSvg,
             source.Extension == ".svg" && source.Kind is not PreviewImageSourceKind.GeneratedSvg);
     }
+
+    /// <summary>
+    /// Reuses the response already downloaded by Chromium; this must not issue a
+    /// second HTTP request. The temporary viewer copy is atomic but not durable:
+    /// unlike an explicit save it need not force the disk cache through to hardware.
+    /// </summary>
+    public async Task<PreparedPreviewImage> PrepareCachedAsync(PreviewImageSaveSource source,
+        byte[] bytes, string contentType, string cacheDirectory, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(bytes);
+        if (bytes.Length is <= 0 || bytes.LongLength > MaximumImageBytes)
+            throw new PreviewImageSaveException("缓存图片为空或超过 32 MB。");
+        string directory = CreateCacheDirectory(cacheDirectory);
+        string extension = CoreOperationTrace.Measure("ImageFormatDetect", () =>
+            DetectImageExtension(bytes, ResponseExtension(contentType, source.Extension)));
+        byte[] materialized = extension == ".svg" ? NormalizeSvgSize(bytes) : bytes;
+        string name = CreateSuggestedFileName(source.SuggestedFileName, null, extension);
+        string target = Path.Combine(directory, name);
+        await SaveBytesCoreAsync(materialized, extension, target, durable: false, cancellationToken).ConfigureAwait(false);
+        return new PreparedPreviewImage(target, extension, name, isSourceSvg: extension == ".svg");
+    }
+
+    private static string CreateCacheDirectory(string cacheDirectory) => CoreOperationTrace.Measure("ImageCacheDirectory", () =>
+    {
+        string directory = Path.GetFullPath(cacheDirectory);
+        Directory.CreateDirectory(directory);
+        if (File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint))
+            throw new PreviewImageSaveException("图片查看器缓存目录不能是符号链接或目录联接。");
+        return directory;
+    });
 
     /// <summary>
     /// Re-runs the prepared-image checks and returns the validated cache path together
@@ -317,11 +346,14 @@ public sealed class PreviewImageSaveService : IDisposable
     /// they must still reach the disk through the same temporary-file replacement as
     /// every other image save so a failure never leaves a half-written target.
     /// </summary>
-    public async Task<bool> SaveBytesAsync(
+    public Task<bool> SaveBytesAsync(
         byte[] bytes,
         string extension,
         string targetPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => SaveBytesCoreAsync(bytes, extension, targetPath, durable: true, cancellationToken);
+
+    private async Task<bool> SaveBytesCoreAsync(byte[] bytes, string extension, string targetPath,
+        bool durable, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(bytes);
@@ -354,13 +386,14 @@ public sealed class PreviewImageSaveService : IDisposable
                 FileAccess.Write,
                 FileShare.None,
                 bufferSize: 81920,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
+                FileOptions.Asynchronous | (durable ? FileOptions.WriteThrough : FileOptions.None)))
             {
-                await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await CoreOperationTrace.MeasureAsync("ImageCacheWrite", () => destination.WriteAsync(bytes, cancellationToken).AsTask()).ConfigureAwait(false);
+                CoreOperationTrace.Value("ImageCacheBytes", bytes.LongLength);
+                await CoreOperationTrace.MeasureAsync("ImageCacheFlush", () => destination.FlushAsync(cancellationToken)).ConfigureAwait(false);
             }
 
-            File.Move(temporaryPath, target, overwrite: true);
+            CoreOperationTrace.Measure("ImageCachePublish", () => { File.Move(temporaryPath, target, overwrite: true); return true; });
             return true;
         }
         catch (OperationCanceledException)
@@ -567,7 +600,10 @@ public sealed class PreviewImageSaveService : IDisposable
         await destination.WriteAsync(sized, cancellationToken).ConfigureAwait(false);
     }
 
-    private static byte[] NormalizeSvgSize(byte[] svgBytes)
+    private static byte[] NormalizeSvgSize(byte[] svgBytes) =>
+        CoreOperationTrace.Measure("ImageVectorNormalize", () => NormalizeSvgSizeCore(svgBytes));
+
+    private static byte[] NormalizeSvgSizeCore(byte[] svgBytes)
     {
         // Sizing is a display aid, never an admission test for author SVG. A valid
         // browser SVG may use XML constructs our small size reader does not know;
@@ -714,10 +750,9 @@ public sealed class PreviewImageSaveService : IDisposable
         for (int redirect = 0; redirect <= MaximumRedirects; redirect++)
         {
             using HttpRequestMessage request = new(HttpMethod.Get, current);
-            using HttpResponseMessage response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
+            using HttpResponseMessage response = await CoreOperationTrace.MeasureAsync("ImageHttpHeaders", () => httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)).ConfigureAwait(false);
+            CoreOperationTrace.Value("ImageHttpStatus", (long)response.StatusCode);
 
             if (IsRedirect(response.StatusCode))
             {
@@ -735,6 +770,7 @@ public sealed class PreviewImageSaveService : IDisposable
                 }
 
                 current = next;
+                CoreOperationTrace.Value("ImageHttpRedirect", redirect + 1);
                 continue;
             }
 
@@ -746,19 +782,10 @@ public sealed class PreviewImageSaveService : IDisposable
 
             if (response.Content.Headers.ContentLength is <= 0 or > MaximumImageBytes)
                 throw new PreviewImageSaveException("远程图片为空或超过 32 MB，无法保存。");
-            string extension = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() switch
-            {
-                "image/png" => ".png",
-                "image/jpeg" => ".jpg",
-                "image/gif" => ".gif",
-                "image/bmp" or "image/x-ms-bmp" => ".bmp",
-                "image/webp" => ".webp",
-                "image/svg+xml" => ".svg",
-                _ => source.Extension,
-            };
-            await using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken)
-                .ConfigureAwait(false);
-            await CopyWithLimitAsync(input, destination, cancellationToken).ConfigureAwait(false);
+            string extension = ResponseExtension(response.Content.Headers.ContentType?.MediaType, source.Extension);
+            await using Stream input = await CoreOperationTrace.MeasureAsync("ImageResponseStream",
+                () => response.Content.ReadAsStreamAsync(cancellationToken)).ConfigureAwait(false);
+            await CoreOperationTrace.MeasureAsync("ImageDownloadBody", () => CopyWithLimitAsync(input, destination, cancellationToken)).ConfigureAwait(false);
             return extension;
         }
         throw new PreviewImageSaveException("远程图片重定向次数过多。");
@@ -779,11 +806,30 @@ public sealed class PreviewImageSaveService : IDisposable
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
+            CoreOperationTrace.Value("ImageHttpTimeout", (long)httpClient.Timeout.TotalMilliseconds);
             throw new PreviewImageSaveException("远程图片下载超时。", exception);
         }
         byte[] bytes = destination.ToArray();
         // Some badge/CDN endpoints omit a useful Content-Type as well as a suffix.
         // Sniff common image signatures only for naming; never reject SVG elements.
+        extension = CoreOperationTrace.Measure("ImageFormatDetect", () => DetectImageExtension(bytes, extension));
+        if (extension == ".svg") bytes = NormalizeSvgSize(bytes);
+        return (bytes, extension);
+    }
+
+    private static string ResponseExtension(string? contentType, string fallback) => contentType?.Split(';')[0].Trim().ToLowerInvariant() switch
+    {
+        "image/png" => ".png",
+        "image/jpeg" => ".jpg",
+        "image/gif" => ".gif",
+        "image/bmp" or "image/x-ms-bmp" => ".bmp",
+        "image/webp" => ".webp",
+        "image/svg+xml" => ".svg",
+        _ => fallback,
+    };
+
+    private static string DetectImageExtension(byte[] bytes, string extension)
+    {
         if (extension == ".img")
         {
             extension = bytes.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71 }) ? ".png"
@@ -795,8 +841,7 @@ public sealed class PreviewImageSaveService : IDisposable
                     .Contains("<svg", StringComparison.OrdinalIgnoreCase) ? ".svg"
                 : throw new PreviewImageSaveException("服务器没有返回可识别的图片格式。");
         }
-        if (extension == ".svg") bytes = NormalizeSvgSize(bytes);
-        return (bytes, extension);
+        return extension;
     }
 
     private static async Task CopyWithLimitAsync(
@@ -806,27 +851,41 @@ public sealed class PreviewImageSaveService : IDisposable
     {
         byte[] buffer = new byte[81920];
         long total = 0;
-        while (true)
+        double readMilliseconds = 0, writeMilliseconds = 0;
+        try
         {
-            int read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (read == 0)
+            while (true)
             {
-                break;
+                long readStart = Stopwatch.GetTimestamp();
+                int read;
+                try { read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false); }
+                finally { readMilliseconds += Stopwatch.GetElapsedTime(readStart).TotalMilliseconds; }
+                if (read == 0)
+                {
+                    break;
+                }
+
+                total += read;
+                if (total > MaximumImageBytes)
+                {
+                    throw new PreviewImageSaveException("预览图片超过 32 MB，无法保存。");
+                }
+
+                long writeStart = Stopwatch.GetTimestamp();
+                try { await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false); }
+                finally { writeMilliseconds += Stopwatch.GetElapsedTime(writeStart).TotalMilliseconds; }
             }
 
-            total += read;
-            if (total > MaximumImageBytes)
+            if (total == 0)
             {
-                throw new PreviewImageSaveException("预览图片超过 32 MB，无法保存。");
+                throw new PreviewImageSaveException("预览图片为空，无法保存。");
             }
-
-            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken)
-                .ConfigureAwait(false);
         }
-
-        if (total == 0)
+        finally
         {
-            throw new PreviewImageSaveException("预览图片为空，无法保存。");
+            CoreOperationTrace.Report("ImageStreamRead", readMilliseconds);
+            CoreOperationTrace.Report("ImageStreamWrite", writeMilliseconds);
+            CoreOperationTrace.Value("ImageBytes", total);
         }
     }
 

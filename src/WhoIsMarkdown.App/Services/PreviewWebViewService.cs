@@ -16,7 +16,7 @@ namespace WhoIsMarkdown.App.Services;
 /// directory is exposed through an isolated virtual host, and host-injected scripts
 /// provide scroll synchronization without enabling page-authored JavaScript.
 /// </summary>
-public sealed class PreviewWebViewService : IDisposable
+public sealed partial class PreviewWebViewService : IDisposable
 {
 
     /// <summary>
@@ -53,7 +53,8 @@ public sealed class PreviewWebViewService : IDisposable
     private sealed record PreviewContextImageTarget(
         string Source,
         string? AlternativeText,
-        bool IsGeneratedDiagram);
+        bool IsGeneratedDiagram,
+        string? LinkUri);
 
     private const string ScrollReportingScript = """
         (() => {
@@ -78,6 +79,9 @@ public sealed class PreviewWebViewService : IDisposable
         (() => {
           const imageSelector = 'main.preview-document img';
           const lineAnchorSelector = '[id^="pragma-line-"]';
+          // Bug fix: image zoom must not consume the surrounding anchor's native
+          // activation. Keep linked images as links, including keyboard semantics.
+          const isLinkedImage = image => image.closest('a[href]') !== null;
           let lastAnchor = '';
           let lastAlternativeText = '';
           let lastIndex = -1;
@@ -129,6 +133,7 @@ public sealed class PreviewWebViewService : IDisposable
           const prepareImages = () => {
             document.querySelectorAll(imageSelector).forEach(image => {
               image.draggable = false;
+              if (isLinkedImage(image)) return;
               if (!image.hasAttribute('tabindex')) image.tabIndex = 0;
               if (!image.hasAttribute('role')) image.setAttribute('role', 'button');
               if (!image.hasAttribute('aria-label')) {
@@ -141,7 +146,7 @@ public sealed class PreviewWebViewService : IDisposable
           document.addEventListener('click', event => {
             if (!(event.target instanceof Element) || event.button !== 0) return;
             const image = event.target.closest(imageSelector);
-            if (!image) return;
+            if (!image || isLinkedImage(image)) return;
             event.preventDefault();
             event.stopPropagation();
             requestOpen(image);
@@ -157,6 +162,7 @@ public sealed class PreviewWebViewService : IDisposable
             if ((event.key === 'Enter' || event.key === ' ')
                 && event.target instanceof Element
                 && event.target.matches(imageSelector)) {
+              if (isLinkedImage(event.target)) return;
               event.preventDefault();
               requestOpen(event.target);
             }
@@ -469,6 +475,7 @@ public sealed class PreviewWebViewService : IDisposable
         core.NavigationStarting += OnNavigationStarting;
         core.NavigationCompleted += OnNavigationCompleted;
         core.DOMContentLoaded += OnDomContentLoaded;
+        core.WebResourceResponseReceived += OnImageResponseReceived;
         core.NewWindowRequested += OnNewWindowRequested;
         core.WebMessageReceived += OnWebMessageReceived;
         // Native image loading supports local SVG without rewriting its content.
@@ -536,13 +543,25 @@ public sealed class PreviewWebViewService : IDisposable
             contextMenuItems.Clear();
             contextMenuItems.Add(CreateImageMenuItem(
                 currentCore,
-                "在独立窗口中打开",
+                "打开图片",
                 () => PreviewImageOpenRequested?.Invoke(
                     this,
                     new PreviewImageOpenRequestedEventArgs(
                         target.Source,
                         target.AlternativeText,
-                        target.IsGeneratedDiagram))));
+                        target.IsGeneratedDiagram,
+                        PreviewImageOpenOrigin.ContextMenu))));
+
+            // The link belongs to the DOM image under the pointer, not the last
+            // clicked image. Reuse the existing external-navigation path rather
+            // than navigating the Markdown preview or launching a raw command.
+            if (target.LinkUri is { } linkUri)
+            {
+                contextMenuItems.Add(CreateImageMenuItem(
+                    currentCore,
+                    "打开链接",
+                    () => TryOpenExternalUri(linkUri)));
+            }
 
             if (descriptor.Extension.Length > 0)
             {
@@ -603,11 +622,14 @@ public sealed class PreviewWebViewService : IDisposable
               return {
                 source: image.currentSrc || image.src || '',
                 alternativeText: image.alt || '',
-                generatedDiagram: image.dataset.wimdGeneratedDiagram === 'true'
+                generatedDiagram: image.dataset.wimdGeneratedDiagram === 'true',
+                linkUri: image.closest('a[href]')?.href || null
               };
             })();
             """;
-        string result = await core.ExecuteScriptAsync(script).ConfigureAwait(true);
+        string result = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageContextTarget,
+            () => core.ExecuteScriptAsync(script).WaitAsync(TimeSpan.FromSeconds(15), lifetimeCancellation.Token),
+            DiagnosticWindowId).ConfigureAwait(true);
         if (result.Length is 0 or > MaximumContextImageResultLength)
         {
             return null;
@@ -652,7 +674,12 @@ public sealed class PreviewWebViewService : IDisposable
             "generatedDiagram",
             out JsonElement generatedDiagramElement)
             && generatedDiagramElement.ValueKind is JsonValueKind.True;
-        return new PreviewContextImageTarget(source, alternativeText, isGeneratedDiagram);
+        string? linkUri = root.TryGetProperty("linkUri", out JsonElement linkElement)
+            && linkElement.ValueKind is JsonValueKind.String
+            ? linkElement.GetString()
+            : null;
+        return new PreviewContextImageTarget(source, alternativeText, isGeneratedDiagram,
+            string.IsNullOrWhiteSpace(linkUri) ? null : linkUri);
     }
 
     /// <summary>
@@ -922,6 +949,7 @@ public sealed class PreviewWebViewService : IDisposable
         pendingSourceLine = null;
         // Unwind host continuations immediately on close. This cancels our waits,
         // not native WebView2 operations; the control itself is disposed below.
+        imageResponseCache.Dispose();
         lifetimeCancellation.Cancel();
         lifetimeCancellation.Dispose();
         previewReadySource.TrySetCanceled();
@@ -941,6 +969,7 @@ public sealed class PreviewWebViewService : IDisposable
             core.NavigationStarting -= OnNavigationStarting;
             core.NavigationCompleted -= OnNavigationCompleted;
             core.DOMContentLoaded -= OnDomContentLoaded;
+            core.WebResourceResponseReceived -= OnImageResponseReceived;
             core.NewWindowRequested -= OnNewWindowRequested;
             core.WebMessageReceived -= OnWebMessageReceived;
             core.ContextMenuRequested -= OnContextMenuRequested;
@@ -1054,6 +1083,7 @@ public sealed class PreviewWebViewService : IDisposable
         if (!IsCurrentPreview(snapshot)) return;
 
         synchronizeCaretWhenReady = snapshot.SynchronizeToCaretWhenReady;
+        PrepareImageCacheForDocument(snapshot.DocumentPath, snapshot.ForceBodyReplacement);
         ConfigureDocumentResourceMapping(snapshot.DocumentPath);
         currentPagePolicyIdentity = snapshot.PagePolicyIdentity;
         if (prepared.NavigationHtml is not null)

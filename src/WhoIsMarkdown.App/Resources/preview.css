@@ -358,6 +358,11 @@ img {
   -webkit-user-drag: none;
 }
 
+/* A linked image activates its anchor; reserve the zoom cursor for plain images. */
+.preview-document a[href] img {
+  cursor: pointer;
+}
+
 .preview-document img:hover {
   box-shadow: 0 8px 26px rgba(42, 45, 100, 0.18);
   transform: translateY(-1px);

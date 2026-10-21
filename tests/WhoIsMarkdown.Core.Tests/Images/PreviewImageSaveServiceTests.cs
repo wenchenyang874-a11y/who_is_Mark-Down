@@ -9,6 +9,34 @@ namespace WhoIsMarkdown.Core.Tests.Images;
 
 public sealed class PreviewImageSaveServiceTests
 {
+    [Fact]
+    public async Task 预览缓存物化_已有浏览器响应_不访问网络并识别格式补齐矢量尺寸()
+    {
+        RecordingHandler handler = new(_ => throw new InvalidOperationException("Cached image must never be fetched again."));
+        using PreviewImageSaveService service = new(handler);
+        using TemporaryDirectory temporary = new();
+        PreviewImageSaveSource source = service.Resolve("https://example.com/badge", null, "badge", RemoteImagePolicy.TrustAll);
+        byte[] bytes = Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 120 40\"><rect width=\"120\" height=\"40\"/></svg>");
+        PreparedPreviewImage image = await service.PrepareCachedAsync(source, bytes, "image/svg+xml; charset=utf-8",
+            Path.Combine(temporary.Path, "cache"), TestContext.Current.CancellationToken);
+        Assert.Equal(".svg", image.Extension);
+        Assert.Contains("width=\"120\"", await File.ReadAllTextAsync(image.FilePath, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.True(await service.SavePreparedAsync(image, Path.Combine(temporary.Path, "saved.svg"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task 预览缓存物化_空内容_不创建缓存文件()
+    {
+        using PreviewImageSaveService service = new();
+        using TemporaryDirectory temporary = new();
+        PreviewImageSaveSource source = service.Resolve("https://example.com/image", null, null, RemoteImagePolicy.TrustAll);
+        string cache = Path.Combine(temporary.Path, "cache");
+        await Assert.ThrowsAsync<PreviewImageSaveException>(() => service.PrepareCachedAsync(source, [], "image/png", cache,
+            TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(cache));
+    }
+
     [Theory]
     [InlineData("https://example.com/api/badge")]
     [InlineData("https://example.com/badge.svg?branch=main")]

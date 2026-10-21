@@ -9,7 +9,7 @@ namespace WhoIsMarkdown.App;
 
 /// <summary>
 /// Coordinates the independent preview image window. Sources are validated and
-/// materialized before a modeless window opens, so the editor stays usable while
+/// materialized in the background after the modeless window opens, so the editor stays usable while
 /// the viewer supports native window movement, minimizing and maximizing.
 /// </summary>
 public partial class MainWindow
@@ -60,41 +60,69 @@ public partial class MainWindow
         CancellationToken cancellationToken = previewImageOpenCancellation.Token;
         string? cacheDirectory = null;
         using DiagnosticOperation? viewing = DiagnosticLog.Current?.Begin(DiagnosticStage.ImageViewer, diagnosticWindowId);
+        DiagnosticLog.Current?.Mark(DiagnosticStage.ImageRequestReceived, diagnosticWindowId, requestVersion);
+        DiagnosticLog.Current?.Mark(DiagnosticStage.ImageRequestOrigin, diagnosticWindowId,
+            previewImageRefreshRequested ? 2 : (long)eventArgs.Origin);
+        PreviewImageWindow? requestedViewer = null;
 
         try
         {
-            PreviewImageSaveSource source = eventArgs.IsGeneratedDiagram
-                ? previewImageSaveService.ResolveGeneratedSvgDataUri(
-                    eventArgs.Source,
-                    eventArgs.AlternativeText)
-                : previewImageSaveService.Resolve(
-                    eventArgs.Source,
-                    document.FilePath,
-                    eventArgs.AlternativeText,
-                    CreateRemoteImagePolicy());
+            requestedViewer = BeginPreviewImageLoading(eventArgs.AlternativeText, viewing?.Id ?? 0);
+            // Let the loading window paint before starting I/O. A visible shell is
+            // not image readiness; the request below remains open through decode/fit.
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+            cancellationToken.ThrowIfCancellationRequested();
+            string? documentPath = document.FilePath;
+            RemoteImagePolicy policy = CreateRemoteImagePolicy();
+            PreviewImageSaveService images = previewImageSaveService;
+            PreviewImageSaveSource source = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageSourceResolve,
+                () => ResolveViewerSourceAsync(images, eventArgs.Source, documentPath, eventArgs.AlternativeText,
+                    eventArgs.IsGeneratedDiagram, policy, cancellationToken), diagnosticWindowId);
+            DiagnosticLog.Current?.Mark(DiagnosticStage.ImageSourceKind, diagnosticWindowId,
+                source.RequiresNetwork ? 2 : eventArgs.IsGeneratedDiagram ? 4 : eventArgs.Source.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ? 3 : 1);
             cacheDirectory = Path.Combine(GetPreviewImageCacheRoot(), Guid.NewGuid().ToString("N"));
-            UpdateStatus(source.RequiresNetwork ? "正在下载图片并打开查看器…" : "正在打开图片查看器…");
+            CachedPreviewImage? cached = source.RequiresNetwork && previewService is { } preview
+                ? await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageCacheLookup,
+                    () => preview.TryReadCachedImageAsync(eventArgs.Source, cancellationToken), diagnosticWindowId)
+                : null;
+            if (source.RequiresNetwork) DiagnosticLog.Current?.Mark(cached is null ? DiagnosticStage.ImageCacheMiss : DiagnosticStage.ImageCacheHit,
+                diagnosticWindowId, cached?.EntryId ?? 0);
+            UpdateStatus(source.RequiresNetwork && cached is null ? "正在后台下载图片…" : "正在载入图片…");
+            string targetDirectory = cacheDirectory;
             PreparedPreviewImage preparedImage = await DiagnosticLog.MeasureAsync(DiagnosticStage.ImagePrepare,
-                () => previewImageSaveService.PrepareAsync(
-                source,
-                cacheDirectory,
-                cancellationToken), diagnosticWindowId);
+                () => PrepareViewerImageAsync(images, source, cached, targetDirectory, cancellationToken), diagnosticWindowId);
 
             if (windowClosed
                 || cancellationToken.IsCancellationRequested
-                || requestVersion != Volatile.Read(ref previewImageOpenVersion))
+                || requestVersion != Volatile.Read(ref previewImageOpenVersion)
+                || !ReferenceEquals(previewImageWindow, requestedViewer) || !requestedViewer.CanLoadAnotherImage)
             {
+                DiagnosticLog.Current?.Mark(DiagnosticStage.ImageViewerSuperseded, diagnosticWindowId, requestVersion);
+                viewing?.Cancel();
                 TryDeletePreviewImageCache(cacheDirectory);
                 return;
             }
 
-            ObtainPreviewImageWindow(preparedImage, eventArgs.AlternativeText);
+            if (cached is null && source.RequiresNetwork && previewService is { } activePreview)
+                _ = activePreview.RememberPreparedImageAsync(eventArgs.Source, preparedImage);
+            DiagnosticLog.Measure(DiagnosticStage.ImageViewerApply,
+                () => ObtainPreviewImageWindow(preparedImage, eventArgs.AlternativeText), diagnosticWindowId);
+            cacheDirectory = null;
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.ImageViewerReady,
+                () => requestedViewer.WaitForImageReadyAsync(cancellationToken), diagnosticWindowId);
+            if (windowClosed || cancellationToken.IsCancellationRequested || requestVersion != Volatile.Read(ref previewImageOpenVersion))
+            {
+                DiagnosticLog.Current?.Mark(DiagnosticStage.ImageViewerSuperseded, diagnosticWindowId, requestVersion);
+                viewing?.Cancel();
+                return;
+            }
+            DiagnosticLog.Current?.Record(DiagnosticStage.ImageViewerReadyDispatch, DiagnosticOutcome.Point, diagnosticWindowId,
+                duration: requestedViewer.ReadyDispatchMilliseconds);
             // A reload of the open viewer arrives through this same path, so the
             // status has to describe what the user actually asked for.
             bool refreshed = previewImageRefreshRequested;
             previewImageRefreshRequested = false;
             UpdateStatus(refreshed ? "已刷新图片查看窗口" : "已在独立窗口中打开图片");
-            cacheDirectory = null;
             viewing?.Succeed();
         }
         catch (OperationCanceledException) when (windowClosed || cancellationToken.IsCancellationRequested)
@@ -104,12 +132,18 @@ public partial class MainWindow
         }
         catch (PreviewImageSaveException exception)
         {
+            if (windowClosed || cancellationToken.IsCancellationRequested || requestVersion != Volatile.Read(ref previewImageOpenVersion)) { viewing?.Cancel(); return; }
             viewing?.Fail(exception);
+            requestedViewer?.ReportLoadFailure(exception);
             ShowPreviewImageError(exception.Message, this, OpenPreviewImageErrorTitle);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or TimeoutException or System.Runtime.InteropServices.COMException)
         {
+            if (windowClosed || cancellationToken.IsCancellationRequested || requestVersion != Volatile.Read(ref previewImageOpenVersion)) { viewing?.Cancel(); return; }
             viewing?.Fail(exception);
+            if (exception is TimeoutException) previewImageOpenCancellation?.Cancel();
+            requestedViewer?.ReportLoadFailure(exception);
             ShowPreviewImageError($"无法打开预览图片：{exception.Message}", this, OpenPreviewImageErrorTitle);
         }
         finally
@@ -120,6 +154,54 @@ public partial class MainWindow
             }
         }
     }
+
+    private PreviewImageWindow BeginPreviewImageLoading(string? alternativeText, long parent)
+    {
+        if (previewImageWindow is not { CanLoadAnotherImage: true })
+        {
+            ClosePreviewImageWindow();
+            previewImageWindow = DiagnosticLog.Measure(DiagnosticStage.ImageViewerAllocation,
+                () => new PreviewImageWindow(alternativeText), diagnosticWindowId);
+            previewImageWindow.ExportRequested += PreviewImageWindow_ExportRequested;
+            previewImageWindow.Closed += PreviewImageWindow_Closed;
+        }
+        PreviewImageWindow viewer = previewImageWindow;
+        viewer.BeginLoading(alternativeText, diagnosticWindowId, parent);
+        DiagnosticLog.Measure(DiagnosticStage.ImageViewerShow, () =>
+        {
+            if (!viewer.IsVisible) viewer.Show();
+            RestoreAndActivate(viewer);
+        }, diagnosticWindowId);
+        return viewer;
+    }
+
+    private static async Task<PreparedPreviewImage> PrepareViewerImageAsync(PreviewImageSaveService images,
+        PreviewImageSaveSource source, CachedPreviewImage? cached, string directory, CancellationToken cancellationToken)
+    {
+        // Only pure data/service objects cross the worker boundary. Cancellation
+        // stops the UI wait, not a filesystem driver; late work cleans its own copy.
+        Task<PreparedPreviewImage> work = Task.Run(async () =>
+        {
+            try
+            {
+                return cached is null
+                    ? await images.PrepareAsync(source, directory, cancellationToken).ConfigureAwait(false)
+                    : await images.PrepareCachedAsync(source, cached.Bytes, cached.ContentType, directory, cancellationToken).ConfigureAwait(false);
+            }
+            finally { if (cancellationToken.IsCancellationRequested) TryDeletePreviewImageCache(directory); }
+        }, CancellationToken.None);
+        _ = work.ContinueWith(completed => _ = completed.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        return await work.WaitAsync(TimeSpan.FromSeconds(65), cancellationToken).ConfigureAwait(false);
+    }
+
+    // A separate static scope prevents the compiler from merging this worker's
+    // closure with the UI handler's lambdas (which also capture the Window/viewer).
+    private static Task<PreviewImageSaveSource> ResolveViewerSourceAsync(PreviewImageSaveService images, string source,
+        string? documentPath, string? alternativeText, bool generated, RemoteImagePolicy policy, CancellationToken cancellationToken) =>
+        Task.Run(() => generated ? images.ResolveGeneratedSvgDataUri(source, alternativeText)
+            : images.Resolve(source, documentPath, alternativeText, policy), cancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
 
     /// <summary>
     /// Bug fix: opening another image used to close the current viewer and create a
@@ -139,15 +221,16 @@ public partial class MainWindow
                 PreparedPreviewImage? replaced = existing.LoadImage(
                     preparedImage,
                     alternativeText);
+                existing.SetExportOptions(CreateExportOptions(preparedImage));
                 if (replaced is not null)
                 {
                     // The available formats follow the picture: a bitmap source cannot
                     // be saved as SVG, a diagram cannot be saved as JPEG.
-                    existing.SetExportOptions(CreateExportOptions(preparedImage));
                     ReleaseReplacedPreviewImageCache(replaced);
-                    RestoreAndActivate(existing);
-                    return;
                 }
+                // Activation belongs to the user's request, not its asynchronous
+                // completion. Do not undo a minimize or steal focus during download.
+                return;
             }
             catch (Exception exception) when (exception is InvalidOperationException
                 or IOException
@@ -421,9 +504,10 @@ public partial class MainWindow
         if (ReferenceEquals(previewImageWindow, viewer))
         {
             previewImageWindow = null;
+            previewImageOpenCancellation?.Cancel();
         }
 
-        ReleaseReplacedPreviewImageCache(viewer.PreparedImage);
+        if (viewer.PreparedImageOrNull is { } image) ReleaseReplacedPreviewImageCache(image);
     }
 
     private string GetPreviewImageInitialDirectory()
@@ -478,6 +562,11 @@ public partial class MainWindow
     }
 
     private static void TryDeletePreviewImageCache(string? cacheDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(cacheDirectory)) _ = Task.Run(() => TryDeletePreviewImageCacheCore(cacheDirectory));
+    }
+
+    private static void TryDeletePreviewImageCacheCore(string cacheDirectory)
     {
         if (string.IsNullOrWhiteSpace(cacheDirectory) || !Directory.Exists(cacheDirectory))
         {

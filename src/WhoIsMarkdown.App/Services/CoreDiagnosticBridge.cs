@@ -26,10 +26,14 @@ internal static class CoreDiagnosticBridge
             {
                 if (Enum.TryParse(activity.OperationName, out DiagnosticStage stage) && Enum.IsDefined(stage))
                     activity.SetCustomProperty("operation", DiagnosticLog.Current?.Begin(stage,
-                        onlySlow: !Detailed.Value));
+                        onlySlow: !Detailed.Value && !activity.OperationName.StartsWith("Image", StringComparison.Ordinal)));
             },
             ActivityStopped = activity =>
             {
+                if (activity.OperationName.StartsWith("Value.", StringComparison.Ordinal)
+                    && activity.GetCustomProperty("numeric_value") is long value
+                    && Enum.TryParse(activity.OperationName[6..], out DiagnosticStage valueStage) && Enum.IsDefined(valueStage))
+                    DiagnosticLog.Current?.Mark(valueStage, value: value);
                 if (activity.GetCustomProperty("operation") is DiagnosticOperation operation)
                 {
                     if (activity.GetCustomProperty("exception") is Exception exception) operation.Fail(exception);
@@ -37,7 +41,7 @@ internal static class CoreDiagnosticBridge
                     operation.Dispose();
                 }
                 if (activity.GetCustomProperty("elapsed_ms") is double duration
-                    && (Detailed.Value || duration >= 500)
+                    && (Detailed.Value || duration >= 500 || activity.OperationName.StartsWith("Aggregate.Image", StringComparison.Ordinal))
                     && activity.OperationName.StartsWith("Aggregate.", StringComparison.Ordinal)
                     && Enum.TryParse(activity.OperationName[10..], out DiagnosticStage stage) && Enum.IsDefined(stage))
                     DiagnosticLog.Current?.Record(stage, DiagnosticOutcome.Point, duration: duration);
