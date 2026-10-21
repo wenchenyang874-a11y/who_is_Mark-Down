@@ -138,6 +138,75 @@ public sealed class MarkdownRenderWorkerTests
         Assert.Equal("recovered", await worker.RenderAsync("recovered", null, null, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task Prepare_ConstructsOnceWithoutParsingAndRenderReusesInstance()
+    {
+        int creations = 0;
+        int parses = 0;
+        using MarkdownRenderWorker worker = new(() =>
+        {
+            Interlocked.Increment(ref creations);
+            return new CallbackRenderer(value => { Interlocked.Increment(ref parses); return value; });
+        });
+        await Task.WhenAll(worker.PrepareAsync(TestContext.Current.CancellationToken),
+            worker.PrepareAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, creations);
+        Assert.Equal(0, parses);
+        Assert.Equal("ready", await worker.RenderAsync("ready", null, null, TestContext.Current.CancellationToken));
+        Assert.Equal(1, creations);
+        Assert.Equal(1, parses);
+    }
+
+    [Fact]
+    public async Task Prepare_CanceledBeforeAdmission_DoesNotConstructRenderer()
+    {
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        using MarkdownRenderWorker worker = new(() => throw new InvalidOperationException("Must remain lazy"));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.PrepareAsync(cancellation.Token));
+    }
+
+    [Fact]
+    public async Task Prepare_InProgress_SerializesRenderAndCloseRejectsNewRequests()
+    {
+        using ManualResetEventSlim release = new();
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        int creations = 0;
+        using MarkdownRenderWorker worker = new(() =>
+        {
+            Interlocked.Increment(ref creations);
+            entered.SetResult();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            return new CallbackRenderer(value => value);
+        });
+        Task preparation = worker.PrepareAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Task<string> render = worker.RenderAsync("queued", null, null, TestContext.Current.CancellationToken);
+            Assert.False(render.IsCompleted);
+            worker.Dispose();
+            await Assert.ThrowsAsync<ObjectDisposedException>(() => worker.PrepareAsync(TestContext.Current.CancellationToken));
+            release.Set();
+            await preparation;
+            Assert.Equal("queued", await render);
+            Assert.Equal(1, creations);
+        }
+        finally
+        {
+            release.Set();
+            await preparation;
+        }
+    }
+
+    [Fact]
+    public async Task Prepare_FailedFactory_ReportsFailureAndDisposesNormally()
+    {
+        using MarkdownRenderWorker worker = new(() => throw new InvalidOperationException("Expected preparation failure"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => worker.PrepareAsync(TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => worker.RenderAsync("unused", null, null, TestContext.Current.CancellationToken));
+    }
+
     private sealed class CallbackRenderer(Func<string, string> callback) : IMarkdownRenderer
     {
         public string RenderBody(string markdown, string? documentPath = null, RemoteImagePolicy? remoteImagePolicy = null)

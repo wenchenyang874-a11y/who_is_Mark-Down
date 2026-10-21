@@ -18,6 +18,26 @@ public sealed class MarkdownRenderWorker : IDisposable
         renderer = new Lazy<IMarkdownRenderer>(factory ?? (() => new MarkdownRenderer()));
     }
 
+    /// <summary>
+    /// Bug fix: the first preview paid renderer construction only after Chromium
+    /// was ready. Admit preparation through the existing background queue so the
+    /// browser and renderer can initialize concurrently without parsing a dummy
+    /// document, racing a render, or keeping a UI object alive after close.
+    /// Cancellation stops queued work; an entered synchronous factory may finish.
+    /// </summary>
+    public Task PrepareAsync(CancellationToken cancellationToken)
+        => queue.RunAsync(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _ = GetRenderer();
+            cancellationToken.ThrowIfCancellationRequested();
+            return true;
+        }, cancellationToken);
+
+    private IMarkdownRenderer GetRenderer()
+        => renderer.IsValueCreated ? renderer.Value
+            : CoreOperationTrace.Measure("RendererCreate", () => renderer.Value);
+
     public async Task<string> RenderAsync(
         string markdown,
         string? documentPath,
@@ -49,8 +69,7 @@ public sealed class MarkdownRenderWorker : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             string markdown = CoreOperationTrace.Measure("RenderSnapshot", readSnapshot);
             cancellationToken.ThrowIfCancellationRequested();
-            IMarkdownRenderer current = renderer.IsValueCreated ? renderer.Value
-                : CoreOperationTrace.Measure("RendererCreate", () => renderer.Value);
+            IMarkdownRenderer current = GetRenderer();
             return current.RenderDocument(markdown, documentPath, policy, cancellationToken);
         }, cancellationToken);
     }

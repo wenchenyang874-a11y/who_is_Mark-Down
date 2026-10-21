@@ -4,6 +4,17 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.9] - 2026-10-21
+
+### 优化
+
+- 首次需要预览时，Markdown 渲染器在现有后台队列中与浏览器并行准备，避免等浏览器就绪后才创建渲染器；不提前解析空文档，仅编辑模式保持按需初始化。
+- 渲染器准备复用原有串行准入、生命周期取消与关闭保护，等待有宿主侧超时；准备中的同步构造不能被强制中断，迟到结果不会重建已关闭窗口。
+
+### 诊断
+
+- 新增 `PreviewRendererPrepare` 分段日志，保留其中渲染器、HTML 过滤器及 Markdown 管线的首次创建计时，便于确认与浏览器准备的重叠及失败位置。
+
 ## [1.8.8] - 2026-10-21
 
 ### 修复
@@ -394,7 +405,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.8...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.9...HEAD
+[1.8.9]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.8...v1.8.9
 [1.8.8]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.7...v1.8.8
 [1.8.7]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.6...v1.8.7
 [1.8.6]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.5...v1.8.6

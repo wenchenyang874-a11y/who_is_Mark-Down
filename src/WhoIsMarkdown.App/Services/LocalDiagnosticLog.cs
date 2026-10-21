@@ -291,6 +291,7 @@ internal enum DiagnosticStage
     DocumentOpen, DocumentRead, DocumentApply, DocumentSave, DocumentReload, ExternalChangeCheck, RecentFileCheck,
     PreviewInitialize, PreviewResources, WebViewEnvironment, WebViewControl, WebViewScripts,
     PreviewRender, MarkdownParse, PreviewDelivery, PreviewReady, PreviewNavigation, MermaidRender, BrowserProcessFailed,
+    PreviewRendererPrepare,
     ImageInsert, ImagePrepare, ImageUpload, ImageViewer, ImageViewerInitialize, ImageExport, PdfExport,
     ImageRequestReceived, ImageRequestOrigin, ImageSourceKind, ImageSourceResolve, ImageContextTarget,
     ImageCacheLookup, ImageCacheHit, ImageCacheMiss, ImageCacheCapture, ImageCacheCaptureSkipped,

@@ -53,6 +53,36 @@ public partial class MainWindow
     private async Task InitializePreviewAsync()
     {
         ObjectDisposedException.ThrowIf(windowClosed, this);
+        // Keep CPU preparation off the dispatcher and overlap it with native
+        // browser startup. This path is already deferred until shell rendering
+        // and never requested by editor-only startup or ordinary hidden edits.
+        Task rendererPreparation = PreparePreviewRendererAsync();
+        await Task.WhenAll(rendererPreparation, InitializePreviewBrowserAsync());
+        ObjectDisposedException.ThrowIf(windowClosed, this);
+        previewInitialized = true;
+    }
+
+    private async Task PreparePreviewRendererAsync()
+    {
+        // Moving construction earlier must not hide its nested timings behind
+        // the normal fast-render suppression threshold. Keep this first-use
+        // scope detailed even when Chromium is still initializing concurrently.
+        bool detailed = CoreDiagnosticBridge.Detailed.Value;
+        CoreDiagnosticBridge.Detailed.Value = true;
+        try
+        {
+            await DiagnosticLog.MeasureAsync(DiagnosticStage.PreviewRendererPrepare,
+                () => markdownRenderer.PrepareAsync(windowLifetimeCancellation.Token)
+                    .WaitAsync(TimeSpan.FromSeconds(15), windowLifetimeCancellation.Token), diagnosticWindowId);
+        }
+        finally
+        {
+            CoreDiagnosticBridge.Detailed.Value = detailed;
+        }
+    }
+
+    private async Task InitializePreviewBrowserAsync()
+    {
         previewStyleSheet = DiagnosticLog.Measure(DiagnosticStage.PreviewResources,
             () => ReadComponentTextResource("preview.css", "找不到预览样式资源。"), diagnosticWindowId);
         // Ordinary documents do not pay the multi-megabyte Mermaid load/parse cost.
@@ -70,8 +100,6 @@ public partial class MainWindow
         service.PreviewReady += PreviewService_PreviewReady;
         service.PreviewContentApplying += PreviewService_PreviewContentApplying;
         await DiagnosticLog.MeasureAsync(DiagnosticStage.PreviewInitialize, service.InitializeAsync, diagnosticWindowId);
-        ObjectDisposedException.ThrowIf(windowClosed, this);
-        previewInitialized = true;
     }
 
     private void PreparePreviewForFileOpen()
