@@ -117,7 +117,8 @@ public partial class MainWindow
             remoteImagePolicy,
             synchronizeToCaretWhenReady: false,
             forceBodyReplacement: forceBodyReplacement,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            documentIdentity: snapshot.DocumentIdentity);
         await service.WaitUntilReadyAsync(cancellationToken);
         return cancellationToken;
     }

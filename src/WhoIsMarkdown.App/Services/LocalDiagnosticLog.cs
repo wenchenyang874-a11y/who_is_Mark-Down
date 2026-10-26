@@ -312,6 +312,7 @@ internal enum DiagnosticStage
     SettingsProjection, ThemeAndFonts, ShortcutBindings, SettingsLayout,
     DocumentFileBytes, DocumentDecode, DocumentLineEndings, DocumentFileStamp, PreviewContentPrepare,
     DocumentCharacters, DocumentLines, PreviewBlocks, PreviewBodyCharacters,
+    PreviewHeadingFold, PreviewHeadingFoldRefresh,
     ApplicationConstructor, ApplicationStartup, RestoreSession, CaptureSession, WindowConstructor, WindowXaml,
     WindowLoaded, WindowFirstFrame, StartupContentReady, StartupPreviewDeferred, StartupPreviewReady,
     SettingsLoad, SettingsApply, SettingsWrite, SettingsFlush, BackgroundLoad, BackgroundImport,

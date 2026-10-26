@@ -4,6 +4,17 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.8.11] - 2026-10-26
+
+### 新增
+
+- 预览中的一级至六级标题左侧新增展开/收起按钮，使用原有留白，不改变标题位置；折叠范围延伸到下一个同级或更高级标题，展开父标题时保留子标题的折叠状态。
+- 同一文档编辑、保存和预览刷新保留仍能匹配的标题折叠状态，切换文档清空状态；折叠不修改 Markdown 或未保存标记，PDF 导出始终包含完整内容且不显示折叠按钮。
+
+### 诊断
+
+- 标题折叠记录固定阶段的耗时和折叠数量；快速编辑刷新保持静默，慢刷新才记录，不输出标题文本、折叠键或文档内容。
+
 ## [1.8.10] - 2026-10-26
 
 ### 新增
@@ -427,7 +438,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.10...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.11...HEAD
+[1.8.11]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.10...v1.8.11
 [1.8.10]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.9...v1.8.10
 [1.8.9]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.8...v1.8.9
 [1.8.8]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.7...v1.8.8

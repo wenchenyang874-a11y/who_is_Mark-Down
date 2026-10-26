@@ -548,6 +548,7 @@ public partial class MainWindow : Window
                     previewAppearanceStyleSheet,
                     documentPath,
                     remoteImagePolicy,
+                    snapshot.DocumentIdentity,
                     synchronizePreviewToCaretWhenReady,
                     forceBodyReplacement,
                     cancellationToken);

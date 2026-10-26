@@ -465,6 +465,7 @@ public sealed partial class PreviewWebViewService : IDisposable
         core.Settings.IsWebMessageEnabled = true;
         await RegisterHostScriptAsync(ScrollReportingScript).ConfigureAwait(true);
         await RegisterHostScriptAsync(SourceLineNavigationScript.Script).ConfigureAwait(true);
+        await RegisterHostScriptAsync(HeadingFoldScript.Script).ConfigureAwait(true);
         ThrowIfDisposed();
         await RegisterHostScriptAsync(ImageInteractionScript).ConfigureAwait(true);
         ThrowIfDisposed();
@@ -720,7 +721,7 @@ public sealed partial class PreviewWebViewService : IDisposable
         ArgumentNullException.ThrowIfNull(pagePolicyIdentity);
         return QueuePreview(new PreviewContent(bodyHtml, blocks, string.Empty, string.Empty,
             RemoteImagePolicy.BlockAll, fullHtml), documentPath, pagePolicyIdentity,
-            synchronizeToCaretWhenReady, forceBodyReplacement, cancellationToken);
+            synchronizeToCaretWhenReady, forceBodyReplacement, null, cancellationToken);
     }
 
     public Task ShowAsync(
@@ -732,12 +733,25 @@ public sealed partial class PreviewWebViewService : IDisposable
         bool synchronizeToCaretWhenReady = true,
         bool forceBodyReplacement = false,
         CancellationToken cancellationToken = default)
+        => ShowAsync(rendered, styleSheet, appearanceStyleSheet, documentPath, imagePolicy,
+            documentIdentity: null, synchronizeToCaretWhenReady, forceBodyReplacement, cancellationToken);
+
+    public Task ShowAsync(
+        MarkdownRenderResult rendered,
+        string styleSheet,
+        string appearanceStyleSheet,
+        string? documentPath,
+        RemoteImagePolicy imagePolicy,
+        object? documentIdentity,
+        bool synchronizeToCaretWhenReady = true,
+        bool forceBodyReplacement = false,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rendered);
         ArgumentNullException.ThrowIfNull(imagePolicy);
         return QueuePreview(new PreviewContent(rendered.PreviewHtml, rendered.Blocks,
             styleSheet, appearanceStyleSheet, imagePolicy), documentPath, imagePolicy.Identity,
-            synchronizeToCaretWhenReady, forceBodyReplacement, cancellationToken);
+            synchronizeToCaretWhenReady, forceBodyReplacement, documentIdentity, cancellationToken);
     }
 
     private Task QueuePreview(
@@ -746,6 +760,7 @@ public sealed partial class PreviewWebViewService : IDisposable
         string pagePolicyIdentity,
         bool synchronizeToCaretWhenReady,
         bool forceBodyReplacement,
+        object? documentIdentity,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -758,7 +773,7 @@ public sealed partial class PreviewWebViewService : IDisposable
         MarkPreviewPending();
         pendingSourceLine = null;
         pendingPreview = new PreviewSnapshot(content, documentPath, pagePolicyIdentity,
-            synchronizeToCaretWhenReady, forceBodyReplacement, ++previewRequestVersion, cancellationToken);
+            synchronizeToCaretWhenReady, forceBodyReplacement, ++previewRequestVersion, documentIdentity, cancellationToken);
         activePreviewCancellation?.Cancel();
         return ProcessPreviewQueueAsync();
     }
@@ -1149,7 +1164,7 @@ public sealed partial class PreviewWebViewService : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         PreviewContentApplying?.Invoke(this, EventArgs.Empty);
         nativeMutationUnacknowledged = true;
-        string result = await core.ExecuteScriptAsync(prepared.UpdateScript!)
+        string result = await core.ExecuteScriptAsync(GetHeadingFoldResetScript(snapshot) + prepared.UpdateScript!)
             .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken)
             .ConfigureAwait(true);
         nativeMutationUnacknowledged = false;
@@ -1165,7 +1180,7 @@ public sealed partial class PreviewWebViewService : IDisposable
             if (!IsCurrentPreview(snapshot)) return true;
             PreviewContentApplying?.Invoke(this, EventArgs.Empty);
             nativeMutationUnacknowledged = true;
-            result = await core.ExecuteScriptAsync(replacement)
+            result = await core.ExecuteScriptAsync(GetHeadingFoldResetScript(snapshot) + replacement)
                 .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(true);
             nativeMutationUnacknowledged = false;
             if (string.Equals(result, "true", StringComparison.Ordinal)) displayedBlocks = prepared.Blocks;
@@ -1417,6 +1432,10 @@ public sealed partial class PreviewWebViewService : IDisposable
             {
                 await TryToggleTaskListItemAsync(root).ConfigureAwait(true);
             }
+            else if (messageType == "heading-fold-state")
+            {
+                RecordHeadingFold(root);
+            }
         }
         catch (JsonException)
         {
@@ -1589,6 +1608,7 @@ public sealed partial class PreviewWebViewService : IDisposable
         bool SynchronizeToCaretWhenReady,
         bool ForceBodyReplacement,
         long Version,
+        object? DocumentIdentity,
         CancellationToken CancellationToken);
 
     private static bool IsAllowedExternalScheme(string scheme)

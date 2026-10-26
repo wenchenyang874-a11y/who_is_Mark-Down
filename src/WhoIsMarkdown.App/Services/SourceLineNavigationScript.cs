@@ -37,7 +37,10 @@ internal static class SourceLineNavigationScript
                 if (anchors[middle].line <= line) low = middle + 1;
                 else high = middle;
               }
-              const target = anchors[Math.max(0, low - 1)].element;
+              const anchor = anchors[Math.max(0, low - 1)].element;
+              // A hidden anchor has a zero rectangle. Locate its visible folded
+              // heading instead of scrolling to the document's beginning.
+              const target = window.wimdHeadingFold?.visibleTarget(anchor) || anchor;
               if (!target.isConnected) { invalidate(); return; }
               const height = Math.max(1, window.innerHeight);
               const top = target.getBoundingClientRect().top;

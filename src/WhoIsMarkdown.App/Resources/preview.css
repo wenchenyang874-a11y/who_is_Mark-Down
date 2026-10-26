@@ -75,6 +75,8 @@ h3,
 h4,
 h5,
 h6 {
+  /* Absolute controls use the existing left gutter; no padding or text shift. */
+  position: relative;
   margin-top: 1.45em;
   margin-bottom: 0.6em;
   color: var(--wimd-heading, #151c2d);
@@ -455,12 +457,68 @@ hr {
   border: 0;
   background: #dfe3eb;
 }
+
+.wimd-heading-toggle {
+  position: absolute;
+  inset-inline-end: calc(100% + 5px);
+  top: calc(0.64em - 10px);
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  background: transparent;
+  color: var(--wimd-secondary, #71798c);
+  cursor: pointer;
+}
+
+.wimd-heading-toggle::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.wimd-heading-toggle[aria-expanded="false"]::before {
+  transform: rotate(-45deg);
+}
+
+.wimd-heading-toggle:hover,
+.wimd-heading-toggle:focus-visible {
+  color: var(--wimd-accent, #4f51cf);
+  background: var(--wimd-accent-soft, rgba(82, 84, 217, 0.12));
+}
+
+.wimd-heading-toggle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.wimd-heading-fold-hidden {
+  display: none !important;
+}
+
 @page {
   size: auto;
   margin: 18mm 16mm;
 }
 
 @media print {
+  /* Export the full document regardless of temporary reading folds. The host's
+     beforeprint/afterprint hooks also preserve the on-screen fold selection. */
+  .wimd-heading-toggle {
+    display: none !important;
+  }
+
+  .wimd-heading-fold-hidden {
+    display: revert !important;
+  }
+
   :root,
   html,
   body {
