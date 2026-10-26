@@ -64,8 +64,9 @@ public sealed class PreviewContentBuilder(IPreviewDocumentBuilder? documentBuild
         {
             page = content.PrebuiltPage ?? documentBuilder.Build(
                 content.BodyHtml,
-                string.Concat(content.StyleSheet, Environment.NewLine, content.AppearanceStyleSheet),
-                content.ImagePolicy);
+                content.StyleSheet,
+                content.ImagePolicy,
+                content.AppearanceStyleSheet);
         }
         else
         {

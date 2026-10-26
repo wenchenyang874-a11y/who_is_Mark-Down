@@ -15,7 +15,7 @@ public partial class PreviewStyleSettingsWindow : Window
     private readonly PreviewStyleSettings initialDefaults;
     private readonly PreviewStyleOverrides initialOverrides;
 
-    public PreviewStyleSettingsWindow(PreviewStyleSettings defaults, PreviewStyleOverrides overrides)
+    public PreviewStyleSettingsWindow(PreviewStyleSettings defaults, PreviewStyleOverrides overrides, string? documentPath = null)
     {
         initialDefaults = defaults.Normalize();
         initialOverrides = overrides;
@@ -32,6 +32,11 @@ public partial class PreviewStyleSettingsWindow : Window
         GlobalStyleComboBox.SelectedItem = styles.FirstOrDefault(item => item.Value == initialDefaults.OrderedList) ?? styles[0];
         WindowStyleComboBox.SelectedItem = WindowStyleComboBox.Items.Cast<OrderedListStyleOption>()
             .FirstOrDefault(item => item.Value == overrides.OrderedList) ?? WindowStyleComboBox.Items[0];
+        WindowStyleComboBox.IsEnabled = !string.IsNullOrWhiteSpace(documentPath);
+        FileScopeHint.Text = documentPath is null
+            ? "请先保存为文件，再设置当前文件样式；全局默认仍可调整。"
+            : "按当前文件完整路径保存在本机，重开后保留；不改 Markdown。";
+        FileScopeHint.ToolTip = documentPath;
     }
 
     public event Action<PreviewStyleSettings, PreviewStyleOverrides>? StyleApplied;

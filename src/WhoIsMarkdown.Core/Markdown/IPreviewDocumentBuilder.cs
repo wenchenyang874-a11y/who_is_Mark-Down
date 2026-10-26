@@ -6,7 +6,8 @@ namespace WhoIsMarkdown.Core.Markdown;
 /// </summary>
 public interface IPreviewDocumentBuilder
 {
-    public string Build(string bodyHtml, string styleSheet, RemoteImagePolicy? remoteImagePolicy = null);
+    public string Build(string bodyHtml, string styleSheet, RemoteImagePolicy? remoteImagePolicy = null,
+        string? appearanceStyleSheet = null);
 
     public string GetVisibleBody(string bodyHtml);
 }

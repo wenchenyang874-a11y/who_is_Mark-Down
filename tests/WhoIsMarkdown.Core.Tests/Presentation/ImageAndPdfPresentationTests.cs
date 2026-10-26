@@ -64,8 +64,8 @@ public sealed class ImageAndPdfPresentationTests
             (string?)element.Attribute("Header") == "图片设置..." &&
             (string?)element.Attribute("Click") == "ImageSettings_Click");
         Assert.Contains(settingsMenu.Elements(), element =>
-            (string?)element.Attribute("Header") == "自定义背景..." &&
-            (string?)element.Attribute("Click") == "BackgroundSettings_Click");
+            (string?)element.Attribute("Header") == "外观设置..." &&
+            (string?)element.Attribute("Click") == "AppearanceSettings_Click");
     }
 
     [Fact]
@@ -91,12 +91,12 @@ public sealed class ImageAndPdfPresentationTests
             repositoryRoot,
             "src",
             "WhoIsMarkdown.App",
-            "BackgroundSettingsWindow.xaml"));
+            "Controls", "BackgroundSettingsControl.xaml"));
         string backgroundWindowCode = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
             "WhoIsMarkdown.App",
-            "BackgroundSettingsWindow.xaml.cs"));
+            "Controls", "BackgroundSettingsControl.xaml.cs"));
         string previewStyle = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
@@ -137,8 +137,8 @@ public sealed class ImageAndPdfPresentationTests
             mainWindow,
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
-            "BackgroundAppearanceScale.FromPercentage(percentage)",
-            appearanceCode,
+            "BackgroundAppearanceScale.FromPercentage(BackgroundVisibilitySlider.Value)",
+            backgroundWindowCode,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
             "1 - (eventArgs.NewValue / 100)",
@@ -150,21 +150,17 @@ public sealed class ImageAndPdfPresentationTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("BackgroundSettingsPopup", mainWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("BackgroundSettingsPopup", appearanceCode, StringComparison.Ordinal);
-        Assert.Contains(
-            "BlurRadius=\"16\" Opacity=\"0.16\" ShadowDepth=\"3\"",
-            backgroundWindow,
-            StringComparison.Ordinal);
-        Assert.Contains("WindowStyle=\"None\"", backgroundWindow, StringComparison.Ordinal);
+        Assert.Contains("CornerRadius=\"12\"", backgroundWindow, StringComparison.Ordinal);
         int selectHandlerStart = backgroundWindowCode.IndexOf(
             "private void SelectBackground_Click",
             StringComparison.Ordinal);
         int selectHandlerEnd = backgroundWindowCode.IndexOf(
-            "private void RemoveBackground_Click",
+            "internal async Task ImportAsync",
             StringComparison.Ordinal);
         Assert.True(selectHandlerStart >= 0 && selectHandlerEnd > selectHandlerStart);
         string selectHandler = backgroundWindowCode[selectHandlerStart..selectHandlerEnd];
-        Assert.Contains("dialog.ShowDialog(this)", selectHandler, StringComparison.Ordinal);
-        Assert.Contains("BackgroundImageSelected?.Invoke(dialog.FileName)", selectHandler, StringComparison.Ordinal);
+        Assert.Contains("picker.ShowDialog(owner)", selectHandler, StringComparison.Ordinal);
+        Assert.Contains("ImportAsync(picker.FileName)", selectHandler, StringComparison.Ordinal);
         Assert.DoesNotContain("Close()", selectHandler, StringComparison.Ordinal);
         Assert.Contains("ReadComponentTextResource", mainWindowCode, StringComparison.Ordinal);
         string previewLifecycle = File.ReadAllText(Path.Combine(

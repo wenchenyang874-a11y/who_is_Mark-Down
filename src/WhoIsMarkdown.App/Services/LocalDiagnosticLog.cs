@@ -309,7 +309,7 @@ internal enum DiagnosticStage
     MarkdownPipelineBuild, MarkdownAstParse, MarkdownHtmlDetection, MarkdownHtmlRender,
     MarkdownHtmlFilter, MarkdownImageResolve, MarkdownResultBuild,
     PreviewNavigationStarting, PreviewDomContentLoaded,
-    SettingsProjection, ThemeAndFonts, ShortcutBindings, SettingsLayout,
+    SettingsProjection, ThemeAndFonts, FontFamilyResolve, PdfFontsReady, ShortcutBindings, SettingsLayout,
     DocumentFileBytes, DocumentDecode, DocumentLineEndings, DocumentFileStamp, PreviewContentPrepare,
     DocumentCharacters, DocumentLines, PreviewBlocks, PreviewBodyCharacters,
     PreviewHeadingFold, PreviewHeadingFoldRefresh,

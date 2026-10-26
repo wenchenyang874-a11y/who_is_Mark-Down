@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WhoIsMarkdown.App.Services;
 using WhoIsMarkdown.App.ViewModels;
 using WhoIsMarkdown.Core.Settings;
 
@@ -17,12 +18,24 @@ public partial class AppearanceSettingsWindow : Window
     private FontFamilyOption? selectedEditorFont;
     private FontFamilyOption? selectedPreviewFont;
     private bool updatingFontControls;
+    private readonly ApplicationSettings originalSettings;
+    private long appearanceApplyVersion;
 
     public AppearanceSettingsWindow(AppearanceSettings settings)
+        : this(new ApplicationSettings { Appearance = settings }) { }
+
+    public AppearanceSettingsWindow(ApplicationSettings settings)
     {
         InitializeComponent();
-        AppearanceSettings normalized = (settings ?? new AppearanceSettings()).Normalize();
+        originalSettings = settings;
+        AppearanceSettings normalized = settings.Appearance.Normalize();
+        MaxHeight = Math.Max(MinHeight, SystemParameters.WorkArea.Height - 32);
+        ThemeListBox.ItemsSource = ThemeCatalog.Options;
+        EditorFontSizeComboBox.ItemsSource = new[] { 12, 14, 15, 16, 18, 20, 22, 24, 28, 32 };
+        PreviewFontSizeComboBox.ItemsSource = new[] { 12, 14, 16, 18, 20, 22, 24, 28, 32 };
         fontOptions = CreateFontOptions();
+        BackgroundPage.SetSelection(settings.BackgroundImagePath, settings.BackgroundOpacity);
+        BackgroundPage.ImportStateChanged += ImportStateChanged;
         EditorFontComboBox.AddHandler(
             TextBoxBase.TextChangedEvent,
             new TextChangedEventHandler(FontComboBox_TextChanged));
@@ -32,35 +45,37 @@ public partial class AppearanceSettingsWindow : Window
         SetControls(normalized);
     }
 
-    public AppearanceSettings ResultSettings { get; private set; } = new();
+    public ApplicationSettings ResultSettings { get; private set; } = new();
 
-    public event Action<AppearanceSettings>? AppearanceApplied;
+    public event Action<ApplicationSettings>? AppearanceApplied;
 
     private void Save_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (!TryBuildSettings(out AppearanceSettings? settings) || settings is null)
+        if (!TryBuildSettings(out ApplicationSettings? settings) || settings is null)
         {
             return;
         }
 
         ResultSettings = settings;
+        ApplyKeepingScrollPosition(settings);
         DialogResult = true;
     }
 
     private void Apply_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (!TryBuildSettings(out AppearanceSettings? settings) || settings is null)
+        if (!TryBuildSettings(out ApplicationSettings? settings) || settings is null)
         {
             return;
         }
 
         ResultSettings = settings;
-        AppearanceApplied?.Invoke(settings);
+        ApplyKeepingScrollPosition(settings);
     }
 
     private void RestoreDefaults_Click(object sender, RoutedEventArgs eventArgs)
     {
         SetControls(new AppearanceSettings());
+        BackgroundPage.SetSelection(null, new ApplicationSettings().BackgroundOpacity);
     }
 
     private void FontSelectionChanged(object sender, SelectionChangedEventArgs eventArgs)
@@ -136,7 +151,7 @@ public partial class AppearanceSettingsWindow : Window
 
     private void SetControls(AppearanceSettings settings)
     {
-        ThemeComboBox.SelectedValue = settings.Theme.ToString();
+        ThemeListBox.SelectedValue = settings.Theme;
         selectedEditorFont = FindFont(settings.EditorFontFamily);
         selectedPreviewFont = FindFont(settings.PreviewFontFamily);
         SetSelectedFont(EditorFontComboBox, selectedEditorFont);
@@ -174,23 +189,30 @@ public partial class AppearanceSettingsWindow : Window
         }
     }
 
-    private bool TryBuildSettings(out AppearanceSettings? settings)
+    private bool TryBuildSettings(out ApplicationSettings? settings)
     {
         settings = null;
+        if (BackgroundPage.IsImporting) return false;
         if (!TryReadFontSize(EditorFontSizeComboBox, "编辑区", out double editorSize)
             || !TryReadFontSize(PreviewFontSizeComboBox, "预览区", out double previewSize))
         {
             return false;
         }
 
-        settings = new AppearanceSettings
+        AppearanceSettings appearance = new()
         {
             Theme = GetTheme(),
             EditorFontFamily = selectedEditorFont?.FamilyName,
             EditorFontSize = editorSize,
             PreviewFontFamily = selectedPreviewFont?.FamilyName,
             PreviewFontSize = previewSize,
-        }.Normalize();
+        };
+        settings = originalSettings with
+        {
+            Appearance = appearance.Normalize(),
+            BackgroundImagePath = BackgroundPage.SelectedPath,
+            BackgroundOpacity = BackgroundPage.SelectedOpacity,
+        };
         return true;
     }
 
@@ -204,8 +226,8 @@ public partial class AppearanceSettingsWindow : Window
         string editorFamily = selectedEditorFont?.FamilyName ?? "Cascadia Mono, Consolas";
         string previewFamily = selectedPreviewFont?.FamilyName
             ?? "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI";
-        EditorFontPreviewText.FontFamily = new FontFamily(editorFamily);
-        PreviewFontPreviewText.FontFamily = new FontFamily(previewFamily);
+        EditorFontPreviewText.FontFamily = FontFamilyResolver.Resolve(editorFamily, "Consolas");
+        PreviewFontPreviewText.FontFamily = FontFamilyResolver.Resolve(previewFamily, "Segoe UI");
         if (TryParseFontSize(EditorFontSizeComboBox.Text, out double editorSize))
         {
             EditorFontPreviewText.FontSize = editorSize;
@@ -227,8 +249,7 @@ public partial class AppearanceSettingsWindow : Window
 
     private ApplicationTheme GetTheme()
     {
-        return ThemeComboBox.SelectedValue is string value
-            && Enum.TryParse(value, out ApplicationTheme theme)
+        return ThemeListBox.SelectedValue is ApplicationTheme theme
             ? theme
             : ApplicationTheme.System;
     }
@@ -273,9 +294,16 @@ public partial class AppearanceSettingsWindow : Window
         return
         [
             new FontFamilyOption(DefaultFontDisplayName, null, "默认 system default", false),
+            .. CreateBundledFontOptions(),
             .. installed,
         ];
     }
+
+    internal static IReadOnlyList<FontFamilyOption> CreateBundledFontOptions() =>
+        BundledFontCatalog.Fonts.Select(font => new FontFamilyOption(
+            $"内置 · {font.DisplayName}", font.Id,
+            $"内置 开源 免费 OFL bundled {font.DisplayName} {font.FamilyName} {font.Description} {(font.IsChinese ? "中文 Chinese CJK" : "西文 Latin monospaced")}",
+            font.IsChinese)).ToArray();
 
     private static FontFamilyOption CreateFontOption(
         FontFamily family,
@@ -318,5 +346,48 @@ public partial class AppearanceSettingsWindow : Window
         return families.FirstOrDefault(item => name.StartsWith(
             item.Prefix,
             StringComparison.OrdinalIgnoreCase)).DisplayName;
+    }
+
+    private void ImportStateChanged(bool importing)
+    {
+        ApplyButton.IsEnabled = !importing;
+        SaveButton.IsEnabled = !importing;
+        RestoreDefaultsButton.IsEnabled = !importing;
+    }
+
+    private void FontLicenses_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        FontLicenseWindow dialog = new() { Owner = this };
+        dialog.ShowDialog();
+    }
+
+    private void Window_Closed(object? sender, EventArgs eventArgs)
+    {
+        appearanceApplyVersion++;
+        BackgroundPage.ImportStateChanged -= ImportStateChanged;
+        BackgroundPage.Dispose();
+    }
+
+    private void ApplyKeepingScrollPosition(ApplicationSettings settings)
+    {
+        // Fluent theme changes may rebuild native control templates and reset
+        // ScrollViewer state. Capture the page-owned viewports before notifying
+        // the owner, then restore after its synchronous and queued layout work.
+        double[] offsets = [ThemePageScroll.VerticalOffset, FontPageScroll.VerticalOffset, BackgroundPageScroll.VerticalOffset];
+        long version = ++appearanceApplyVersion;
+        AppearanceApplied?.Invoke(settings);
+        RestorePageOffsets(offsets);
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (IsVisible && version == appearanceApplyVersion) RestorePageOffsets(offsets);
+        }));
+    }
+
+    private void RestorePageOffsets(double[] offsets)
+    {
+        UpdateLayout();
+        ThemePageScroll.ScrollToVerticalOffset(offsets[0]);
+        FontPageScroll.ScrollToVerticalOffset(offsets[1]);
+        BackgroundPageScroll.ScrollToVerticalOffset(offsets[2]);
     }
 }

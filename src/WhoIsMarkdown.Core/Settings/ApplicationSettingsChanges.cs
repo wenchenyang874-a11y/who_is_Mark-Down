@@ -38,6 +38,7 @@ public static class ApplicationSettingsChanges
             {
                 OrderedList = Select(disk.PreviewStyles.OrderedList, before.PreviewStyles.OrderedList, after.PreviewStyles.OrderedList),
             },
+            PreviewStyleFiles = PreviewStyleFileSettings.Merge(disk.PreviewStyleFiles, before.PreviewStyleFiles, after.PreviewStyleFiles),
             CheckForUpdatesOnStartup = Select(disk.CheckForUpdatesOnStartup, before.CheckForUpdatesOnStartup, after.CheckForUpdatesOnStartup),
             FileOpenViewMode = Select(disk.FileOpenViewMode, before.FileOpenViewMode, after.FileOpenViewMode),
             LastViewMode = Select(disk.LastViewMode, before.LastViewMode, after.LastViewMode),

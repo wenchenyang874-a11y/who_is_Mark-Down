@@ -68,7 +68,8 @@ public sealed class AppearanceAndUpdatePresentationTests
         Assert.Contains("微软雅黑", dialogCode, StringComparison.Ordinal);
         Assert.Contains("SimSun", dialogCode, StringComparison.Ordinal);
         Assert.Contains("宋体", dialogCode, StringComparison.Ordinal);
-        Assert.Contains("只引用本机已安装字体", dialogXaml, StringComparison.Ordinal);
+        Assert.Contains("本机字体仅引用", dialogXaml, StringComparison.Ordinal);
+        Assert.Contains("BundledFontCatalog.Fonts", dialogCode, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -94,24 +95,20 @@ public sealed class AppearanceAndUpdatePresentationTests
         Assert.Contains("Content=\"应用\" Click=\"Apply_Click\"", dialogXaml, StringComparison.Ordinal);
         Assert.Contains("AppearanceApplied?.Invoke(settings)", dialogCode, StringComparison.Ordinal);
         Assert.DoesNotContain("DialogResult = true;\n        AppearanceApplied", dialogCode, StringComparison.Ordinal);
-        Assert.Contains("dialog.AppearanceApplied += ApplyAppearanceFromDialog", mainWindowCode, StringComparison.Ordinal);
-        Assert.Contains("dialog.AppearanceApplied -= ApplyAppearanceFromDialog", mainWindowCode, StringComparison.Ordinal);
+        Assert.Contains("dialog.AppearanceApplied += apply", mainWindowCode, StringComparison.Ordinal);
+        Assert.Contains("dialog.AppearanceApplied -= apply", mainWindowCode, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void 背景设置_关闭按钮使用完整可见的通用字符()
+    public void 外观设置_背景嵌入分类页且保留原生窗口关闭()
     {
-        string repositoryRoot = FindRepositoryRoot();
-        string backgroundWindow = File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "src",
-            "WhoIsMarkdown.App",
-            "BackgroundSettingsWindow.xaml"));
-
-        Assert.Contains("Content=\"×\"", backgroundWindow, StringComparison.Ordinal);
-        Assert.Contains("FontFamily=\"Segoe UI, Microsoft YaHei UI\"", backgroundWindow, StringComparison.Ordinal);
-        Assert.Contains("HorizontalContentAlignment=\"Center\"", backgroundWindow, StringComparison.Ordinal);
-        Assert.DoesNotContain("&#xE8BB;", backgroundWindow, StringComparison.OrdinalIgnoreCase);
+        string xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "WhoIsMarkdown.App", "AppearanceSettingsWindow.xaml"));
+        XDocument document = XDocument.Parse(xaml);
+        Assert.Equal("Window", document.Root!.Name.LocalName);
+        Assert.DoesNotContain("WindowStyle=\"None\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Header=\"背景\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("BackgroundSettingsControl", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Popup", xaml, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

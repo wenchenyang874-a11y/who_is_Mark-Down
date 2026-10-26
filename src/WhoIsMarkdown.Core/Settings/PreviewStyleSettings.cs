@@ -15,12 +15,20 @@ public sealed record PreviewStyleSettings
 }
 
 /// <summary>
-/// Session-only overrides. A null feature follows its global default; resolving
-/// must not mutate or serialize the override into the global preference store.
+/// File-scoped feature overrides. Null follows the global default; keep these
+/// separate from defaults so one file's choice cannot affect unrelated files.
 /// </summary>
 public sealed record PreviewStyleOverrides
 {
     public OrderedListStyle? OrderedList { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsEmpty => OrderedList is null;
+
+    public PreviewStyleOverrides Normalize() => this with
+    {
+        OrderedList = OrderedList is { } style && Enum.IsDefined(style) ? style : null,
+    };
 
     public PreviewStyleSettings Resolve(PreviewStyleSettings defaults)
     {

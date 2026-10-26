@@ -11,12 +11,13 @@
     <Product>WIMD</Product>
     <AssemblyTitle>WIMD</AssemblyTitle>
     <Description>Offline-first Markdown editor with real-time preview.</Description>
-    <Version>1.8.11</Version>
-    <FileVersion>1.8.11.0</FileVersion>
-    <AssemblyVersion>1.8.11.0</AssemblyVersion>
+    <Version>1.9.0</Version>
+    <FileVersion>1.9.0.0</FileVersion>
+    <AssemblyVersion>1.9.0.0</AssemblyVersion>
     <ApplicationIcon Condition="Exists('..\..\assets\app.ico')">..\..\assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="..\..\assets\fonts\**\*" Link="Fonts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="..\WhoIsMarkdown.Core\WhoIsMarkdown.Core.csproj" />
     <InternalsVisibleTo Include="WhoIsMarkdown.App.Tests" />
     <PackageReference Include="AvalonEdit" />

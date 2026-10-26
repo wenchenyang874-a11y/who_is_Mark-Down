@@ -8,6 +8,7 @@ using Microsoft.Web.WebView2.Wpf;
 using WhoIsMarkdown.Core.Images;
 using WhoIsMarkdown.Core.Markdown;
 using WhoIsMarkdown.Core.Security;
+using WhoIsMarkdown.Core.Settings;
 
 namespace WhoIsMarkdown.App.Services;
 
@@ -463,6 +464,10 @@ public sealed partial class PreviewWebViewService : IDisposable
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsWebMessageEnabled = true;
+        // This reserved origin serves only packaged OFL fonts. Chromium reads the
+        // files lazily; never serialize large fonts into each appearance update.
+        core.SetVirtualHostNameToFolderMapping(BundledFontCatalog.VirtualHost,
+            Path.Combine(AppContext.BaseDirectory, "Fonts"), CoreWebView2HostResourceAccessKind.Allow);
         await RegisterHostScriptAsync(ScrollReportingScript).ConfigureAwait(true);
         await RegisterHostScriptAsync(SourceLineNavigationScript.Script).ConfigureAwait(true);
         await RegisterHostScriptAsync(HeadingFoldScript.Script).ConfigureAwait(true);
@@ -789,6 +794,9 @@ public sealed partial class PreviewWebViewService : IDisposable
         }
 
         await WaitForMermaidRenderingAsync().WaitAsync(cancellationToken).ConfigureAwait(true);
+
+        await DiagnosticLog.MeasureAsync(DiagnosticStage.PdfFontsReady,
+            () => WaitForPdfFontsAsync(cancellationToken), DiagnosticWindowId).ConfigureAwait(true);
 
         // Remote images and generated Mermaid image surfaces can finish after the
         // DOM update. The page bounds its own wait so a dead image host cannot hang the

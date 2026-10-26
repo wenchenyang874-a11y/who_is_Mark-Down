@@ -14,6 +14,7 @@ public sealed class PreviewContentBuilderTests
         Assert.Contains("script-src &#39;none&#39;", prepared.NavigationHtml, StringComparison.Ordinal);
         Assert.Contains("color: black", prepared.NavigationHtml, StringComparison.Ordinal);
         Assert.Contains("font-size: 16px", prepared.NavigationHtml, StringComparison.Ordinal);
+        Assert.Contains($"</style>{Environment.NewLine}  <style id=\"wimd-host-appearance\">", prepared.NavigationHtml, StringComparison.Ordinal);
         Assert.Null(prepared.UpdateScript);
         Assert.False(prepared.IsPatch);
         Assert.False(prepared.ContainsMermaid);
@@ -114,7 +115,8 @@ public sealed class PreviewContentBuilderTests
         public int VisibleBodies { get; private set; }
         public Action? AfterBuild { get; set; }
 
-        public string Build(string bodyHtml, string styleSheet, RemoteImagePolicy? remoteImagePolicy = null)
+        public string Build(string bodyHtml, string styleSheet, RemoteImagePolicy? remoteImagePolicy = null,
+            string? appearanceStyleSheet = null)
         {
             Pages++;
             AfterBuild?.Invoke();

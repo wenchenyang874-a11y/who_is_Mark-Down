@@ -23,7 +23,8 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
     public string Build(
         string bodyHtml,
         string styleSheet,
-        RemoteImagePolicy? remoteImagePolicy = null)
+        RemoteImagePolicy? remoteImagePolicy = null,
+        string? appearanceStyleSheet = null)
     {
         ArgumentNullException.ThrowIfNull(bodyHtml);
         ArgumentNullException.ThrowIfNull(styleSheet);
@@ -43,6 +44,14 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
         html.AppendLine("  <style>");
         html.AppendLine(styleSheet);
         html.AppendLine("  </style>");
+        // Keep mutable appearance rules out of the immutable base sheet. Otherwise
+        // switching a styled file to Plain leaves its initial counters/fonts active.
+        if (appearanceStyleSheet is not null)
+        {
+            html.AppendLine("  <style id=\"wimd-host-appearance\">");
+            html.AppendLine(appearanceStyleSheet);
+            html.AppendLine("  </style>");
+        }
         html.AppendLine("</head>");
         html.AppendLine("<body>");
         html.AppendLine("  <main class=\"preview-document\">");
@@ -67,7 +76,7 @@ public sealed class PreviewDocumentBuilder : IPreviewDocumentBuilder
             "script-src 'none'; " +
             $"img-src {imageSources}; " +
             "style-src 'unsafe-inline'; " +
-            "font-src data:;";
+            "font-src data: https://wimd-fonts.invalid;";
     }
     public string GetVisibleBody(string bodyHtml)
     {

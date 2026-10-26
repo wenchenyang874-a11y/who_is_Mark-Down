@@ -61,3 +61,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+## Bundled fonts
+
+WIMD distributes unmodified LXGW WenKai Regular and LXGW WenKai Mono Regular (v1.530), LXGW Marker Gothic Regular (v1.004), JetBrains Mono Regular (v2.304), and Fira Code Regular (6.2), each under the **SIL Open Font License 1.1** rather than WIMD's Apache-2.0 license. Copyright holders include LXGW and The Klee Project Authors, The LXGW Marker Gothic Project Authors, The JetBrains Mono Project Authors, and The Fira Code Project Authors. The Marker Gothic authors list is also included unchanged as AUTHORS.txt.
+
+The complete original licenses accompany each font in `Fonts/<family>/OFL.txt` in the application directory (`assets/fonts/<family>/OFL.txt` in source). `Fonts/README.md` includes fixed official sources, copyright statements, versions, file sizes and SHA-256 hashes. See **Settings → Appearance → Fonts → licenses and sources** to read those local notices. Fonts are not modified, subsetted, converted or renamed, are not sold on their own, and are not installed system-wide. Existing Windows font files are never redistributed by WIMD.

@@ -50,17 +50,17 @@
                       AutomationProperties.Name="全局默认编号样式" />
             <TextBlock Text="保存到本机，供以后新开的窗口使用；其他已开窗口不实时同步。"
                        FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
-            <TextBlock Margin="0,18,0,0" Text="当前窗口" FontWeight="SemiBold" />
+            <TextBlock Margin="0,18,0,0" Text="当前文件" FontWeight="SemiBold" />
             <ComboBox x:Name="WindowStyleComboBox" Margin="0,7,0,5" MinHeight="34"
                       DisplayMemberPath="Label" SelectionChanged="Style_SelectionChanged"
-                      AutomationProperties.Name="当前窗口编号样式" />
-            <TextBlock Text="单独设置仅在本窗口有效；关闭后不保留，也不影响其他窗口。"
+                      AutomationProperties.Name="当前文件编号样式" />
+            <TextBlock x:Name="FileScopeHint" Text="按文件保存在本机，重开后保留。"
                        FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
             <Border Margin="0,20,0,8" Padding="18" CornerRadius="10"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                     Background="{DynamicResource SurfaceMutedBrush}">
                 <StackPanel>
-                    <TextBlock Text="当前窗口效果示意" Margin="0,0,0,12" FontSize="11"
+                    <TextBlock Text="当前文件效果示意" Margin="0,0,0,12" FontSize="11"
                                Foreground="{DynamicResource TextSecondaryBrush}" />
                     <StackPanel x:Name="StylePreview" />
                 </StackPanel>

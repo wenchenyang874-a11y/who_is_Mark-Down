@@ -321,6 +321,12 @@ public partial class MainWindow : Window
             return false;
         }
 
+        return await SaveDocumentToPathAsync(targetPath);
+    }
+
+    private async Task<bool> SaveDocumentToPathAsync(string targetPath)
+    {
+        if (documentSaveRunning || windowClosed) return false;
         documentSaveRunning = true;
         using DiagnosticOperation? saving = DiagnosticLog.Current?.Begin(DiagnosticStage.DocumentSave, diagnosticWindowId);
         EditorTextSnapshot snapshot = document.CaptureSnapshot();
@@ -359,6 +365,7 @@ public partial class MainWindow : Window
             // Save-as moves the document to another directory, so the watcher has to
             // follow it; the same path keeps the existing watcher untouched.
             AttachExternalDocumentWatcher();
+            RefreshPreviewStyleSheet();
             RecordRecentFile(targetPath);
             // Bug fix: saving does not move the caret or change the Markdown body.
             // Preserve the preview viewport when the refresh completes instead of
@@ -470,6 +477,7 @@ public partial class MainWindow : Window
         // watcher always follows the path that is actually being edited.
         AttachExternalDocumentWatcher();
         RefreshExternalChangeMenu();
+        RefreshPreviewStyleSheet();
         SchedulePreview(synchronizePreviewToCaretWhenReady: !forcePreviewUpdate, forceBodyReplacement: forcePreviewUpdate);
         UpdateStatus();
         if (!preserveEditorPosition) Editor.Focus();

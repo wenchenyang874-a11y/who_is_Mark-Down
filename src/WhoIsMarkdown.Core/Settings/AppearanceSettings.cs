@@ -1,8 +1,8 @@
 namespace WhoIsMarkdown.Core.Settings;
 
 /// <summary>
-/// Selects a built-in WIMD color palette. Fonts are intentionally referenced by
-/// installed family name only; WIMD never bundles or redistributes font files.
+/// Selects a built-in WIMD color palette. Existing numeric values are stable for
+/// old settings; licensed bundled fonts use catalog IDs, never arbitrary paths.
 /// </summary>
 public enum ApplicationTheme
 {
@@ -10,6 +10,11 @@ public enum ApplicationTheme
     Light,
     Dark,
     Warm,
+    Rose,
+    Sage,
+    Mist,
+    Lilac,
+    Midnight,
 }
 
 public sealed record AppearanceSettings
@@ -54,6 +59,8 @@ public sealed record AppearanceSettings
         }
 
         string normalized = value.Trim();
+        if (normalized.StartsWith("wimd:", StringComparison.OrdinalIgnoreCase) && BundledFontCatalog.Find(normalized) is null)
+            return null;
         return normalized.Length <= MaximumFontFamilyLength
             && !normalized.Any(char.IsControl)
             ? normalized

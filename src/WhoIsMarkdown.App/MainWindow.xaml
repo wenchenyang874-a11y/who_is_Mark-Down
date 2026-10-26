@@ -246,7 +246,7 @@
                     <MenuItem Header="快捷键设置..." Click="Shortcuts_Click" />
                 </MenuItem>
                 <MenuItem Header="设置(_S)" AutomationProperties.Name="设置" Style="{StaticResource TopLevelMenuItemStyle}">
-                    <MenuItem Header="外观与字体..." Click="AppearanceSettings_Click" />
+                    <MenuItem Header="外观设置..." Click="AppearanceSettings_Click" />
                     <MenuItem Header="预览样式..." AutomationProperties.Name="预览样式" Click="PreviewStyleSettings_Click" />
                     <MenuItem x:Name="FileOpenViewModeMenuItem" Header="打开文件时的显示模式">
                         <MenuItem Header="仅编辑" Tag="EditorOnly" IsCheckable="True" Click="FileOpenViewMode_Click" />
@@ -269,7 +269,6 @@
                     </MenuItem>
                     <Separator />
                     <MenuItem Header="图片设置..." Click="ImageSettings_Click" />
-                    <MenuItem Header="自定义背景..." Click="BackgroundSettings_Click" />
                 </MenuItem>
                 <MenuItem Header="帮助(_H)" AutomationProperties.Name="帮助" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="打开日志文件夹" AutomationProperties.Name="打开日志文件夹" Click="OpenLogDirectory_Click" />

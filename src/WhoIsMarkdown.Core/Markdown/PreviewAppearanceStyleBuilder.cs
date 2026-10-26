@@ -27,6 +27,7 @@ public static class PreviewAppearanceStyleBuilder
         string size = normalized.PreviewFontSize.ToString("0.##", CultureInfo.InvariantCulture);
 
         return $$"""
+            {{BuildBundledFontFaces(normalized)}}
             :root {
               color-scheme: {{palette.ColorScheme}};
               --wimd-preview-font: {{bodyFont}};
@@ -58,6 +59,9 @@ public static class PreviewAppearanceStyleBuilder
 
     private static string CreateFontStack(string? family, string fallback)
     {
+        if (BundledFontCatalog.Find(family) is { } bundled)
+            family = BundledFontCatalog.CssFamily(bundled);
+
         if (string.IsNullOrWhiteSpace(family))
         {
             return fallback;
@@ -79,8 +83,33 @@ public static class PreviewAppearanceStyleBuilder
         return encoded.ToString();
     }
 
+    private static string BuildBundledFontFaces(AppearanceSettings settings)
+    {
+        return string.Join(Environment.NewLine, new[] { settings.EditorFontFamily, settings.PreviewFontFamily }
+            .Distinct(StringComparer.Ordinal)
+            .Select(BundledFontCatalog.Find)
+            .Where(font => font is not null)
+            .Select(font => $$"""
+                @font-face { font-family: "{{BundledFontCatalog.CssFamily(font!)}}";
+                  src: url("https://{{BundledFontCatalog.VirtualHost}}/{{font!.RelativePath}}");
+                  font-weight: 400; font-style: normal; font-display: swap; }
+                """));
+    }
+
     private static PreviewPalette GetPalette(ApplicationTheme theme)
     {
+        if (ThemeCatalog.HasExtendedPalette(theme))
+        {
+            ThemeColors c = ThemeCatalog.Get(theme).Colors;
+            return new(c.IsDark ? "dark" : "light", c.Text, c.Heading, c.Secondary, c.Accent,
+                ThemeCatalog.WithAlpha(c.Accent, "18"), ThemeCatalog.WithAlpha(c.Surface, "70"),
+                c.Border, c.Border, c.Secondary, ThemeCatalog.WithAlpha(c.Muted, "A6"),
+                c.Accent, ThemeCatalog.WithAlpha(c.Muted, "CC"), ThemeCatalog.WithAlpha(c.Muted, "D6"),
+                ThemeCatalog.WithAlpha(c.Surface, "50"), ThemeCatalog.WithAlpha(c.Surface, "40"),
+                ThemeCatalog.WithAlpha(c.Muted, "DB"), c.Surface, c.Border,
+                ThemeCatalog.WithAlpha(c.Secondary, "94"));
+        }
+
         return theme switch
         {
             ApplicationTheme.Dark => new(

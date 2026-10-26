@@ -23,6 +23,8 @@ public sealed record ApplicationSettings
 
     public PreviewStyleSettings PreviewStyles { get; init; } = new();
 
+    public PreviewStyleFileSettings PreviewStyleFiles { get; init; } = new();
+
     public ExternalFileChangeSettings ExternalFileChanges { get; init; } = new();
 
     public bool CheckForUpdatesOnStartup { get; init; }
@@ -108,6 +110,7 @@ public sealed record ApplicationSettings
             ImageInsertion = (ImageInsertion ?? new ImageInsertionSettings()).Normalize(),
             Appearance = (Appearance ?? new AppearanceSettings()).Normalize(),
             PreviewStyles = (PreviewStyles ?? new PreviewStyleSettings()).Normalize(),
+            PreviewStyleFiles = (PreviewStyleFiles ?? new PreviewStyleFileSettings()).Normalize(),
             ExternalFileChanges = (ExternalFileChanges ?? new ExternalFileChangeSettings()).Normalize(),
             FileOpenViewMode = Enum.IsDefined(FileOpenViewMode) ? FileOpenViewMode : FileOpenViewMode.RememberLast,
             LastViewMode = Enum.IsDefined(LastViewMode) ? LastViewMode : WorkspaceViewMode.EditorAndPreview,
@@ -199,7 +202,11 @@ public sealed record ApplicationSettings
             })
             .ToArray();
 
-        return (normalizedSettings with { RecentFiles = relocatedEntries })
+        return (normalizedSettings with
+        {
+            RecentFiles = relocatedEntries,
+            PreviewStyleFiles = normalizedSettings.PreviewStyleFiles.Relocate(normalizedSource, normalizedTarget)
+        })
             .NormalizeForPersistence();
     }
 

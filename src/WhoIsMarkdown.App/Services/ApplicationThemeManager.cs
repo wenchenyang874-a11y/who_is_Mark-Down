@@ -72,7 +72,7 @@ public static class ApplicationThemeManager
         string value = requestedTheme switch
         {
             ApplicationTheme.System => "System",
-            ApplicationTheme.Dark => "Dark",
+            _ when ThemeCatalog.Get(requestedTheme).Colors.IsDark => "Dark",
             _ => "Light",
         };
 
@@ -81,7 +81,7 @@ public static class ApplicationThemeManager
             object? themeMode = valueType is null
                 ? null
                 : Activator.CreateInstance(valueType, value);
-            if (themeMode is not null)
+            if (themeMode is not null && !Equals(property!.GetValue(application), themeMode))
             {
                 property!.SetValue(application, themeMode);
             }
@@ -123,6 +123,16 @@ public static class ApplicationThemeManager
     {
         public static ThemePalette For(ApplicationTheme theme)
         {
+            if (ThemeCatalog.HasExtendedPalette(theme))
+            {
+                ThemeColors c = ThemeCatalog.Get(theme).Colors;
+                // WPF uses AARRGGBB, while CSS uses RRGGBBAA. Keep conversions
+                // explicit rather than sharing an ambiguous eight-digit color.
+                return Create(c.Accent, c.AccentHover, c.Background, "#B3" + c.Surface[1..],
+                    c.Text, c.Secondary, c.Text, "#F2" + c.Surface[1..], "#E8" + c.Muted[1..],
+                    c.Border, c.Surface, "#80" + c.Muted[1..], "#CC" + c.Muted[1..], "#40" + c.Accent[1..]);
+            }
+
             return theme switch
             {
                 ApplicationTheme.Dark => Create(
