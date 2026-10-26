@@ -35,28 +35,7 @@ internal static class WebViewScriptResult
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         ArgumentException.ThrowIfNullOrWhiteSpace(slotExpression);
 
-        // Bound the native call too, not just the interval between polls. A closed
-        // or unresponsive browser may never complete ExecuteScriptAsync. WaitAsync
-        // stops our wait; it does not claim to interrupt Chromium's running script.
-        cancellationToken.ThrowIfCancellationRequested();
-        if (timeout <= TimeSpan.Zero) return null;
-        Stopwatch elapsed = Stopwatch.StartNew();
-        using DiagnosticOperation? wait = DiagnosticLog.Current?.Begin(DiagnosticStage.HostScriptWait, onlySlow: true);
-        try
-        {
-            await core.ExecuteScriptAsync(script).WaitAsync(timeout, cancellationToken).ConfigureAwait(true);
-        }
-        catch (TimeoutException exception)
-        {
-            wait?.Fail(exception);
-            return null;
-        }
-
-        string? result = await PollAsync(core, slotExpression, timeout - elapsed.Elapsed, cancellationToken)
-            .ConfigureAwait(true);
-        if (result is null) wait?.Fail(new TimeoutException());
-        else wait?.Succeed();
-        return result;
+        return await RunAsync(core.ExecuteScriptAsync, script, slotExpression, timeout, cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -72,35 +51,118 @@ internal static class WebViewScriptResult
         ArgumentNullException.ThrowIfNull(core);
         ArgumentException.ThrowIfNullOrWhiteSpace(slotExpression);
 
+        return await PollAsync(core.ExecuteScriptAsync, slotExpression, timeout, cancellationToken).ConfigureAwait(true);
+    }
+
+    // The delegate seam tests the exact production wait algorithm without a
+    // browser. It does not authorize new scripts or change STA/context affinity.
+    internal static Task<string?> RunAsync(Func<string, Task<string>> execute, string script, string slotExpression,
+        TimeSpan timeout, CancellationToken cancellationToken)
+        => WaitAsync(execute, script, slotExpression, timeout, cancellationToken);
+
+    internal static Task<string?> PollAsync(Func<string, Task<string>> execute, string slotExpression,
+        TimeSpan timeout, CancellationToken cancellationToken)
+        => WaitAsync(execute, null, slotExpression, timeout, cancellationToken);
+
+    private static async Task<string?> WaitAsync(Func<string, Task<string>> execute, string? script,
+        string slotExpression, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(execute);
+        ArgumentException.ThrowIfNullOrWhiteSpace(slotExpression);
         Stopwatch elapsed = Stopwatch.StartNew();
-        while (elapsed.Elapsed < timeout)
+        WaitCounters counters = new();
+        using DiagnosticOperation? wait = DiagnosticLog.Current?.Begin(DiagnosticStage.HostScriptWait,
+            onlySlow: !CoreDiagnosticBridge.Detailed.Value, execution: DiagnosticExecutionKind.AsyncAwait);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            TimeSpan remaining = timeout - elapsed.Elapsed;
-            if (remaining <= TimeSpan.Zero) return null;
-            string result;
-            try
+            // Run historically checks cancellation before an empty budget;
+            // direct Poll returns null immediately for an empty budget.
+            if (script is not null) cancellationToken.ThrowIfCancellationRequested();
+            if (timeout <= TimeSpan.Zero) throw new TimeoutException();
+            if (script is not null)
+                await ExecuteAsync(execute, script, timeout, counters, initial: true, cancellationToken).ConfigureAwait(true);
+            while (true)
             {
-                result = await core.ExecuteScriptAsync(slotExpression)
-                    .WaitAsync(remaining, cancellationToken).ConfigureAwait(true);
-            }
-            catch (TimeoutException)
-            {
-                return null;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                TimeSpan remaining = timeout - elapsed.Elapsed;
+                if (remaining <= TimeSpan.Zero) throw new TimeoutException();
+                string result = await ExecuteAsync(execute, slotExpression, remaining,
+                    counters, initial: false, cancellationToken).ConfigureAwait(true);
 
-            string trimmed = result.Trim();
-            if (!trimmed.Equals("null", StringComparison.Ordinal))
-            {
-                return trimmed;
+                string trimmed = result.Trim();
+                if (!trimmed.Equals("null", StringComparison.Ordinal))
+                {
+                    counters.Outcome = "Ready";
+                    wait?.Succeed();
+                    return trimmed;
+                }
+                counters.NullResponses++;
+                remaining = timeout - elapsed.Elapsed;
+                if (remaining <= TimeSpan.Zero) throw new TimeoutException();
+                long delayStarted = Stopwatch.GetTimestamp();
+                try
+                {
+                    await DiagnosticLog.MeasureAsync(DiagnosticStage.HostScriptPollDelay,
+                        () => Task.Delay(TimeSpan.FromMilliseconds(Math.Min(PollIntervalMilliseconds, remaining.TotalMilliseconds)),
+                            cancellationToken), onlySlow: true).ConfigureAwait(true);
+                }
+                finally { counters.DelayMs += Stopwatch.GetElapsedTime(delayStarted).TotalMilliseconds; }
             }
-
-            remaining = timeout - elapsed.Elapsed;
-            if (remaining <= TimeSpan.Zero) return null;
-            await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(PollIntervalMilliseconds, remaining.TotalMilliseconds)),
-                cancellationToken).ConfigureAwait(true);
         }
+        catch (TimeoutException exception)
+        {
+            counters.Outcome = "Timeout";
+            wait?.Fail(exception);
+            return null;
+        }
+        catch (Exception exception)
+        {
+            counters.Outcome = exception is OperationCanceledException ? "Canceled" : "Failed";
+            wait?.Fail(exception);
+            throw;
+        }
+        finally
+        {
+            // Only numeric counters/fixed outcomes, never scripts, slot names,
+            // returned page values, browser URLs, or exception messages.
+            if (wait is not null) wait.ScriptWait = new(timeout.TotalMilliseconds, script is not null,
+                counters.NativeCalls, counters.PollCalls, counters.NullResponses, counters.DispatchMs,
+                counters.PollNativeMs, counters.DelayMs, counters.Outcome);
+        }
+    }
 
-        return null;
+    private static async Task<string> ExecuteAsync(Func<string, Task<string>> execute, string expression,
+        TimeSpan timeout, WaitCounters counters, bool initial, CancellationToken cancellationToken)
+    {
+        counters.NativeCalls++;
+        if (!initial) counters.PollCalls++;
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            // Timeout stops host waiting only, not Chromium. A synchronously
+            // blocked native dispatch is visible through AsyncActionDispatch.
+            return await DiagnosticLog.MeasureAsync(initial ? DiagnosticStage.HostScriptDispatch : DiagnosticStage.HostScriptPollCall,
+                () => execute(expression).WaitAsync(timeout, cancellationToken), onlySlow: true).ConfigureAwait(true);
+        }
+        finally
+        {
+            double duration = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (initial) counters.DispatchMs += duration;
+            else counters.PollNativeMs += duration;
+        }
+    }
+
+    private sealed class WaitCounters
+    {
+        internal int NativeCalls;
+        internal int PollCalls;
+        internal int NullResponses;
+        internal double DispatchMs;
+        internal double PollNativeMs;
+        internal double DelayMs;
+        internal string Outcome = "Pending";
     }
 }
+
+internal sealed record DiagnosticScriptWaitSnapshot(double TimeoutMs, bool IncludesInitialDispatch, int NativeCalls,
+    int PollCalls, int NullResponses, double InitialDispatchMs, double PollNativeMs, double PollDelayMs, string Outcome);

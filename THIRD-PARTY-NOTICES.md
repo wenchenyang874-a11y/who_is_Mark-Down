@@ -3,6 +3,35 @@
 WIMD includes the following third-party software. Legal comments for Mermaid's
 transitive dependencies remain embedded in `Resources/mermaid.min.js`.
 
+## Microsoft local managed diagnostics
+
+- Microsoft.Diagnostics.Tracing.TraceEvent 4.0.0: <https://github.com/microsoft/perfview>
+- Microsoft.Diagnostics.NETCore.Client 0.2.661903: <https://github.com/dotnet/diagnostics>
+- Microsoft.Extensions.Logging.Abstractions 8.0.3 and Microsoft.Extensions.DependencyInjection.Abstractions 8.0.2: <https://github.com/dotnet/runtime>
+- System.Reflection.TypeExtensions 4.7.0: <https://github.com/dotnet/runtime>
+- Licenses: MIT (Microsoft). These components are used for bounded local method-stack sampling, not telemetry.
+- The unused native ETW/PDB build helpers are excluded. No symbol download service is configured or used.
+
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 ## Mermaid 11.16.1
 
 - Project: <https://github.com/mermaid-js/mermaid>

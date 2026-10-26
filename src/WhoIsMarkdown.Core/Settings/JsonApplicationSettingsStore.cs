@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using WhoIsMarkdown.Core.Diagnostics;
 
 namespace WhoIsMarkdown.Core.Settings;
 
@@ -36,6 +37,9 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
     }
 
     public ApplicationSettings Load()
+        => CoreOperationTrace.Measure("SettingsReadTransaction", LoadTransaction);
+
+    private ApplicationSettings LoadTransaction()
     {
         // Bug fix: on Windows even an atomic destination replacement can briefly
         // reject an unlocked reader. Readers must join the same cross-process
@@ -47,39 +51,44 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
 
     private ApplicationSettings Load(bool sortRecentFiles)
     {
-        lock (synchronizationRoot)
+        return WithInstanceLock(() =>
         {
-            string path = File.Exists(settingsPath) ? settingsPath : legacySettingsPath ?? settingsPath;
-            if (!File.Exists(path))
+            string path = CoreOperationTrace.Measure("SettingsLocate", () =>
+                File.Exists(settingsPath) ? settingsPath : legacySettingsPath ?? settingsPath);
+            if (!CoreOperationTrace.Measure("SettingsExists", () => File.Exists(path)))
             {
+                CoreOperationTrace.Value("SettingsFallback", 1); // Missing; no path or setting value.
                 return new ApplicationSettings();
             }
 
             try
             {
-                byte[] bytes = File.ReadAllBytes(path);
-                string json = StrictUtf8.GetString(bytes);
-                ApplicationSettings? settings = JsonSerializer.Deserialize<ApplicationSettings>(
-                    json,
-                    SerializerOptions);
+                byte[] bytes = CoreOperationTrace.Measure("SettingsBytesRead", () => File.ReadAllBytes(path));
+                CoreOperationTrace.Value("SettingsReadBytes", bytes.LongLength);
+                string json = CoreOperationTrace.Measure("SettingsDecode", () => StrictUtf8.GetString(bytes));
+                ApplicationSettings? settings = CoreOperationTrace.Measure("SettingsDeserialize", () =>
+                    JsonSerializer.Deserialize<ApplicationSettings>(json, SerializerOptions));
+                if (settings is null) CoreOperationTrace.Value("SettingsFallback", 4);
                 ApplicationSettings loaded = settings ?? new ApplicationSettings();
-                return sortRecentFiles ? loaded.Normalize() : loaded.NormalizeForPersistence();
+                return CoreOperationTrace.Measure("SettingsNormalize", () =>
+                    sortRecentFiles ? loaded.Normalize() : loaded.NormalizeForPersistence());
             }
             catch (Exception exception) when (exception is JsonException or DecoderFallbackException)
             {
+                CoreOperationTrace.Value("SettingsFallback", exception is JsonException ? 2 : 3);
                 return new ApplicationSettings();
             }
             catch (Exception exception) when (IsExpectedFileException(exception))
             {
                 throw CreateException("无法读取本地应用设置。", exception);
             }
-        }
+        });
     }
 
     public void Save(ApplicationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        WithWriterLock(() => SaveCore(settings));
+        CoreOperationTrace.Measure("SettingsSaveTransaction", () => { WithWriterLock(() => SaveCore(settings)); return true; });
     }
 
     public void SaveChanges(ApplicationSettings baseline, ApplicationSettings settings)
@@ -88,32 +97,47 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
         ArgumentNullException.ThrowIfNull(settings);
         // Read + merge + atomic replacement must share one cross-process lock;
         // an instance-only monitor cannot protect independent WIMD windows.
-        WithWriterLock(() => SaveCore(ApplicationSettingsChanges.Merge(Load(sortRecentFiles: false), baseline, settings)));
+        CoreOperationTrace.Measure("SettingsMergeTransaction", () =>
+        {
+            WithWriterLock(() =>
+            {
+                ApplicationSettings latest = Load(sortRecentFiles: false);
+                ApplicationSettings merged = CoreOperationTrace.Measure("SettingsMerge", () =>
+                    ApplicationSettingsChanges.Merge(latest, baseline, settings));
+                SaveCore(merged);
+            });
+            return true;
+        });
     }
 
     private void WithWriterLock(Action write)
     {
-        lock (synchronizationRoot)
+        WithInstanceLock(() =>
         {
-            using Mutex writerMutex = new(false, writerMutexName);
+            using Mutex writerMutex = CoreOperationTrace.Measure("SettingsMutexCreate", () => new Mutex(false, writerMutexName));
             bool acquired = false;
             try
             {
-                try { acquired = writerMutex.WaitOne(TimeSpan.FromSeconds(5)); }
-                catch (AbandonedMutexException) { acquired = true; }
-                if (!acquired) throw CreateException("等待其他窗口保存设置超时。", new TimeoutException());
+                CoreOperationTrace.Measure("SettingsMutexWait", () =>
+                {
+                    try { acquired = writerMutex.WaitOne(TimeSpan.FromSeconds(5)); }
+                    catch (AbandonedMutexException) { acquired = true; CoreOperationTrace.Value("SettingsMutexAbandoned", 1); }
+                    if (!acquired) throw CreateException("等待其他窗口保存设置超时。", new TimeoutException());
+                    return true;
+                });
                 write();
             }
             finally
             {
-                if (acquired) writerMutex.ReleaseMutex();
+                if (acquired) CoreOperationTrace.Measure("SettingsMutexRelease", () => { writerMutex.ReleaseMutex(); return true; });
             }
-        }
+            return true;
+        });
     }
 
     private void SaveCore(ApplicationSettings settings)
     {
-        lock (synchronizationRoot)
+        WithInstanceLock(() =>
         {
             string directory = System.IO.Path.GetDirectoryName(settingsPath)
                 ?? throw new InvalidOperationException("设置文件缺少父目录。");
@@ -123,24 +147,27 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
 
             try
             {
-                Directory.CreateDirectory(directory);
-                byte[] json = JsonSerializer.SerializeToUtf8Bytes(
-                    settings.NormalizeForPersistence(),
-                    SerializerOptions);
+                CoreOperationTrace.Measure("SettingsDirectoryCreate", () => Directory.CreateDirectory(directory));
+                ApplicationSettings normalized = CoreOperationTrace.Measure("SettingsNormalize", settings.NormalizeForPersistence);
+                byte[] json = CoreOperationTrace.Measure("SettingsSerialize", () =>
+                    JsonSerializer.SerializeToUtf8Bytes(normalized, SerializerOptions));
+                CoreOperationTrace.Value("SettingsWriteBytes", json.LongLength);
 
-                using (FileStream stream = new(
+                FileStream stream = CoreOperationTrace.Measure("SettingsTemporaryOpen", () => new FileStream(
                     temporaryPath,
                     FileMode.CreateNew,
                     FileAccess.Write,
                     FileShare.None,
                     bufferSize: 4096,
-                    FileOptions.WriteThrough))
+                    FileOptions.WriteThrough));
+                try
                 {
-                    stream.Write(json);
-                    stream.Flush(flushToDisk: true);
+                    CoreOperationTrace.Measure("SettingsBytesWrite", () => { stream.Write(json); return true; });
+                    CoreOperationTrace.Measure("SettingsDiskFlush", () => { stream.Flush(flushToDisk: true); return true; });
                 }
+                finally { CoreOperationTrace.Measure("SettingsTemporaryClose", () => { stream.Dispose(); return true; }); }
 
-                File.Move(temporaryPath, settingsPath, overwrite: true);
+                CoreOperationTrace.Measure("SettingsAtomicReplace", () => { File.Move(temporaryPath, settingsPath, overwrite: true); return true; });
             }
             catch (Exception exception) when (IsExpectedFileException(exception))
             {
@@ -150,7 +177,21 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
             {
                 TryDeleteTemporaryFile(temporaryPath);
             }
+            return true;
+        });
+    }
+
+    // Measure acquisition separately, including reentrant calls, without changing
+    // the existing lock order or holding a new lock while waiting for the mutex.
+    private T WithInstanceLock<T>(Func<T> action)
+    {
+        bool acquired = false;
+        try
+        {
+            CoreOperationTrace.Measure("SettingsInstanceLockWait", () => { Monitor.Enter(synchronizationRoot, ref acquired); return true; });
+            return action();
         }
+        finally { if (acquired) Monitor.Exit(synchronizationRoot); }
     }
 
     private ApplicationSettingsStoreException CreateException(string message, Exception innerException)
@@ -173,10 +214,11 @@ public sealed class JsonApplicationSettingsStore : IApplicationSettingsStore
     {
         try
         {
-            if (File.Exists(path))
+            CoreOperationTrace.Measure("SettingsTemporaryCleanup", () =>
             {
-                File.Delete(path);
-            }
+                if (File.Exists(path)) File.Delete(path);
+                return true;
+            });
         }
         catch (Exception exception) when (IsExpectedFileException(exception))
         {

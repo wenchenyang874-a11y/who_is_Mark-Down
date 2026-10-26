@@ -11,9 +11,9 @@
     <Product>WIMD</Product>
     <AssemblyTitle>WIMD</AssemblyTitle>
     <Description>Offline-first Markdown editor with real-time preview.</Description>
-    <Version>1.8.9</Version>
-    <FileVersion>1.8.9.0</FileVersion>
-    <AssemblyVersion>1.8.9.0</AssemblyVersion>
+    <Version>1.8.10</Version>
+    <FileVersion>1.8.10.0</FileVersion>
+    <AssemblyVersion>1.8.10.0</AssemblyVersion>
     <ApplicationIcon Condition="Exists('..\..\assets\app.ico')">..\..\assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -21,11 +21,14 @@
     <InternalsVisibleTo Include="WhoIsMarkdown.App.Tests" />
     <PackageReference Include="AvalonEdit" />
     <PackageReference Include="Microsoft.Web.WebView2" />
+    <!-- EventPipe is managed-only; do not ship unused native ETW/PDB helpers. -->
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" ExcludeAssets="build;buildTransitive" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\preview.css" />
     <Resource Include="Resources\mermaid.min.js" />
     <Resource Include="..\..\assets\app-icon.png" Link="Resources\app-icon.png" />
     <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Diagnostics\*.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

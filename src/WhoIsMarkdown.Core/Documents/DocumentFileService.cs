@@ -25,9 +25,12 @@ public sealed class DocumentFileService : IDocumentFileService
 
         try
         {
-            byte[] bytes;
-            using (CoreOperationTrace.Start("DocumentFileBytes"))
-                bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+            // File.ReadAllBytesAsync still performs synchronous open/dispatch
+            // work before returning its Task. Observe that worker separately
+            // from the subsequent OS I/O await; they are not the same thread.
+            byte[] bytes = await CoreOperationTrace.MeasureAsync("DocumentFileBytes",
+                () => CoreOperationTrace.Measure("DocumentFileReadDispatch",
+                    () => File.ReadAllBytesAsync(fullPath, cancellationToken))).ConfigureAwait(false);
             bool hasBom = HasUtf8Bom(bytes);
             int contentOffset = hasBom ? Utf8Bom.Length : 0;
             string text = CoreOperationTrace.Measure("DocumentDecode",
@@ -50,7 +53,12 @@ public sealed class DocumentFileService : IDocumentFileService
         }
     }
 
-    public async Task<DocumentFileStamp> WriteAsync(
+    public Task<DocumentFileStamp> WriteAsync(
+        DocumentWriteRequest request,
+        CancellationToken cancellationToken = default)
+        => CoreOperationTrace.MeasureAsync("DocumentFileWrite", () => WriteCoreAsync(request, cancellationToken));
+
+    private async Task<DocumentFileStamp> WriteCoreAsync(
         DocumentWriteRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -59,16 +67,15 @@ public sealed class DocumentFileService : IDocumentFileService
 
         string fullPath = NormalizePath(request.Path);
         string? directoryPath = System.IO.Path.GetDirectoryName(fullPath);
-        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        CoreOperationTrace.Measure("DocumentWriteDirectoryCheck", () =>
         {
-            throw new DocumentFileException(
-                DocumentFileOperation.Write,
-                fullPath,
-                $"保存目录不存在：{directoryPath}",
-                new DirectoryNotFoundException(directoryPath));
-        }
+            if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+                throw new DocumentFileException(DocumentFileOperation.Write, fullPath,
+                    $"保存目录不存在：{directoryPath}", new DirectoryNotFoundException(directoryPath));
+            return true;
+        });
 
-        string temporaryPath = CreateTemporaryPath(directoryPath, fullPath);
+        string temporaryPath = CreateTemporaryPath(directoryPath!, fullPath);
 
         try
         {
@@ -80,7 +87,11 @@ public sealed class DocumentFileService : IDocumentFileService
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, fullPath, overwrite: true);
+            CoreOperationTrace.Measure("DocumentAtomicReplace", () =>
+            {
+                File.Move(temporaryPath, fullPath, overwrite: true);
+                return true;
+            });
             return Inspect(fullPath);
         }
         catch (OperationCanceledException)
@@ -97,7 +108,9 @@ public sealed class DocumentFileService : IDocumentFileService
         }
     }
 
-    public DocumentFileStamp Inspect(string path)
+    public DocumentFileStamp Inspect(string path) => CoreOperationTrace.Measure("DocumentInspect", () => InspectCore(path));
+
+    private static DocumentFileStamp InspectCore(string path)
     {
         string fullPath = NormalizePath(path);
 
@@ -171,23 +184,35 @@ public sealed class DocumentFileService : IDocumentFileService
         bool emitUtf8Bom,
         CancellationToken cancellationToken)
     {
-        await using FileStream stream = new(
+        // Keep the existing same-directory/write-through/durable-flush order.
+        // Explicit stages distinguish an open/write/flush/close stall without
+        // changing cancellation, replacement or original-file preservation.
+        FileStream stream = CoreOperationTrace.Measure("DocumentTemporaryOpen", () => new FileStream(
             temporaryPath,
             FileMode.CreateNew,
             FileAccess.Write,
             FileShare.None,
             FileBufferSize,
-            FileOptions.Asynchronous | FileOptions.WriteThrough);
-
-        if (emitUtf8Bom)
+            FileOptions.Asynchronous | FileOptions.WriteThrough));
+        try
         {
-            await stream.WriteAsync(Utf8Bom, cancellationToken).ConfigureAwait(false);
-        }
+            if (emitUtf8Bom)
+                await CoreOperationTrace.MeasureAsync("DocumentBomWrite",
+                    () => stream.WriteAsync(Utf8Bom, cancellationToken).AsTask()).ConfigureAwait(false);
 
-        byte[] content = StrictUtf8.GetBytes(text);
-        await stream.WriteAsync(content, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-        stream.Flush(flushToDisk: true);
+            byte[] content = CoreOperationTrace.Measure("DocumentEncode", () => StrictUtf8.GetBytes(text));
+            CoreOperationTrace.Value("DocumentEncodedBytes", content.LongLength);
+            await CoreOperationTrace.MeasureAsync("DocumentBodyWrite",
+                () => stream.WriteAsync(content, cancellationToken).AsTask()).ConfigureAwait(false);
+            await CoreOperationTrace.MeasureAsync("DocumentBufferFlush",
+                () => stream.FlushAsync(cancellationToken)).ConfigureAwait(false);
+            CoreOperationTrace.Measure("DocumentDiskFlush", () => { stream.Flush(flushToDisk: true); return true; });
+        }
+        finally
+        {
+            await CoreOperationTrace.MeasureAsync("DocumentTemporaryClose",
+                () => stream.DisposeAsync().AsTask()).ConfigureAwait(false);
+        }
     }
 
     private static string NormalizePath(string path)
@@ -243,10 +268,11 @@ public sealed class DocumentFileService : IDocumentFileService
     {
         try
         {
-            if (File.Exists(temporaryPath))
+            CoreOperationTrace.Measure("DocumentTemporaryCleanup", () =>
             {
-                File.Delete(temporaryPath);
-            }
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+                return true;
+            });
         }
         catch (IOException)
         {

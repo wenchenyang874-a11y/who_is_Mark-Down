@@ -14,7 +14,10 @@ internal sealed class BackgroundWorkQueue : IDisposable
     private int requests;
     private bool disposed;
 
-    public async Task<T> RunAsync<T>(Func<T> operation, CancellationToken cancellationToken)
+    public Task<T> RunAsync<T>(Func<T> operation, CancellationToken cancellationToken)
+        => CoreOperationTrace.MeasureAsync("RenderRequest", () => RunCoreAsync(operation, cancellationToken));
+
+    private async Task<T> RunCoreAsync<T>(Func<T> operation, CancellationToken cancellationToken)
     {
         lock (lifecycleGate)
         {
@@ -24,20 +27,22 @@ internal sealed class BackgroundWorkQueue : IDisposable
 
         try
         {
-            using (CoreOperationTrace.Start("RenderQueueWait"))
-                await workGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // A bare Start scope has no exception status and reported canceled
+            // admission as success. The measured await preserves cancellation.
+            await CoreOperationTrace.MeasureAsync("RenderQueueWait",
+                () => workGate.WaitAsync(cancellationToken)).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // Measure scheduling separately from execution: a saturated pool
                 // must not be misdiagnosed as slow Markdown parsing.
                 long scheduled = System.Diagnostics.Stopwatch.GetTimestamp();
-                return await Task.Run(() =>
+                return await CoreOperationTrace.MeasureAsync("RenderWorkAwait", () => Task.Run(() =>
                 {
                     CoreOperationTrace.Report("RenderThreadPoolWait",
                         System.Diagnostics.Stopwatch.GetElapsedTime(scheduled).TotalMilliseconds);
                     return operation();
-                }, cancellationToken).ConfigureAwait(false);
+                }, cancellationToken)).ConfigureAwait(false);
             }
             finally
             {

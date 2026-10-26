@@ -172,7 +172,12 @@ public sealed class LocalDiagnosticLogTests
             Assert.Same(expected, actual);
         }
         finally { DiagnosticLog.Current = null; await log.StopAsync(); }
-        Assert.Equal("Failed", directory.Read()[2].GetProperty("outcome").GetString());
+        // Dispatch/return checkpoints now sit between the parent start/end.
+        // Match the operation identity rather than assuming a fixed row index.
+        JsonElement failed = directory.Read().Single(row => row.TryGetProperty("stage", out JsonElement stage)
+            && stage.GetString() == "DocumentRead" && row.GetProperty("outcome").GetString() == "Failed");
+        Assert.Equal("Faulted", failed.GetProperty("async_timeline").GetProperty("LatestTaskStatus").GetString());
+        Assert.Equal("System.IO.IOException", failed.GetProperty("error_type").GetString());
     }
 
     [Fact]

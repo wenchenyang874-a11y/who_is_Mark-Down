@@ -13,8 +13,7 @@ internal static class Program
         // Keep WPF type loading/base construction inside the measured boundary.
         long entry = Stopwatch.GetTimestamp();
         DateTimeOffset entryUtc = DateTimeOffset.UtcNow;
-        DiagnosticLog.Start();
-        if (DiagnosticLog.Current is { } log) log.ManagedEntryUtc = entryUtc;
+        DiagnosticLog.Start(entryUtc);
         DiagnosticLog.Current?.Record(DiagnosticStage.ManagedEntry, DiagnosticOutcome.Succeeded,
             duration: Stopwatch.GetElapsedTime(entry).TotalMilliseconds);
         try { RunApplication(); }
@@ -31,6 +30,7 @@ internal static class Program
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void RunApplication()
     {
+        DiagnosticLog.Current?.Mark(DiagnosticStage.ApplicationBootstrapEntered);
         App application = DiagnosticLog.Measure(DiagnosticStage.ApplicationAllocation, () => new App());
         DiagnosticLog.Measure(DiagnosticStage.ApplicationResources, application.InitializeComponent);
         DiagnosticLog.Current?.Mark(DiagnosticStage.ApplicationRunRequested);

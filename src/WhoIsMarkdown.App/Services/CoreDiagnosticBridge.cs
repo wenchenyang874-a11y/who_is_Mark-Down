@@ -25,8 +25,25 @@ internal static class CoreDiagnosticBridge
             ActivityStarted = activity =>
             {
                 if (Enum.TryParse(activity.OperationName, out DiagnosticStage stage) && Enum.IsDefined(stage))
-                    activity.SetCustomProperty("operation", DiagnosticLog.Current?.Begin(stage,
-                        onlySlow: !Detailed.Value && !activity.OperationName.StartsWith("Image", StringComparison.Ordinal)));
+                {
+                    // A user save is infrequent and must retain its fast/canceled
+                    // children too. Do not globally enable detail for unrelated
+                    // document/typing scopes; restore within this Activity flow.
+                    if (stage is DiagnosticStage.DocumentFileWrite or DiagnosticStage.SettingsReadTransaction
+                        or DiagnosticStage.SettingsSaveTransaction or DiagnosticStage.SettingsMergeTransaction)
+                    {
+                        activity.SetCustomProperty("previous_detail", Detailed.Value);
+                        Detailed.Value = true;
+                    }
+                    DiagnosticOperation? operation = DiagnosticLog.Current?.Begin(stage,
+                        onlySlow: !Detailed.Value && !activity.OperationName.StartsWith("Image", StringComparison.Ordinal),
+                        execution: activity.GetTagItem("synchronous") is true
+                            ? DiagnosticExecutionKind.Synchronous : DiagnosticExecutionKind.AsyncAwait);
+                    activity.SetCustomProperty("operation", operation);
+                    if (stage == DiagnosticStage.CoreAsyncActionDispatch) operation?.DetachFromAmbient();
+                    if (activity.GetTagItem("synchronous") is not true)
+                        activity.SetCustomProperty(CoreOperationTrace.AsyncObserverProperty, operation);
+                }
             },
             ActivityStopped = activity =>
             {
@@ -39,7 +56,9 @@ internal static class CoreDiagnosticBridge
                     if (activity.GetCustomProperty("exception") is Exception exception) operation.Fail(exception);
                     else operation.Succeed();
                     operation.Dispose();
+                    activity.SetCustomProperty(CoreOperationTrace.AsyncObserverProperty, null);
                 }
+                if (activity.GetCustomProperty("previous_detail") is bool previousDetail) Detailed.Value = previousDetail;
                 if (activity.GetCustomProperty("elapsed_ms") is double duration
                     && (Detailed.Value || duration >= 500 || activity.OperationName.StartsWith("Aggregate.Image", StringComparison.Ordinal))
                     && activity.OperationName.StartsWith("Aggregate.", StringComparison.Ordinal)

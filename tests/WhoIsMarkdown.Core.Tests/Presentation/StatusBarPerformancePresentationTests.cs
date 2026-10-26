@@ -46,7 +46,7 @@ public sealed class StatusBarPerformancePresentationTests
             "WhoIsMarkdown.App",
             "MainWindow.Performance.cs"));
 
-        Assert.Contains("InitializePerformanceMonitor();", mainWindowCode, StringComparison.Ordinal);
+        Assert.Contains("DiagnosticStage.WindowPerformanceController, InitializePerformanceMonitor, diagnosticWindowId", mainWindowCode, StringComparison.Ordinal);
         Assert.Contains("DisposePerformanceMonitor();", commandsCode, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromSeconds(1)", performanceCode, StringComparison.Ordinal);
         Assert.Contains("Process.GetCurrentProcess()", performanceCode, StringComparison.Ordinal);

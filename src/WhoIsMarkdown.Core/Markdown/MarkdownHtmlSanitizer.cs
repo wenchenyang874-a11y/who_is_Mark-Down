@@ -37,8 +37,14 @@ public sealed class MarkdownHtmlSanitizer
 
     public MarkdownHtmlSanitizer()
     {
-        using System.Diagnostics.Activity? initialization = WhoIsMarkdown.Core.Diagnostics.CoreOperationTrace.Start("HtmlSanitizerCreate");
-        sanitizer = new HtmlSanitizer();
+        // A bare Activity scope looked successful even when construction threw.
+        // Keep the same sanitizer configuration, but preserve its failure status.
+        sanitizer = WhoIsMarkdown.Core.Diagnostics.CoreOperationTrace.Measure("HtmlSanitizerCreate", CreateSanitizer);
+    }
+
+    private static HtmlSanitizer CreateSanitizer()
+    {
+        HtmlSanitizer sanitizer = new();
         sanitizer.AllowedTags.Clear();
         sanitizer.AllowedTags.UnionWith(SafeTags);
         sanitizer.AllowedAttributes.Clear();
@@ -50,6 +56,7 @@ public sealed class MarkdownHtmlSanitizer
         sanitizer.UriAttributes.Clear();
         sanitizer.UriAttributes.UnionWith(["href", "src"]);
         sanitizer.PostProcessNode += OnPostProcessNode;
+        return sanitizer;
     }
 
     public string Sanitize(string html)

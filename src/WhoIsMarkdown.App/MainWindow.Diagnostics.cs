@@ -50,4 +50,26 @@ public partial class MainWindow
             UpdateStatus($"无法打开日志目录（{exception.GetType().Name}）。");
         }
     }
+
+    private void CaptureStartupDiagnostic_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (MessageBox.Show(this,
+            "将请求管理员授权，使用 Windows 自带 WPR 录制最长 30 秒系统性能跟踪，并以普通权限新开一个 WIMD 窗口。\n\n"
+            + "新窗口打开当前文档的磁盘版本；未保存内容不会复制或覆盖，无路径时打开空白窗口。"
+            + "跟踪覆盖进程创建前后的线程等待、CPU 调用栈、程序集及文件访问；就绪后提前停止。合并保存可能更久，需预留至少 6 GB 空间。"
+            + "不会关闭现有窗口、清空缓存或修改安全软件。\n\n"
+            + "原始 ETL 可能包含本机路径、命令行及其他进程元数据，仅保存到本地日志目录的 Traces 子目录，不自动上传。"
+            + "采集有开销，结束后会自动停止并打开结果目录。是否继续？",
+            "采集启动诊断", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
+        try
+        {
+            using Process? process = Process.Start(StartupDiagnosticLauncher.CreateStartInfo(AppContext.BaseDirectory, document.FilePath));
+            UpdateStatus("启动诊断已请求；请确认 UAC，结束后自动打开本地结果目录。现有窗口不受影响。");
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or IOException)
+        {
+            DiagnosticLog.Current?.Error(DiagnosticStage.StartupTraceLaunch, exception, diagnosticWindowId);
+            UpdateStatus($"无法启动系统诊断（{exception.GetType().Name}）。");
+        }
+    }
 }

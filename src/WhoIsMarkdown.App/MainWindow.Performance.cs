@@ -25,9 +25,11 @@ public partial class MainWindow
     private long previousPerformanceTimestamp;
     private bool hasPreviousPerformanceSample;
     private long lastDiagnosticPerformanceTimestamp;
+    private DiagnosticDispatcherWatch? diagnosticDispatcherWatch;
 
     private void InitializePerformanceMonitor()
     {
+        diagnosticDispatcherWatch = DiagnosticLog.Current?.WatchDispatcher(Dispatcher, diagnosticWindowId);
         performanceProcess = Process.GetCurrentProcess();
         performanceTimer.Tick += PerformanceTimer_Tick;
         UpdatePerformanceDisplay();
@@ -107,6 +109,8 @@ public partial class MainWindow
 
     private void DisposePerformanceMonitor()
     {
+        diagnosticDispatcherWatch?.Dispose();
+        diagnosticDispatcherWatch = null;
         performanceTimer.Stop();
         performanceTimer.Tick -= PerformanceTimer_Tick;
         performanceProcess?.Dispose();

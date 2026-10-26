@@ -4,6 +4,7 @@
         xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:viewModels="clr-namespace:WhoIsMarkdown.App.ViewModels"
+        xmlns:diagnostics="clr-namespace:WhoIsMarkdown.App.Services"
         xmlns:webView="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         x:Name="RootWindow"
         Title="{Binding WindowTitle}"
@@ -70,7 +71,7 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Grid>
+    <Grid diagnostics:XamlDiagnostics.Checkpoint="RootProperties">
         <!-- Bug fix: one image spans the entire workspace. Editor and preview
              surfaces provide their own translucent readability layer instead of
              hiding the image behind stacked opaque cards. -->
@@ -87,7 +88,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid x:Name="TitleBar" Grid.Row="0" Background="{DynamicResource ShellOverlayBrush}">
+            <Grid x:Name="TitleBar" diagnostics:XamlDiagnostics.Checkpoint="TitleBar" Grid.Row="0" Background="{DynamicResource ShellOverlayBrush}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -124,6 +125,7 @@
             </Grid>
 
             <Menu x:Name="TopMenu"
+                  diagnostics:XamlDiagnostics.Checkpoint="Menu"
                   Grid.Row="1"
                   Height="30"
                   Padding="8,0"
@@ -270,6 +272,7 @@
                 </MenuItem>
                 <MenuItem Header="帮助(_H)" AutomationProperties.Name="帮助" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="打开日志文件夹" AutomationProperties.Name="打开日志文件夹" Click="OpenLogDirectory_Click" />
+                    <MenuItem Header="采集启动诊断..." AutomationProperties.Name="采集启动诊断" Click="CaptureStartupDiagnostic_Click" />
                     <Separator />
                     <MenuItem x:Name="CheckForUpdatesMenuItem" Header="检查更新..." Click="CheckForUpdates_Click" />
                     <MenuItem x:Name="CheckForUpdatesOnStartupMenuItem" Header="启动时检查更新" IsCheckable="True" Click="CheckForUpdatesOnStartup_Click" />
@@ -285,7 +288,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border x:Name="RecentPane" Grid.Column="0" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}">
+                <Border x:Name="RecentPane" diagnostics:XamlDiagnostics.Checkpoint="Sidebar" Grid.Column="0" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}">
                     <Grid>
                         <Grid x:Name="RecentPaneContent">
                             <Grid.RowDefinitions>
@@ -535,7 +538,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border x:Name="MarkdownToolbarHost" Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}">
+                    <Border x:Name="MarkdownToolbarHost" diagnostics:XamlDiagnostics.Checkpoint="Toolbar" Grid.Row="0" Margin="0,0,0,6" Padding="6,3" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                             <StackPanel x:Name="MarkdownToolbar" Orientation="Horizontal">
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="H1" ToolTip="一级标题 (Ctrl+1)" Tag="1" Click="Heading_Click" />
@@ -569,7 +572,7 @@
                             <ColumnDefinition x:Name="PreviewColumn" Width="*" MinWidth="0" />
                         </Grid.ColumnDefinitions>
 
-                        <Border x:Name="EditorHost" Grid.Column="0" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
+                        <Border x:Name="EditorHost" Grid.Column="0" Background="{DynamicResource ShellOverlayBrush}" diagnostics:XamlDiagnostics.Checkpoint="EditorContainer" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="34" />
@@ -579,6 +582,7 @@
                                     <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                 </Border>
                                 <avalonEdit:TextEditor x:Name="Editor"
+                                                       diagnostics:XamlDiagnostics.Checkpoint="EditorConstructed"
                                                        Grid.Row="1"
                                                        Padding="14,10"
                                                        Background="Transparent"
@@ -595,7 +599,7 @@
 
                         <GridSplitter x:Name="WorkspaceSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" />
 
-                        <Border x:Name="PreviewHost" Grid.Column="2" Background="{DynamicResource ShellOverlayBrush}" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
+                        <Border x:Name="PreviewHost" Grid.Column="2" Background="{DynamicResource ShellOverlayBrush}" diagnostics:XamlDiagnostics.Checkpoint="PreviewContainer" Style="{StaticResource SurfaceCardStyle}" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="34" />
@@ -609,14 +613,14 @@
                                         </Border>
                                     </Grid>
                                 </Border>
-                                <webView:WebView2 x:Name="Preview" Grid.Row="1" PreviewMouseWheel="Preview_PreviewMouseWheel" />
+                                <webView:WebView2 x:Name="Preview" diagnostics:XamlDiagnostics.Checkpoint="PreviewConstructed" Grid.Row="1" PreviewMouseWheel="Preview_PreviewMouseWheel" />
                             </Grid>
                         </Border>
                     </Grid>
                 </Grid>
             </Grid>
 
-            <Border x:Name="StatusBar" Grid.Row="3" Padding="10,4" Background="{DynamicResource ShellOverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+            <Border x:Name="StatusBar" diagnostics:XamlDiagnostics.Checkpoint="StatusBar" Grid.Row="3" Padding="10,4" Background="{DynamicResource ShellOverlayBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />

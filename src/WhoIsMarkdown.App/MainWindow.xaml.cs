@@ -19,9 +19,12 @@ public partial class MainWindow : Window
 {
     private const int PreviewDebounceMilliseconds = 100;
 
-    private readonly IDocumentFileService fileService = new DocumentFileService();
-    private readonly MarkdownRenderWorker markdownRenderer = new();
-    private readonly DocumentEditorViewModel document = new();
+    private readonly IDocumentFileService fileService = DiagnosticLog.Measure(DiagnosticStage.WindowFileServiceCreate,
+        () => new DocumentFileService());
+    private readonly MarkdownRenderWorker markdownRenderer = DiagnosticLog.Measure(DiagnosticStage.WindowRenderWorkerCreate,
+        () => new MarkdownRenderWorker());
+    private readonly DocumentEditorViewModel document = DiagnosticLog.Measure(DiagnosticStage.WindowDocumentSessionCreate,
+        () => new DocumentEditorViewModel());
     private readonly CancellationTokenSource windowLifetimeCancellation = new();
 
     private PreviewWebViewService? previewService;
@@ -55,23 +58,19 @@ public partial class MainWindow : Window
         restoredWindowState = state?.Normalize();
         this.updateRestartSessionStore = updateRestartSessionStore
             ?? throw new ArgumentNullException(nameof(updateRestartSessionStore));
-        using (DiagnosticOperation? xaml = DiagnosticLog.Current?.Begin(DiagnosticStage.WindowXaml, diagnosticWindowId))
-        {
-            InitializeComponent();
-            xaml?.Succeed();
-        }
+        DiagnosticLog.Measure(DiagnosticStage.WindowXaml, InitializeComponent, diagnosticWindowId);
         DiagnosticLog.Measure(DiagnosticStage.WindowControllers, () =>
         {
-            ApplyRestoredWindowPlacement();
-            InitializeAppearanceController();
-            InitializePerformanceMonitor();
-            InitializeScrollSynchronization();
+            DiagnosticLog.Measure(DiagnosticStage.WindowPlacement, ApplyRestoredWindowPlacement, diagnosticWindowId);
+            DiagnosticLog.Measure(DiagnosticStage.WindowAppearanceController, InitializeAppearanceController, diagnosticWindowId);
+            DiagnosticLog.Measure(DiagnosticStage.WindowPerformanceController, InitializePerformanceMonitor, diagnosticWindowId);
+            DiagnosticLog.Measure(DiagnosticStage.WindowScrollController, InitializeScrollSynchronization, diagnosticWindowId);
         }, diagnosticWindowId);
         DiagnosticLog.Measure(DiagnosticStage.WindowDocumentBinding, () =>
         {
-            DataContext = document;
-            document.StartNew(untitledCounter);
-            Editor.Document = document.EditorDocument;
+            DiagnosticLog.Measure(DiagnosticStage.WindowDataContext, () => DataContext = document, diagnosticWindowId);
+            DiagnosticLog.Measure(DiagnosticStage.WindowNewDocument, () => document.StartNew(untitledCounter), diagnosticWindowId);
+            DiagnosticLog.Measure(DiagnosticStage.WindowEditorDocument, () => Editor.Document = document.EditorDocument, diagnosticWindowId);
             Editor.TextArea.Caret.PositionChanged += EditorCaret_PositionChanged;
         }, diagnosticWindowId);
         construction?.Succeed();

@@ -70,7 +70,10 @@ public sealed class MarkdownRenderWorker : IDisposable
             string markdown = CoreOperationTrace.Measure("RenderSnapshot", readSnapshot);
             cancellationToken.ThrowIfCancellationRequested();
             IMarkdownRenderer current = GetRenderer();
-            return current.RenderDocument(markdown, documentPath, policy, cancellationToken);
+            // The parent request awaits on the UI thread; this scope names the
+            // actual worker, including batched render/filter stages and locks.
+            return CoreOperationTrace.Measure("RenderExecution",
+                () => current.RenderDocument(markdown, documentPath, policy, cancellationToken));
         }, cancellationToken);
     }
 
