@@ -34,6 +34,10 @@ public static class ApplicationSettingsChanges
             BackgroundImagePath = Select(disk.BackgroundImagePath, before.BackgroundImagePath, after.BackgroundImagePath),
             BackgroundOpacity = Select(disk.BackgroundOpacity, before.BackgroundOpacity, after.BackgroundOpacity),
             IsRecentPaneExpanded = Select(disk.IsRecentPaneExpanded, before.IsRecentPaneExpanded, after.IsRecentPaneExpanded),
+            PreviewStyles = disk.PreviewStyles with
+            {
+                OrderedList = Select(disk.PreviewStyles.OrderedList, before.PreviewStyles.OrderedList, after.PreviewStyles.OrderedList),
+            },
             CheckForUpdatesOnStartup = Select(disk.CheckForUpdatesOnStartup, before.CheckForUpdatesOnStartup, after.CheckForUpdatesOnStartup),
             FileOpenViewMode = Select(disk.FileOpenViewMode, before.FileOpenViewMode, after.FileOpenViewMode),
             LastViewMode = Select(disk.LastViewMode, before.LastViewMode, after.LastViewMode),

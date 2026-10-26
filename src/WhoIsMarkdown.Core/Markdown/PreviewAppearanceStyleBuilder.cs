@@ -10,7 +10,10 @@ namespace WhoIsMarkdown.Core.Markdown;
 /// </summary>
 public static class PreviewAppearanceStyleBuilder
 {
-    public static string Build(ApplicationTheme effectiveTheme, AppearanceSettings settings)
+    public static string Build(
+        ApplicationTheme effectiveTheme,
+        AppearanceSettings settings,
+        PreviewStyleSettings? previewStyles = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         AppearanceSettings normalized = settings.Normalize();
@@ -49,6 +52,7 @@ public static class PreviewAppearanceStyleBuilder
               --wimd-control-border: {{palette.ControlBorder}};
               --wimd-scroll-thumb: {{palette.ScrollThumb}};
             }
+            {{OrderedListStyleBuilder.Build((previewStyles ?? new PreviewStyleSettings()).Normalize().OrderedList)}}
             """;
     }
 

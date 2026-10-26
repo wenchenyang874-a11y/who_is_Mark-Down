@@ -247,6 +247,7 @@
                 </MenuItem>
                 <MenuItem Header="设置(_S)" AutomationProperties.Name="设置" Style="{StaticResource TopLevelMenuItemStyle}">
                     <MenuItem Header="外观与字体..." Click="AppearanceSettings_Click" />
+                    <MenuItem Header="预览样式..." AutomationProperties.Name="预览样式" Click="PreviewStyleSettings_Click" />
                     <MenuItem x:Name="FileOpenViewModeMenuItem" Header="打开文件时的显示模式">
                         <MenuItem Header="仅编辑" Tag="EditorOnly" IsCheckable="True" Click="FileOpenViewMode_Click" />
                         <MenuItem Header="编辑 + 预览" Tag="EditorAndPreview" IsCheckable="True" Click="FileOpenViewMode_Click" />
@@ -558,6 +559,7 @@
                                 <Button x:Name="InsertImageToolbarButton" Style="{StaticResource MarkdownToolbarButtonStyle}" Content="图片" ToolTip="选择或粘贴图片 (Ctrl+Shift+I)" Tag="image" Click="InsertImage_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="• 列表" ToolTip="无序列表 (Ctrl+Shift+8)" Tag="unordered-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="1. 列表" ToolTip="有序列表 (Ctrl+Shift+7)" Tag="ordered-list" Click="MarkdownFormat_Click" />
+                                <Button Style="{StaticResource MarkdownToolbarButtonStyle}" MinWidth="22" Padding="3,0" Content="▾" ToolTip="有序列表编号外观（当前窗口 / 全局默认）" AutomationProperties.Name="有序列表样式" Click="PreviewStyleSettings_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="☑ 任务" ToolTip="任务列表 (Ctrl+Shift+L)" Tag="task-list" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="表格" ToolTip="插入表格" Tag="table" Click="MarkdownFormat_Click" />
                                 <Button Style="{StaticResource MarkdownToolbarButtonStyle}" Content="—" ToolTip="插入分割线" Tag="separator" Click="MarkdownFormat_Click" />

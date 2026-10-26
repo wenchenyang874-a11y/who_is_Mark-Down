@@ -47,7 +47,8 @@ public partial class MainWindow
 
         AppearanceSettings appearance = applicationSettings.Appearance.Normalize();
         effectiveTheme = ApplicationThemeManager.Apply(appearance.Theme);
-        previewAppearanceStyleSheet = PreviewAppearanceStyleBuilder.Build(effectiveTheme, appearance);
+        previewAppearanceStyleSheet = PreviewAppearanceStyleBuilder.Build(
+            effectiveTheme, appearance, previewStyleOverrides.Resolve(applicationSettings.PreviewStyles));
         Editor.FontFamily = new FontFamily(
             appearance.EditorFontFamily ?? "Cascadia Mono, Consolas");
         Editor.FontSize = appearance.EditorFontSize;

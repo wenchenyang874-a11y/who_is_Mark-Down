@@ -21,6 +21,8 @@ public sealed record ApplicationSettings
 
     public AppearanceSettings Appearance { get; init; } = new();
 
+    public PreviewStyleSettings PreviewStyles { get; init; } = new();
+
     public ExternalFileChangeSettings ExternalFileChanges { get; init; } = new();
 
     public bool CheckForUpdatesOnStartup { get; init; }
@@ -105,6 +107,7 @@ public sealed record ApplicationSettings
             BackgroundOpacity = Math.Clamp(BackgroundOpacity, 0, 1),
             ImageInsertion = (ImageInsertion ?? new ImageInsertionSettings()).Normalize(),
             Appearance = (Appearance ?? new AppearanceSettings()).Normalize(),
+            PreviewStyles = (PreviewStyles ?? new PreviewStyleSettings()).Normalize(),
             ExternalFileChanges = (ExternalFileChanges ?? new ExternalFileChangeSettings()).Normalize(),
             FileOpenViewMode = Enum.IsDefined(FileOpenViewMode) ? FileOpenViewMode : FileOpenViewMode.RememberLast,
             LastViewMode = Enum.IsDefined(LastViewMode) ? LastViewMode : WorkspaceViewMode.EditorAndPreview,
