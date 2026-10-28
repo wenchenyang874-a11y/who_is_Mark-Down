@@ -6,6 +6,9 @@ namespace WhoIsMarkdown.Core.Editing;
 /// Resolves a preview task checkbox back to the single Markdown state character
 /// that may be changed. Keeping this parser in Core makes the WebView message an
 /// untrusted request rather than permission to replace arbitrary editor text.
+/// Bug fix: source lines inside block quotes retain their '>' prefixes even
+/// though the preview renders an ordinary task item. Recognize quote prefixes
+/// (including nested quotes) before the list marker; still edit only [ ]/[x]/[X].
 /// </summary>
 public static partial class MarkdownTaskListService
 {
@@ -72,7 +75,7 @@ public static partial class MarkdownTaskListService
     }
 
     [GeneratedRegex(
-        "^[ \\t]*(?:[-+*]|[0-9]+[.)])[ \\t]+\\[(?<state>[ xX])\\]",
+        "^[ \\t]*(?:>[ \\t]*)*(?:[-+*]|[0-9]+[.)])[ \\t]+\\[(?<state>[ xX])\\]",
         RegexOptions.CultureInvariant)]
     private static partial Regex TaskListMarkerRegex();
 }

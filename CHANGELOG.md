@@ -4,6 +4,12 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 
 ## [未发布]
 
+## [1.9.1] - 2026-10-28
+
+### 修复
+
+- 修复引用块（`>`）及嵌套引用中的任务复选框点击无效、误报“源文本已发生变化”的问题；仍只改写任务状态字符，保留预览位置。
+
 ## [1.9.0] - 2026-10-26
 
 ### 新增
@@ -460,7 +466,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.9.0...HEAD
+[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.11...v1.9.0
 [1.8.11]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.10...v1.8.11
 [1.8.10]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.9...v1.8.10
