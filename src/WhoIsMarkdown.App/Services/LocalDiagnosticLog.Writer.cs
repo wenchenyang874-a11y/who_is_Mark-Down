@@ -14,6 +14,8 @@ internal sealed partial class LocalDiagnosticLog
     private void WriteLoop()
     {
         FileStream? output = null;
+        StartupDiagnosticArchive? startup = null;
+        bool startupAttempted = false;
         try
         {
             using Process process = Process.GetCurrentProcess();
@@ -28,14 +30,27 @@ internal sealed partial class LocalDiagnosticLog
                 while (written < 64 && queue.Reader.TryRead(out DiagnosticEntry? entry))
                 {
                     output = EnsureOutput(output, ref segment, launchToLoggerMs, processStarted);
-                    WriteEntry(output, entry, launchToLoggerMs);
+                    byte[] payload = WriteEntry(output, entry, launchToLoggerMs);
+                    if (!startupAttempted)
+                    {
+                        startupAttempted = true;
+                        try
+                        {
+                            string name = string.Create(CultureInfo.InvariantCulture,
+                                $"startup-{startedUtc:yyyyMMddTHHmmssfff}-{Environment.ProcessId}-{session}.jsonl");
+                            startup = new(DirectoryPath, name, stream => WriteHeader(stream, launchToLoggerMs, processStarted));
+                        }
+                        catch (Exception exception) { StartupArchiveFailed(output, exception); }
+                    }
+                    if (startup is { IsFinished: false })
+                        ArchiveSafely(ref startup, output, sink => sink.Append(payload, entry.Stage, entry.Outcome, entry.Window, entry.ElapsedMs));
                     written++;
                 }
                 bool finishing = queue.Reader.Completion.IsCompleted;
                 foreach (DiagnosticCoverageSnapshot snapshot in coverage.TakeDue(finishing))
                 {
                     output = EnsureOutput(output, ref segment, launchToLoggerMs, processStarted);
-                    WriteLine(output, new
+                    byte[] payload = WriteLine(output, new
                     {
                         utc = DateTimeOffset.UtcNow,
                         log_elapsed_ms = Stopwatch.GetElapsedTime(origin).TotalMilliseconds,
@@ -44,6 +59,7 @@ internal sealed partial class LocalDiagnosticLog
                         outcome = "Point",
                         coverage = snapshot
                     });
+                    ArchiveSafely(ref startup, output, sink => sink.Append(payload, "DiagnosticCoverage", "Point", 0, Stopwatch.GetElapsedTime(origin).TotalMilliseconds));
                     written++;
                 }
                 long totalDropped = DroppedEntries;
@@ -51,7 +67,7 @@ internal sealed partial class LocalDiagnosticLog
                     || Stopwatch.GetElapsedTime(lastOverflow).TotalSeconds >= 1)) || (finishing && totalDropped > 0))
                 {
                     output = EnsureOutput(output, ref segment, launchToLoggerMs, processStarted);
-                    WriteLine(output, new
+                    byte[] payload = WriteLine(output, new
                     {
                         utc = DateTimeOffset.UtcNow,
                         log_elapsed_ms = Stopwatch.GetElapsedTime(origin).TotalMilliseconds,
@@ -61,6 +77,7 @@ internal sealed partial class LocalDiagnosticLog
                         dropped_since_last_report = totalDropped - reportedDropped,
                         final = finishing
                     });
+                    ArchiveSafely(ref startup, output, sink => sink.Append(payload, "LogOverflow", "Point", 0, Stopwatch.GetElapsedTime(origin).TotalMilliseconds));
                     reportedDropped = totalDropped;
                     lastOverflow = Stopwatch.GetTimestamp();
                     written++;
@@ -68,11 +85,13 @@ internal sealed partial class LocalDiagnosticLog
                 // A continuously busy producer must not postpone persistence
                 // forever. Flush at most 64 normal records plus health summaries.
                 if (written > 0) output?.Flush();
+                if (startup is { IsFinished: false })
+                    ArchiveSafely(ref startup, output, sink => { sink.Tick(Stopwatch.GetElapsedTime(origin).TotalMilliseconds); sink.Flush(); });
                 if (finishing) break;
                 if (queue.Reader.Count > 0) continue;
                 // First rejection wakes us. Unreported aggregate counters need
                 // a bounded timer, but a genuinely idle writer never polls.
-                writerReady.WaitOne(coverage.HasPending || totalDropped > reportedDropped ? 1000 : Timeout.Infinite);
+                writerReady.WaitOne(coverage.HasPending || totalDropped > reportedDropped || startup is { IsFinished: false } ? 1000 : Timeout.Infinite);
             }
         }
         catch (Exception exception)
@@ -86,6 +105,7 @@ internal sealed partial class LocalDiagnosticLog
         }
         finally
         {
+            ArchiveSafely(ref startup, output, sink => sink.Dispose());
             if (output is not null)
             {
                 try { output.Dispose(); }
@@ -113,7 +133,13 @@ internal sealed partial class LocalDiagnosticLog
         {
             schema = 1,
             image_pipeline_revision = 2,
-            diagnostic_revision = 8,
+            diagnostic_revision = 9,
+            startup_archive_detail_bytes = StartupDiagnosticArchive.DetailLimit,
+            startup_archive_summary_bytes = StartupDiagnosticArchive.SummaryLimit,
+            startup_archive_max_ms = StartupDiagnosticArchive.CaptureMilliseconds,
+            startup_summary_semantics = "first record per window/stage/outcome; detailed samples remain in Startup; bounded, not a full operation trace",
+            startup_archive_detail_sessions = 60,
+            startup_archive_summary_sessions = 200,
             settings_fallback_values = new { missing = 1, invalid_json = 2, invalid_utf8 = 3, null_json = 4 },
             async_completion_timing = "Task.Status first observed complete, not native IO completion; observation-to-resume is a lower bound",
             async_task_poll_ms = 250,
@@ -146,7 +172,7 @@ internal sealed partial class LocalDiagnosticLog
             timing = "process_elapsed_ms includes pre-managed launch; duration_ms measures host waits, not OS I/O termination",
         });
 
-    private void WriteEntry(FileStream output, DiagnosticEntry entry, double launchToLoggerMs)
+    private byte[] WriteEntry(FileStream output, DiagnosticEntry entry, double launchToLoggerMs)
         => WriteLine(output, new
         {
             utc = entry.Utc,
@@ -180,8 +206,43 @@ internal sealed partial class LocalDiagnosticLog
             frames = entry.Frames,
         });
 
-    private static void WriteLine<T>(FileStream output, T entry)
-        => output.Write(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(entry, JsonOptions) + "\n"));
+    private static byte[] WriteLine<T>(FileStream output, T entry)
+    {
+        byte[] payload = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(entry, JsonOptions) + "\n");
+        output.Write(payload);
+        return payload;
+    }
+
+    private void ArchiveSafely(ref StartupDiagnosticArchive? archive, FileStream? output, Action<StartupDiagnosticArchive> action)
+    {
+        if (archive is null) return;
+        try { action(archive); }
+        catch (Exception exception)
+        {
+            try { archive.Dispose(); } catch (Exception) { }
+            archive = null;
+            StartupArchiveFailed(output, exception);
+        }
+    }
+
+    private void StartupArchiveFailed(FileStream? output, Exception exception)
+    {
+        StartupArchiveFailureType = exception.GetType().Name;
+        // An archive permission/disk failure must not disable ordinary diagnostics.
+        // No exception message or filename is recorded.
+        try
+        {
+            if (output is not null) WriteLine(output, new
+            {
+                stage = "StartupArchive",
+                outcome = "Failed",
+                error_type = StartupArchiveFailureType,
+                hresult = exception.HResult,
+                utc = DateTimeOffset.UtcNow,
+            });
+        }
+        catch (Exception) { /* The ordinary sink may already be failing during shutdown. */ }
+    }
 
     private void TrimOldFiles()
     {

@@ -2,7 +2,16 @@
 
 WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，内容按[维护更新日志](https://keepachangelog.com/zh-CN/1.1.0/)的方式整理。
 
-## [未发布]
+## [1.9.2] - 2026-11-16
+
+### 优化
+
+- 状态栏 CPU/内存采样直接读取当前进程的原生计数器，避免在窗口构造与每秒刷新时执行系统进程快照查询；统计口径仍为 WIMD 主进程，不包含 WebView2 子进程。
+
+### 诊断
+
+- 启动详细现场和摘要单独存入 `Logs/Startup/` 与其 `Summaries/` 子目录，不再随日常日志轮换删除。每次保留日志服务启动后的前 120 秒，详细现场最多 2 MiB、摘要最多 128 KiB，分别保留最近 60/200 次；容量截断、采集结束和归档失败显式记录。
+- 单独记录 WPF 首次 MediaContext/图形能力初始化，以及 WebView2 原生环境创建的同步派发、任务等待和恢复阶段；不将新增计时或局部优化描述为偶发冷启动卡顿已彻底解决。
 
 ## [1.9.1] - 2026-10-28
 
@@ -466,7 +475,7 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 支持本地图片、最近文件、双向滚动、自定义背景和常用 Markdown 工具按钮。
 - 提供 Windows x64 自包含中文安装包及 `.md` / `.markdown` 打开方式。
 
-[未发布]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.9.1...HEAD
+[1.9.2]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.11...v1.9.0
 [1.8.11]: https://github.com/wenchenyang874-a11y/who_is_Mark-Down/compare/v1.8.10...v1.8.11

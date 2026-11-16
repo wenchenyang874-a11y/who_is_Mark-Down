@@ -72,8 +72,11 @@ internal static class WebView2EnvironmentProvider
         SharedInitializationCache<Configuration, CoreWebView2Environment> cache)
     {
         Interlocked.Increment(ref creationAttempts);
-        CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-            browserExecutableFolder: null, userDataFolder: directory).ConfigureAwait(true);
+        // Separate the SDK's synchronous dispatch/native creation from cache
+        // lookup and consumer waiting. COM creation must stay on this UI/STA.
+        CoreWebView2Environment environment = await DiagnosticLog.MeasureAsync(
+            DiagnosticStage.WebViewNativeEnvironmentCreate,
+            () => CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: directory)).ConfigureAwait(true);
         EventHandler<CoreWebView2BrowserProcessExitedEventArgs>? onExited = null;
         onExited = (_, _) =>
         {

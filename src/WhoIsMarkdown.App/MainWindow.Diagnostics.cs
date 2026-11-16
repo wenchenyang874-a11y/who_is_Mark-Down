@@ -41,7 +41,9 @@ public partial class MainWindow
             using Process? process = Process.Start(start);
             if (log.FailureType is { } failure)
                 UpdateStatus($"日志目录已打开；本次日志写入失败（{failure}），请检查磁盘空间及权限。");
-            else UpdateStatus("已打开本地诊断日志目录；日志不会自动上传。");
+            else if (log.StartupArchiveFailureType is { } archiveFailure)
+                UpdateStatus($"日志目录已打开；启动归档失败（{archiveFailure}），普通日志仍可用。");
+            else UpdateStatus("已打开本地诊断日志目录；Startup 保存独立启动现场，Summaries 保存启动摘要，不会自动上传。");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or Win32Exception or InvalidOperationException)

@@ -58,6 +58,12 @@ public partial class MainWindow : Window
         restoredWindowState = state?.Normalize();
         this.updateRestartSessionStore = updateRestartSessionStore
             ?? throw new ArgumentNullException(nameof(updateRestartSessionStore));
+        // WPF lazily creates the dispatcher MediaContext/render channels. Expose
+        // that synchronous boundary before BAML construction, not as unexplained
+        // XAML time. This does not change rendering mode or promise a speedup.
+        int renderTier = DiagnosticLog.Measure(DiagnosticStage.WpfRenderInitialize,
+            () => System.Windows.Media.RenderCapability.Tier >> 16, diagnosticWindowId);
+        DiagnosticLog.Current?.Mark(DiagnosticStage.WpfRenderTier, diagnosticWindowId, renderTier);
         DiagnosticLog.Measure(DiagnosticStage.WindowXaml, InitializeComponent, diagnosticWindowId);
         DiagnosticLog.Measure(DiagnosticStage.WindowControllers, () =>
         {
