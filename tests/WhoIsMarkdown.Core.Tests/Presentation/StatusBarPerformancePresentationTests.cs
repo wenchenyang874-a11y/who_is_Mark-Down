@@ -49,10 +49,12 @@ public sealed class StatusBarPerformancePresentationTests
         Assert.Contains("DiagnosticStage.WindowPerformanceController, InitializePerformanceMonitor, diagnosticWindowId", mainWindowCode, StringComparison.Ordinal);
         Assert.Contains("DisposePerformanceMonitor();", commandsCode, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromSeconds(1)", performanceCode, StringComparison.Ordinal);
-        Assert.Contains("Process.GetCurrentProcess()", performanceCode, StringComparison.Ordinal);
-        Assert.Contains("process.WorkingSet64", performanceCode, StringComparison.Ordinal);
+        Assert.Contains("CurrentProcessCounters.Read()", performanceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("Process.GetCurrentProcess()", performanceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("process.Refresh()", performanceCode, StringComparison.Ordinal);
         Assert.Contains("Environment.ProcessorCount", performanceCode, StringComparison.Ordinal);
-        Assert.Contains("performanceProcess?.Dispose()", performanceCode, StringComparison.Ordinal);
+        Assert.Contains("performanceMonitorActive = false", performanceCode, StringComparison.Ordinal);
+        Assert.Contains("performanceTimer.Tick -=", performanceCode, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

@@ -63,6 +63,7 @@ internal sealed partial class LocalDiagnosticLog : IAsyncDisposable
     internal string DirectoryPath { get; }
     internal Task Completion => writerCompleted.Task;
     internal string? FailureType { get; private set; }
+    internal string? StartupArchiveFailureType { get; private set; }
     internal long DroppedEntries => Interlocked.Read(ref dropped);
     internal DateTimeOffset? ManagedEntryUtc { get; set; }
 
@@ -286,6 +287,7 @@ internal enum DiagnosticExecutionKind { Unspecified, Synchronous, AsyncAwait }
 
 internal enum DiagnosticStage
 {
+    WpfRenderInitialize, WpfRenderTier, WebViewNativeEnvironmentCreate, ProcessCounterRead,
     SlowOperationSample, DiagnosticProbeFailed, XamlCheckpoint, StartupTraceLaunch, AssemblyLoaded,
     AsyncActionDispatch, AsyncTaskReturned, AsyncTaskCompletionObserved,
     CoreAsyncActionDispatch, DiagnosticAsyncObserverFailed,

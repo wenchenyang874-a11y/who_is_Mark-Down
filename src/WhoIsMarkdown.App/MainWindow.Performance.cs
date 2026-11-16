@@ -20,7 +20,7 @@ public partial class MainWindow
         Interval = PerformanceRefreshInterval,
     };
 
-    private Process? performanceProcess;
+    private bool performanceMonitorActive;
     private TimeSpan previousProcessorTime;
     private long previousPerformanceTimestamp;
     private bool hasPreviousPerformanceSample;
@@ -30,7 +30,7 @@ public partial class MainWindow
     private void InitializePerformanceMonitor()
     {
         diagnosticDispatcherWatch = DiagnosticLog.Current?.WatchDispatcher(Dispatcher, diagnosticWindowId);
-        performanceProcess = Process.GetCurrentProcess();
+        performanceMonitorActive = true;
         performanceTimer.Tick += PerformanceTimer_Tick;
         UpdatePerformanceDisplay();
         performanceTimer.Start();
@@ -43,18 +43,17 @@ public partial class MainWindow
 
     private void UpdatePerformanceDisplay()
     {
-        Process? process = performanceProcess;
-        if (process is null || windowClosed)
+        if (!performanceMonitorActive || windowClosed)
         {
             return;
         }
 
         try
         {
-            process.Refresh();
             long timestamp = Stopwatch.GetTimestamp();
-            TimeSpan processorTime = process.TotalProcessorTime;
-            long workingSetBytes = process.WorkingSet64;
+            // Never enumerate system processes on the UI thread. Keep a quiet
+            // diagnostic scope so an unusually slow native query is still visible.
+            (TimeSpan processorTime, long workingSetBytes) = ReadPerformanceCounters();
             if (lastDiagnosticPerformanceTimestamp == 0
                 || Stopwatch.GetElapsedTime(lastDiagnosticPerformanceTimestamp, timestamp) >= TimeSpan.FromSeconds(60))
             {
@@ -98,6 +97,20 @@ public partial class MainWindow
         }
     }
 
+    private (TimeSpan ProcessorTime, long WorkingSetBytes) ReadPerformanceCounters()
+    {
+        using DiagnosticOperation? sample = DiagnosticLog.Current?.Begin(
+            DiagnosticStage.ProcessCounterRead, diagnosticWindowId, onlySlow: true,
+            execution: DiagnosticExecutionKind.Synchronous);
+        try
+        {
+            var counters = CurrentProcessCounters.Read();
+            sample?.Succeed();
+            return counters;
+        }
+        catch (Exception exception) { sample?.Fail(exception); throw; }
+    }
+
     private static string FormatMemory(long bytes)
     {
         const double bytesPerMegabyte = 1024d * 1024d;
@@ -113,7 +126,6 @@ public partial class MainWindow
         diagnosticDispatcherWatch = null;
         performanceTimer.Stop();
         performanceTimer.Tick -= PerformanceTimer_Tick;
-        performanceProcess?.Dispose();
-        performanceProcess = null;
+        performanceMonitorActive = false;
     }
 }
