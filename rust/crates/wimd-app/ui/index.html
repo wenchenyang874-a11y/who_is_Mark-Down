@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WIMD</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app-shell" class="app-shell">
+      <header class="app-header">
+        <nav class="menu-bar" aria-label="主菜单">
+          <div class="menu" data-menu="file">
+            <button type="button" class="menu-trigger">文件(F)</button>
+            <div class="menu-popover">
+              <button type="button" data-command="new"><span>新建(N)</span><kbd>Ctrl+N</kbd></button>
+              <button type="button" data-command="open"><span>打开文件(O)...</span><kbd>Ctrl+O</kbd></button>
+              <button type="button" data-command="open-workspace"><span>打开文件夹...</span></button>
+              <button type="button" data-command="close-workspace"><span>关闭文件夹</span></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="save"><span>保存(S)</span><kbd>Ctrl+S</kbd></button>
+              <button type="button" data-command="save-as"><span>另存为(A)...</span><kbd>Ctrl+Shift+S</kbd></button>
+              <button type="button" data-command="reload"><span>重新加载(R)</span><kbd>F5</kbd></button>
+              <button type="button" data-command="export-pdf"><span>导出为 PDF...</span></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="exit"><span>退出(X)</span></button>
+            </div>
+          </div>
+
+          <div class="menu" data-menu="edit">
+            <button type="button" class="menu-trigger">编辑(E)</button>
+            <div class="menu-popover">
+              <button type="button" data-command="undo"><span>撤销</span><kbd>Ctrl+Z</kbd></button>
+              <button type="button" data-command="redo"><span>重做</span><kbd>Ctrl+Y</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="cut"><span>剪切</span><kbd>Ctrl+X</kbd></button>
+              <button type="button" data-command="copy"><span>复制</span><kbd>Ctrl+C</kbd></button>
+              <button type="button" data-command="paste"><span>粘贴</span><kbd>Ctrl+V</kbd></button>
+              <button type="button" data-command="select-all"><span>全选</span><kbd>Ctrl+A</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="find"><span>查找</span><kbd>Ctrl+F</kbd></button>
+              <button type="button" data-command="replace"><span>替换</span><kbd>Ctrl+H</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="format-bold"><span>粗体</span><kbd>Ctrl+B</kbd></button>
+              <button type="button" data-command="format-italic"><span>斜体</span><kbd>Ctrl+I</kbd></button>
+              <button type="button" data-command="format-strike"><span>删除线</span><kbd>Ctrl+Shift+X</kbd></button>
+              <button type="button" data-command="format-inline-code"><span>行内代码</span><kbd>Ctrl+E</kbd></button>
+              <button type="button" data-command="format-code-block"><span>代码块</span><kbd>Ctrl+Shift+K</kbd></button>
+              <button type="button" data-command="format-link"><span>链接</span><kbd>Ctrl+K</kbd></button>
+              <button type="button" data-command="format-image"><span>选择图片并插入...</span><kbd>Ctrl+Shift+I</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="format-ordered-list"><span>有序列表</span><kbd>Ctrl+Shift+7</kbd></button>
+              <button type="button" data-command="format-unordered-list"><span>无序列表</span><kbd>Ctrl+Shift+8</kbd></button>
+              <button type="button" data-command="format-quote"><span>引用</span><kbd>Ctrl+Shift+9</kbd></button>
+              <button type="button" data-command="format-task-list"><span>任务列表</span><kbd>Ctrl+Shift+L</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="format-table"><span>插入表格...</span></button>
+              <button type="button" data-command="format-separator"><span>插入分割线</span></button>
+            </div>
+          </div>
+
+          <div class="menu" data-menu="view">
+            <button type="button" class="menu-trigger">视图(V)</button>
+            <div class="menu-popover">
+              <button type="button" data-command="cycle-view"><span>循环切换视图</span><kbd>F9</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="view-editor"><span>仅编辑</span></button>
+              <button type="button" data-command="view-split"><span>编辑 + 预览</span></button>
+              <button type="button" data-command="view-preview"><span>仅预览</span><kbd>F9</kbd></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="toggle-sidebar"><span>显示侧栏</span></button>
+            </div>
+          </div>
+
+          <div class="menu" data-menu="shortcuts">
+            <button type="button" class="menu-trigger">快捷键(K)</button>
+            <div class="menu-popover">
+              <button type="button" data-command="settings-shortcuts"><span>快捷键设置...</span></button>
+            </div>
+          </div>
+
+          <div class="menu" data-menu="settings">
+            <button type="button" class="menu-trigger">设置(S)</button>
+            <div class="menu-popover">
+              <button type="button" data-command="settings"><span>外观设置...</span></button>
+              <button type="button" data-command="settings-preview"><span>预览样式...</span></button>
+              <button type="button" data-command="settings-behavior"><span>文件打开与外部修改...</span></button>
+              <button type="button" data-command="settings-images"><span>图片设置...</span></button>
+            </div>
+          </div>
+
+          <div class="menu" data-menu="help">
+            <button type="button" class="menu-trigger">帮助(H)</button>
+            <div class="menu-popover">
+              <button type="button" data-command="check-update"><span>检查更新...</span></button>
+            <button type="button" id="cancel-update-download" data-command="cancel-update-download" disabled><span>取消更新下载</span></button>
+              <button type="button" data-command="toggle-update-startup"><span>启动时检查更新</span></button>
+              <div class="menu-separator"></div>
+              <button type="button" data-command="about"><span>关于 WIMD</span></button>
+              <button type="button" data-command="open-logs-folder"><span>打开日志文件夹</span></button>
+              <button type="button" data-command="capture-startup-diagnostic"><span>采集启动诊断...</span></button>
+              <button type="button" data-command="open-settings-folder"><span>打开设置目录</span></button>
+            </div>
+          </div>
+        </nav>
+      </header>
+
+      <div class="tab-strip">
+        <div id="tabs" class="tabs" role="tablist" aria-label="打开的文档"></div>
+        <button type="button" id="new-tab" class="tab-add" title="新建文档" aria-label="新建文档">+</button>
+        <div id="tab-spacer" class="tab-spacer"></div>
+      </div>
+
+      <main id="main-layout" class="main-layout">
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-heading">
+            <div class="sidebar-heading-copy">
+              <strong id="sidebar-title">最近打开</strong>
+              <small id="sidebar-subtitle">打开文件夹后切换为资源管理器</small>
+            </div>
+            <div class="sidebar-heading-actions">
+              <button type="button" id="sidebar-collapse" class="small-icon-button" title="收起侧栏">‹</button>
+            </div>
+          </div>
+          <div id="sidebar-content" class="sidebar-content"></div>
+        </aside>
+        <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" tabindex="0"></div>
+
+        <button type="button" id="sidebar-expand" class="sidebar-expand" title="展开侧栏" aria-label="展开侧栏">›</button>
+
+        <section id="workspace-shell" class="workspace-shell">
+          <div class="format-toolbar" aria-label="Markdown 格式工具栏">
+            <button type="button" data-format="h1" title="一级标题">H1</button>
+            <button type="button" data-format="h2" title="二级标题">H2</button>
+            <button type="button" data-format="h3" title="三级标题">H3</button>
+            <button type="button" data-format="h4" title="四级标题">H4</button>
+            <button type="button" data-format="h5" title="五级标题">H5</button>
+            <button type="button" data-format="h6" title="六级标题">H6</button>
+            <span class="toolbar-separator"></span>
+            <button type="button" data-format="bold" title="粗体" class="format-bold">B</button>
+            <button type="button" data-format="italic" title="斜体" class="format-italic">I</button>
+            <button type="button" data-format="strike" title="删除线" class="format-strike">S̶</button>
+            <button type="button" data-format="quote" title="引用">❝</button>
+            <button type="button" data-format="inline-code" title="行内代码">&lt;/&gt;</button>
+            <button type="button" data-format="code-block" title="代码块">代码块</button>
+            <button type="button" data-format="link" title="链接">链接</button>
+            <button type="button" data-format="image" title="插入图片">图片</button>
+            <button type="button" data-format="unordered-list" title="无序列表">• 列表</button>
+            <button type="button" data-format="ordered-list" title="有序列表">1. 列表</button>
+            <button type="button" data-command="settings-preview" title="有序列表编号外观">▾</button>
+            <button type="button" data-format="task-list" title="任务列表">☑ 任务</button>
+            <button type="button" data-format="table" title="插入表格">表格</button>
+            <button type="button" data-format="separator" title="分隔线">―</button>
+          </div>
+
+          <div id="workspace-grid" class="workspace-grid">
+            <section id="editor-pane" class="editor-pane">
+              <div class="pane-heading">
+                <span id="editor-title" class="pane-document-title">未命名.md</span>
+              </div>
+
+          <div id="find-bar" class="find-bar" hidden>
+            <label>
+              <span>查找</span>
+              <input id="find-input" type="search" autocomplete="off" />
+            </label>
+            <label id="replace-field" hidden>
+              <span>替换</span>
+              <input id="replace-input" type="search" autocomplete="off" />
+            </label>
+            <label class="checkbox-label">
+              <input id="find-case-sensitive" type="checkbox" />
+              <span>区分大小写</span>
+            </label>
+            <button type="button" id="find-previous">上一个</button>
+            <button type="button" id="find-next">下一个</button>
+            <button type="button" id="replace-current">替换</button>
+            <button type="button" id="replace-all">全部替换</button>
+            <button type="button" id="find-close" class="small-icon-button" title="关闭查找">×</button>
+          </div>
+
+          <div class="editor-clip">
+            <div id="line-numbers" class="line-numbers" aria-hidden="true"></div>
+            <pre id="highlight-layer" class="highlight-layer" aria-hidden="true"><code id="highlight-content"></code></pre>
+            <textarea
+              id="editor"
+              class="editor"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              placeholder="开始书写 Markdown..."
+              aria-label="Markdown 编辑器"
+            ></textarea>
+            <div id="read-only-badge" class="read-only-badge" hidden>只读</div>
+          </div>
+        </section>
+
+        <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" tabindex="0"></div>
+
+        <section id="preview-pane" class="preview-pane">
+          <div class="pane-heading">
+            <span class="pane-document-title">实时预览</span>
+            <span id="preview-heading-summary" class="security-badge">离线安全</span>
+          </div>
+          <iframe
+            id="preview-frame"
+            class="preview-frame"
+            title="Markdown 安全预览"
+            sandbox="allow-same-origin"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </section>
+          </div>
+        </section>
+      </main>
+
+      <footer class="status-bar">
+        <div class="status-left">
+          <strong id="document-action-status">已新建文档</strong>
+          <span class="status-separator"></span>
+          <span id="dirty-status" class="status-chip">未保存</span>
+          <span id="document-path" class="document-path">未保存</span>
+        </div>
+        <div class="status-right">
+          <span id="process-status" title="只统计当前 WIMD 主进程，不含 WebView2 独立子进程">CPU -- · 内存 --</span>
+          <span class="status-separator"></span>
+          <span id="cursor-status">行 1，列 1</span>
+          <span id="selection-status"></span>
+          <span id="render-status" hidden>预览待命</span>
+          <span id="word-status" hidden>0 字符</span>
+          <span id="theme-status" hidden>跟随系统</span>
+        </div>
+      </footer>
+    </div>
+
+    <div id="context-menu" class="context-menu" hidden></div>
+    <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+    <dialog id="table-dialog" class="modal compact-modal">
+      <form method="dialog">
+        <header class="modal-heading">
+          <div>
+            <h2>插入表格</h2>
+            <p>选择表格的行数和列数。</p>
+          </div>
+          <button type="button" class="modal-close" data-close-dialog="table-dialog" aria-label="关闭">×</button>
+        </header>
+        <div class="form-grid two-columns">
+          <label>
+            <span>行数（含表头）</span>
+            <input id="table-rows" type="number" min="2" max="20" value="3" />
+          </label>
+          <label>
+            <span>列数</span>
+            <input id="table-columns" type="number" min="1" max="12" value="3" />
+          </label>
+        </div>
+        <footer class="modal-actions">
+          <button type="button" class="secondary-button" data-close-dialog="table-dialog">取消</button>
+          <button type="button" id="insert-table-confirm" class="primary-button">插入</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="settings-dialog" class="modal settings-modal">
+      <form method="dialog">
+        <header class="modal-heading">
+          <div>
+            <h2>设置</h2>
+            <p>更改会保存在当前 Windows 用户的本机设置目录。</p>
+          </div>
+          <button type="button" class="modal-close" data-close-dialog="settings-dialog" aria-label="关闭">×</button>
+        </header>
+
+        <div class="settings-layout">
+          <nav id="settings-tabs" class="settings-tabs" aria-label="设置分类">
+            <button type="button" data-settings-tab="appearance" class="active">外观与字体</button>
+            <button type="button" data-settings-tab="behavior">文档与视图</button>
+            <button type="button" data-settings-tab="images">图片</button>
+            <button type="button" data-settings-tab="shortcuts">快捷键</button>
+          </nav>
+
+          <div class="settings-pages">
+            <section class="settings-page active" data-settings-page="appearance">
+              <div class="settings-section">
+                <h3>主题</h3>
+                <div id="theme-grid" class="theme-grid"></div>
+              </div>
+              <div class="settings-section">
+                <h3>编辑区</h3>
+                <div class="form-grid two-columns">
+                  <label>
+                    <span>字体</span>
+                    <input id="editor-font-family" list="font-families" placeholder="跟随系统" />
+                  </label>
+                  <label>
+                    <span>字号</span>
+                    <input id="editor-font-size" type="number" min="10" max="32" step="1" />
+                  </label>
+                </div>
+              </div>
+              <div class="settings-section">
+                <h3>预览区</h3>
+                <div class="form-grid two-columns">
+                  <label>
+                    <span>字体</span>
+                    <input id="preview-font-family" list="font-families" placeholder="跟随系统" />
+                  </label>
+                  <label>
+                    <span>字号</span>
+                    <input id="preview-font-size" type="number" min="10" max="32" step="1" />
+                  </label>
+                </div>
+              </div>
+              <div class="settings-section">
+                <h3>窗口背景</h3>
+                <div class="background-settings">
+                  <div id="background-preview" class="background-preview" aria-label="背景图片预览">
+                    <span>未选择背景</span>
+                  </div>
+                  <div class="background-controls">
+                    <div>
+                      <button type="button" id="background-choose" class="secondary-button">选择图片...</button>
+                      <button type="button" id="background-remove" class="secondary-button">移除背景</button>
+                    </div>
+                    <label>
+                      <span>背景可见度 <output id="background-opacity-value">18%</output></span>
+                      <input id="background-opacity" type="range" min="0" max="100" step="1" value="18" />
+                    </label>
+                    <p class="settings-note">图片会复制到 WIMD 本地背景目录，移动或删除原图不会影响新窗口。</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-page" data-settings-page="behavior">
+              <div class="settings-section">
+                <h3>打开文件时的显示模式</h3>
+                <label class="stacked-label">
+                  <select id="file-open-view-mode">
+                    <option value="rememberLast">沿用上次模式</option>
+                    <option value="editorOnly">仅编辑</option>
+                    <option value="editorAndPreview">编辑 + 预览</option>
+                    <option value="previewOnly">仅预览</option>
+                  </select>
+                </label>
+              </div>
+              <div class="settings-section">
+                <h3>有序列表样式</h3>
+                <div class="form-grid two-columns">
+                  <label>
+                    <span>全局默认</span>
+                    <select id="ordered-list-style">
+                      <option value="plain">原生简洁</option>
+                      <option value="bold">加粗强调</option>
+                      <option value="circle">圆形徽标</option>
+                      <option value="square">圆角方标</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>当前文件</span>
+                    <select id="ordered-list-file-style">
+                      <option value="follow">跟随全局默认</option>
+                      <option value="plain">原生简洁</option>
+                      <option value="bold">加粗强调</option>
+                      <option value="circle">圆形徽标</option>
+                      <option value="square">圆角方标</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="settings-note">文件覆盖按完整路径保存在本机；未命名文档需先保存，才可设置单独样式。</p>
+              </div>
+              <div class="settings-section">
+                <h3>侧栏</h3>
+                <label class="switch-row">
+                  <span>显示最近文件或工作区侧栏</span>
+                  <input id="sidebar-visible" type="checkbox" />
+                </label>
+              </div>
+              <div class="settings-section">
+                <h3>文件在外部修改时</h3>
+                <div class="form-grid two-columns">
+                  <label>
+                    <span>所有文件默认行为</span>
+                    <select id="external-file-default">
+                      <option value="prompt">弹窗提醒</option>
+                      <option value="autoReload">自动重新加载</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>当前文件</span>
+                    <select id="external-file-current">
+                      <option value="follow">跟随默认行为</option>
+                      <option value="prompt">始终弹窗提醒</option>
+                      <option value="autoReload">自动重新加载</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="settings-note">存在未保存修改时会话始终询问；自动更新只重新读取磁盘版本，不覆盖脏文档。</p>
+              </div>
+              <div class="settings-section">
+                <h3>更新</h3>
+                <label class="switch-row">
+                  <span>启动时检查 WIMD 更新</span>
+                  <input id="check-updates-startup" type="checkbox" />
+                </label>
+                <p class="settings-note">只读取官方 GitHub 最新正式 Release；下载后仍需确认安装。</p>
+              </div>
+            </section>
+
+            <section class="settings-page" data-settings-page="images">
+              <div class="settings-section">
+                <h3>插入方式</h3>
+                <label class="stacked-label">
+                  <select id="image-storage-mode">
+                    <option value="local">保存到当前文档目录</option>
+                    <option value="imgBb">上传到 ImgBB 图床</option>
+                  </select>
+                </label>
+              </div>
+              <div id="local-image-settings" class="settings-section">
+                <h3>本地图片目录</h3>
+                <label class="stacked-label">
+                  <span>相对于当前 Markdown 文档目录</span>
+                  <input id="local-image-directory" placeholder="img" />
+                </label>
+                <p class="settings-note">图片会复制到文档目录内。绝对路径和目录穿越会被拒绝；SVG 只保存在本地。</p>
+              </div>
+              <div id="imgbb-image-settings" class="settings-section" hidden>
+                <h3>ImgBB API Key</h3>
+                <div class="form-grid two-columns">
+                  <label>
+                    <span>新的 API Key</span>
+                    <input id="imgbb-api-key" type="password" autocomplete="off" placeholder="留空则保留已保存密钥" />
+                  </label>
+                  <div class="stacked-label">
+                    <span>密钥状态</span>
+                    <strong id="imgbb-key-status">未保存</strong>
+                    <button type="button" id="imgbb-key-clear" class="secondary-button">清除密钥</button>
+                  </div>
+                </div>
+                <p class="settings-note">密钥使用 Windows 当前用户 DPAPI 加密；只上传本次选择或粘贴的图片，不上传文档正文。</p>
+              </div>
+              <div class="settings-section">
+                <h3>网络图片</h3>
+                <p class="settings-note">预览允许 HTTP/HTTPS 图片。打开包含远程图片的文档会向对应图片服务器发出请求，文档正文不会上传。</p>
+              </div>
+            </section>
+
+            <section class="settings-page" data-settings-page="shortcuts">
+              <div class="settings-section">
+                <h3>应用内快捷键</h3>
+                <p class="settings-note">点击组合后按下新快捷键；输入框只接受组合键。</p>
+                <div id="shortcut-list" class="shortcut-list"></div>
+                <button type="button" id="reset-shortcuts" class="secondary-button">恢复默认</button>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <footer class="modal-actions">
+          <span id="settings-status" class="modal-status"></span>
+          <button type="button" class="secondary-button" data-close-dialog="settings-dialog">取消</button>
+          <button type="button" id="settings-save" class="primary-button">保存设置</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="unsaved-dialog" class="modal compact-modal unsaved-dialog">
+      <form method="dialog">
+        <header class="modal-heading">
+          <div>
+            <h2>保存修改？</h2>
+            <p id="unsaved-message">当前文档有未保存的修改。</p>
+          </div>
+        </header>
+        <footer class="modal-actions split-actions">
+          <button type="button" class="secondary-button" data-unsaved-action="cancel">取消</button>
+          <div>
+            <button type="button" class="danger-button" data-unsaved-action="discard">不保存</button>
+            <button type="button" class="primary-button" data-unsaved-action="save">保存</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="about-dialog" class="modal compact-modal">
+      <form method="dialog">
+        <header class="modal-heading">
+          <div>
+            <h2>WIMD Rust Edition</h2>
+            <p>本地、离线优先的 Markdown 实时预览编辑器。</p>
+          </div>
+          <button type="button" class="modal-close" data-close-dialog="about-dialog" aria-label="关闭">×</button>
+        </header>
+        <div class="about-body">
+          <p>Markdown 渲染、HTML 白名单、文件保存和工作区边界由 Rust 核心负责。桌面壳使用 Tauri 2 与 Windows WebView2。</p>
+          <dl>
+            <div><dt>版本</dt><dd id="about-version">2.0.0</dd></div>
+            <div><dt>设置目录</dt><dd id="about-settings-path"></dd></div>
+            <div><dt>网络</dt><dd>无遥测；仅用户操作或远程图片触发联网</dd></div>
+          </dl>
+        </div>
+        <footer class="modal-actions">
+          <button type="button" class="primary-button" data-close-dialog="about-dialog">关闭</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <datalist id="font-families">
+      <option value="Microsoft YaHei UI"></option>
+      <option value="Microsoft YaHei"></option>
+      <option value="Segoe UI"></option>
+      <option value="Noto Sans CJK SC"></option>
+      <option value="Source Han Sans SC"></option>
+      <option value="LXGW WenKai"></option>
+      <option value="霞鹜文楷"></option>
+      <option value="霞鹜文楷等宽"></option>
+      <option value="霞鹜漫黑"></option>
+      <option value="JetBrains Mono"></option>
+      <option value="Fira Code"></option>
+      <option value="Cascadia Code"></option>
+      <option value="Consolas"></option>
+    </datalist>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WIMD 图片查看</title>
+    <link rel="stylesheet" href="./viewer.css" />
+  </head>
+  <body>
+    <div id="image-viewer" class="image-viewer">
+      <div class="image-viewer-toolbar">
+        <span id="image-viewer-title">图片查看</span>
+        <div>
+          <select id="image-save-format" aria-label="图片另存格式">
+            <option value="original">原格式</option>
+            <option value="png">PNG</option>
+            <option value="html">自包含 HTML</option>
+          </select>
+          <button type="button" data-image-action="zoom-out" title="缩小">−</button>
+          <button type="button" data-image-action="fit" title="适应窗口">适应</button>
+          <button type="button" data-image-action="actual" title="100%">100%</button>
+          <button type="button" data-image-action="zoom-in" title="放大">+</button>
+          <button type="button" data-image-action="save" title="图片另存为">另存</button>
+          <button type="button" data-image-action="close" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="image-viewer-stage" class="image-viewer-stage">
+        <img id="image-viewer-content" alt="" draggable="false" />
+      </div>
+      <div id="image-viewer-status" class="image-viewer-status">正在载入图片...</div>
+    </div>
+    <script type="module" src="./js/viewer.js"></script>
+  </body>
+</html>

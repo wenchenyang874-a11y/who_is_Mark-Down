@@ -2,7 +2,7 @@
   <img src="./assets/app-icon.png" width="96" alt="WIMD 应用图标">
   <h1>WIMD</h1>
   <p><strong>为 Windows 打造的本地、轻量、安全 Markdown 实时预览编辑器</strong></p>
-  <p>Windows 10/11 · 离线优先 · Apache-2.0 · .NET 10</p>
+  <p>Windows 10/11 · 离线优先 · Apache-2.0 · Rust + Tauri 2 + WebView2</p>
   <p>
     <a href="https://github.com/wenchenyang874-a11y/who_is_Mark-Down/releases/latest">下载最新版</a>
     · <a href="#功能亮点">功能亮点</a>
@@ -11,6 +11,8 @@
 </div>
 
 ---
+
+> `rust-rewrite` 分支以 Rust + Tauri 2 重写实现为当前产品候选，入口与构建方式见 [`rust/README.md`](./rust/README.md)。旧 .NET/WPF 实现仅保留作迁移对照和兼容性参考；当前分支未提交、未发布，系统级安装验收边界以 Rust 迁移记录为准。
 
 ## 基础演示
 
@@ -116,7 +118,7 @@
 
 ## 开发
 
-技术栈：C#、.NET 10、WPF、AvalonEdit、Markdig、Mermaid、WebView2、xUnit、Inno Setup。
+技术栈：Rust、Tauri 2、WebView2、pulldown-cmark、Ammonia、Mermaid、NSIS；旧版迁移参照使用 C#、.NET 10、WPF、AvalonEdit、Markdig、xUnit 和 Inno Setup。
 
 ```powershell
 dotnet restore --locked-mode

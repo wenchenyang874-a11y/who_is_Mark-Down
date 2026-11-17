@@ -1,7 +1,11 @@
 # Preserve the exact audited bytes of the pinned third-party Mermaid bundle.
 src/WhoIsMarkdown.App/Resources/mermaid.min.js -text -whitespace
+rust/crates/wimd-app/ui/vendor/mermaid.min.js -text -whitespace
 # Preserve upstream font binaries and legal notices byte-for-byte. License
 # whitespace belongs to the original text, not to WIMD's formatter.
 assets/fonts/**/*.ttf binary
 assets/fonts/**/OFL.txt -text -whitespace
 assets/fonts/**/AUTHORS.txt -text -whitespace
+rust/crates/wimd-app/ui/fonts/**/*.ttf binary
+rust/crates/wimd-app/ui/fonts/**/OFL.txt -text -whitespace
+rust/crates/wimd-app/ui/fonts/**/AUTHORS.txt -text -whitespace

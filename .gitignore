@@ -5,6 +5,7 @@ bin/
 obj/
 TestResults/
 artifacts/
+/rust/target/
 *.user
 *.suo
 *.userosscache
