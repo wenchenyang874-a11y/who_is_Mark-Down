@@ -4,6 +4,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64},
+        mpsc::SyncSender,
     },
 };
 
@@ -46,6 +47,8 @@ pub struct AppState {
     pub viewer_image: Mutex<Option<ViewerImagePayload>>,
     pub settings_window_context: Mutex<HashMap<String, SettingsWindowContext>>,
     pub next_settings_window_id: AtomicU64,
+    pub pdf_ready_senders: Mutex<HashMap<String, SyncSender<Result<(), String>>>>,
+    pub next_pdf_window_id: AtomicU64,
     pub next_viewer_request: AtomicU64,
     pub cancel_update_download: Arc<AtomicBool>,
     pub image_cache: ImageResponseCache,
@@ -78,6 +81,8 @@ impl AppState {
             viewer_image: Mutex::new(None),
             settings_window_context: Mutex::new(HashMap::new()),
             next_settings_window_id: AtomicU64::new(1),
+            pdf_ready_senders: Mutex::new(HashMap::new()),
+            next_pdf_window_id: AtomicU64::new(1),
             next_viewer_request: AtomicU64::new(1),
             cancel_update_download: Arc::new(AtomicBool::new(false)),
             image_cache: ImageResponseCache::default(),

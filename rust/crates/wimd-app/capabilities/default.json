@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "image-viewer",
-    "settings-*"
+    "settings-*",
+    "pdf-export-*"
   ],
   "permissions": [
     "core:default"

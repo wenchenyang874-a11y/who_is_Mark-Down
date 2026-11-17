@@ -530,6 +530,36 @@ export class PreviewController {
     });
   }
 
+  async createPdfSnapshot() {
+    await this.waitForImages(10000);
+    await Promise.race([
+      this.document?.fonts?.ready || Promise.resolve(),
+      new Promise((resolve) => window.setTimeout(resolve, 5000)),
+    ]);
+    const main = this.main;
+    if (!main) throw new Error("预览页面尚未初始化。");
+
+    const clone = main.cloneNode(true);
+    clone
+      .querySelectorAll(".heading-fold-button, .code-copy-button")
+      .forEach((node) => node.remove());
+    clone
+      .querySelectorAll(".wimd-folded")
+      .forEach((node) => node.classList.remove("wimd-folded"));
+    clone
+      .querySelectorAll('input[type="checkbox"][data-task-line]')
+      .forEach((input) => {
+        input.disabled = true;
+      });
+
+    return {
+      html: clone.innerHTML,
+      css: this.previewCss,
+      theme: this.documentElement?.dataset.theme || "light",
+      inlineStyle: this.documentElement?.getAttribute("style") || "",
+    };
+  }
+
   scrollSnapshot() {
     return { ratio: this.scrollRatio(), suppressed: this.scrollSyncSuppressed };
   }
@@ -548,34 +578,6 @@ export class PreviewController {
 
   clearImageCache() {
     this.imageCache.clear();
-  }
-
-  async preparePdfLayout() {
-    await this.initialize();
-    await this.waitForImages(15_000);
-    const document = this.document;
-    if (!document) throw new Error("预览页面尚未初始化。");
-    const root = document.scrollingElement || document.documentElement;
-    this.pdfRestoreState = {
-      height: this.frame.style.height,
-      minHeight: this.frame.style.minHeight,
-      overflow: this.frame.style.overflow,
-      position: this.frame.style.position,
-      width: this.frame.style.width,
-    };
-    document.body.classList.add("wimd-pdf-export");
-    const height = Math.max(root.scrollHeight, root.clientHeight, 1123);
-    this.frame.style.height = `${height}px`;
-    this.frame.style.minHeight = `${height}px`;
-    this.frame.style.width = "100%";
-    this.frame.style.overflow = "visible";
-    this.frame.style.position = "static";
-    document.body.classList.add("wimd-pdf-export");
-    document.documentElement.classList.add("wimd-pdf-export");
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-    window.document.body.classList.add("pdf-exporting");
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }
 
   async waitForImages(timeoutMs) {
@@ -604,21 +606,6 @@ export class PreviewController {
     ]);
   }
 
-  restoreAfterPdf() {
-    const state = this.pdfRestoreState;
-    if (state) {
-      this.frame.style.height = state.height;
-      this.frame.style.minHeight = state.minHeight;
-      this.frame.style.overflow = state.overflow;
-      this.frame.style.position = state.position;
-      this.frame.style.width = state.width;
-      this.pdfRestoreState = null;
-    }
-    window.document.body.classList.remove("pdf-exporting");
-    const document = this.document;
-    document?.body.classList.remove("wimd-pdf-export");
-    document?.documentElement.classList.remove("wimd-pdf-export");
-  }
 }
 
 function bundledFontFamily(value) {

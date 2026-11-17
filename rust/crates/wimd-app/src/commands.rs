@@ -10,7 +10,10 @@ use std::os::windows::process::CommandExt;
 use chrono::Utc;
 use notify::{RecursiveMode, Watcher};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+};
 use wimd_core::{
     document::{
         DocumentStamp, LoadedDocument, inspect_document, normalize_path, read_document,
@@ -39,6 +42,61 @@ use crate::{
 };
 
 type CommandResult<T> = Result<T, String>;
+
+fn parented_file_dialog(window: &WebviewWindow) -> rfd::FileDialog {
+    rfd::FileDialog::new().set_parent(window)
+}
+
+fn popup_logical_position(
+    parent: &WebviewWindow,
+    logical_width: f64,
+    logical_height: f64,
+) -> Option<(f64, f64)> {
+    let scale = parent.scale_factor().ok()?;
+    let parent_position = parent.outer_position().ok()?;
+    let parent_size = parent.outer_size().ok()?;
+    let width = (logical_width * scale).round() as i32;
+    let height = (logical_height * scale).round() as i32;
+    let mut x = parent_position.x + (parent_size.width as i32 - width) / 2;
+    let mut y = parent_position.y + (parent_size.height as i32 - height) / 2;
+    if let Ok(Some(monitor)) = parent.current_monitor() {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        x = x.clamp(
+            monitor_position.x,
+            monitor_position.x + monitor_size.width as i32 - width,
+        );
+        y = y.clamp(
+            monitor_position.y,
+            monitor_position.y + monitor_size.height as i32 - height,
+        );
+    }
+    Some((x as f64 / scale, y as f64 / scale))
+}
+
+fn position_popup_over_parent(parent: &WebviewWindow, popup: &WebviewWindow) -> CommandResult<()> {
+    let parent_position = parent.outer_position().map_err(|error| error.to_string())?;
+    let parent_size = parent.outer_size().map_err(|error| error.to_string())?;
+    let popup_size = popup.outer_size().map_err(|error| error.to_string())?;
+    let mut x = parent_position.x + (parent_size.width as i32 - popup_size.width as i32) / 2;
+    let mut y = parent_position.y + (parent_size.height as i32 - popup_size.height as i32) / 2;
+    if let Ok(Some(monitor)) = parent.current_monitor() {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        x = x.clamp(
+            monitor_position.x,
+            monitor_position.x + monitor_size.width as i32 - popup_size.width as i32,
+        );
+        y = y.clamp(
+            monitor_position.y,
+            monitor_position.y + monitor_size.height as i32 - popup_size.height as i32,
+        );
+    }
+    popup
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| format!("移动弹窗到父窗口所在显示器失败：{error}"))?;
+    Ok(())
+}
 
 fn log_command_result<T>(
     state: &AppState,
@@ -195,6 +253,7 @@ pub fn settings_context(
 #[tauri::command]
 pub async fn open_settings_window(
     app: AppHandle,
+    parent: WebviewWindow,
     state: State<'_, AppState>,
     kind: String,
     document_path: Option<PathBuf>,
@@ -224,12 +283,20 @@ pub async fn open_settings_window(
             },
         );
 
-    let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("settings.html".into()))
-        .title(title)
-        .inner_size(width, height)
-        .min_inner_size(minimum_width, minimum_height)
-        .resizable(resizable)
-        .center()
+    let mut builder =
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("settings.html".into()))
+            .title(title)
+            .inner_size(width, height)
+            .min_inner_size(minimum_width, minimum_height)
+            .resizable(resizable)
+            .parent(&parent)
+            .map_err(|error| format!("绑定设置窗口父窗口失败：{error}"))?;
+    builder = if let Some((x, y)) = popup_logical_position(&parent, width, height) {
+        builder.position(x, y)
+    } else {
+        builder.center()
+    };
+    let window = builder
         .build()
         .map_err(|error| format!("创建设置窗口失败：{error}"))?;
     let context_app = app.clone();
@@ -353,6 +420,7 @@ pub fn consume_installer_restore(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub async fn open_image_viewer(
     app: AppHandle,
+    parent: WebviewWindow,
     state: State<'_, AppState>,
     source: String,
     title: String,
@@ -373,6 +441,7 @@ pub async fn open_image_viewer(
         .map_err(|_| "图片查看器状态已损坏。".to_owned())? = Some(payload.clone());
 
     if let Some(window) = app.get_webview_window("image-viewer") {
+        let _ = position_popup_over_parent(&parent, &window);
         window
             .emit("wimd://viewer-image", payload)
             .map_err(|error| format!("更新图片查看器失败：{error}"))?;
@@ -380,14 +449,22 @@ pub async fn open_image_viewer(
         return Ok(());
     }
 
-    let window =
+    let mut builder =
         WebviewWindowBuilder::new(&app, "image-viewer", WebviewUrl::App("viewer.html".into()))
             .title("WIMD 图片查看")
             .inner_size(960.0, 720.0)
             .min_inner_size(520.0, 380.0)
             .resizable(true)
-            .build()
-            .map_err(|error| format!("创建图片查看器失败：{error}"))?;
+            .parent(&parent)
+            .map_err(|error| format!("绑定图片查看器父窗口失败：{error}"))?;
+    builder = if let Some((x, y)) = popup_logical_position(&parent, 960.0, 720.0) {
+        builder.position(x, y)
+    } else {
+        builder.center()
+    };
+    let window = builder
+        .build()
+        .map_err(|error| format!("创建图片查看器失败：{error}"))?;
     window
         .emit("wimd://viewer-image", payload)
         .map_err(|error| format!("发送图片查看请求失败：{error}"))?;
@@ -525,9 +602,9 @@ pub async fn remove_recovery_snapshot(state: State<'_, AppState>, id: String) ->
 }
 
 #[tauri::command]
-pub async fn pick_document() -> CommandResult<Option<PathBuf>> {
-    tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new()
+pub async fn pick_document(window: WebviewWindow) -> CommandResult<Option<PathBuf>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        parented_file_dialog(&window)
             .set_title("打开 Markdown 文档")
             .add_filter("Markdown", &["md", "markdown"])
             .add_filter("所有文件", &["*"])
@@ -538,14 +615,17 @@ pub async fn pick_document() -> CommandResult<Option<PathBuf>> {
 }
 
 #[tauri::command]
-pub async fn pick_save_path(suggested_name: String) -> CommandResult<Option<PathBuf>> {
+pub async fn pick_save_path(
+    window: WebviewWindow,
+    suggested_name: String,
+) -> CommandResult<Option<PathBuf>> {
     tauri::async_runtime::spawn_blocking(move || {
         let suggested_name = if suggested_name.trim().is_empty() {
             "未命名.md".to_owned()
         } else {
             suggested_name
         };
-        rfd::FileDialog::new()
+        parented_file_dialog(&window)
             .set_title("保存 Markdown 文档")
             .set_file_name(suggested_name)
             .add_filter("Markdown", &["md", "markdown"])
@@ -556,7 +636,10 @@ pub async fn pick_save_path(suggested_name: String) -> CommandResult<Option<Path
 }
 
 #[tauri::command]
-pub async fn pick_pdf_save_path(suggested_name: String) -> CommandResult<Option<PathBuf>> {
+pub async fn pick_pdf_save_path(
+    window: WebviewWindow,
+    suggested_name: String,
+) -> CommandResult<Option<PathBuf>> {
     tauri::async_runtime::spawn_blocking(move || {
         let suggested_name = if suggested_name.trim().is_empty() {
             "未命名.pdf".to_owned()
@@ -567,7 +650,7 @@ pub async fn pick_pdf_save_path(suggested_name: String) -> CommandResult<Option<
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "未命名.pdf".to_owned())
         };
-        rfd::FileDialog::new()
+        parented_file_dialog(&window)
             .set_title("导出 PDF")
             .set_file_name(suggested_name)
             .add_filter("PDF", &["pdf"])
@@ -578,9 +661,9 @@ pub async fn pick_pdf_save_path(suggested_name: String) -> CommandResult<Option<
 }
 
 #[tauri::command]
-pub async fn pick_folder() -> CommandResult<Option<PathBuf>> {
-    tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new()
+pub async fn pick_folder(window: WebviewWindow) -> CommandResult<Option<PathBuf>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        parented_file_dialog(&window)
             .set_title("打开 Markdown 工作区")
             .pick_folder()
     })
@@ -589,9 +672,9 @@ pub async fn pick_folder() -> CommandResult<Option<PathBuf>> {
 }
 
 #[tauri::command]
-pub async fn pick_image() -> CommandResult<Option<PathBuf>> {
-    tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new()
+pub async fn pick_image(window: WebviewWindow) -> CommandResult<Option<PathBuf>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        parented_file_dialog(&window)
             .set_title("选择要插入的图片")
             .add_filter("图片", &["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"])
             .pick_file()
@@ -602,11 +685,12 @@ pub async fn pick_image() -> CommandResult<Option<PathBuf>> {
 
 #[tauri::command]
 pub async fn choose_background_image(
+    window: WebviewWindow,
     state: State<'_, AppState>,
 ) -> CommandResult<Option<BackgroundPayload>> {
     let background_directory = state.background_directory.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let Some(source) = rfd::FileDialog::new()
+        let Some(source) = parented_file_dialog(&window)
             .set_title("选择 WIMD 背景图片")
             .add_filter("图片", &["png", "jpg", "jpeg", "bmp", "webp"])
             .pick_file()
@@ -670,19 +754,113 @@ pub async fn save_document(
 }
 
 #[tauri::command]
+pub fn mark_pdf_window_ready(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    error: Option<String>,
+) -> CommandResult<()> {
+    let sender = state
+        .pdf_ready_senders
+        .lock()
+        .map_err(|_| "PDF 窗口状态已损坏。".to_owned())?
+        .remove(window.label())
+        .ok_or_else(|| "找不到 PDF 窗口等待任务。".to_owned())?;
+    sender
+        .send(error.map_or(Ok(()), Err))
+        .map_err(|_| "PDF 窗口等待任务已结束。".to_owned())
+}
+
+#[tauri::command]
 pub async fn export_pdf(
     app: AppHandle,
     state: State<'_, AppState>,
     path: PathBuf,
+    html: String,
+    css: String,
+    theme: String,
+    inline_style: String,
 ) -> CommandResult<PathBuf> {
     let started = std::time::Instant::now();
     let path = pdf::ensure_pdf_extension(&path);
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "找不到 WIMD 主窗口。".to_owned())?;
-    let result = pdf::export_window_pdf(window, path)
+    let payload = pdf::PdfDocumentPayload {
+        html,
+        css,
+        theme,
+        inline_style,
+    };
+    let initialization_script = match pdf::initialization_script(&payload) {
+        Ok(script) => script,
+        Err(error) => {
+            let _ = log_command_result::<PathBuf>(&state, "PdfExport", started, Err(error.clone()));
+            return Err(error);
+        }
+    };
+    let window_id = state
+        .next_pdf_window_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let label = format!("pdf-export-{window_id}");
+    let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(1);
+    state
+        .pdf_ready_senders
+        .lock()
+        .map_err(|_| "PDF 窗口状态已损坏。".to_owned())?
+        .insert(label.clone(), ready_sender);
+
+    let window = match WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("pdf.html".into()))
+        .title("WIMD PDF")
+        .inner_size(816.0, 1056.0)
+        .visible(false)
+        .decorations(false)
+        .skip_taskbar(true)
+        .resizable(false)
+        .initialization_script(initialization_script)
+        .build()
+    {
+        Ok(window) => window,
+        Err(error) => {
+            if let Ok(mut senders) = state.pdf_ready_senders.lock() {
+                senders.remove(&label);
+            }
+            let error = format!("创建 PDF 内容窗口失败：{error}");
+            let _ = log_command_result::<PathBuf>(&state, "PdfExport", started, Err(error.clone()));
+            return Err(error);
+        }
+    };
+
+    let ready = match tauri::async_runtime::spawn_blocking(move || {
+        ready_receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .map_err(|_| "等待 PDF 内容准备超时。".to_owned())?
+    })
+    .await
+    {
+        Ok(ready) => ready,
+        Err(error) => {
+            let _ = window.destroy();
+            if let Ok(mut senders) = state.pdf_ready_senders.lock() {
+                senders.remove(&label);
+            }
+            let error = format!("等待 PDF 内容任务失败：{error}");
+            let _ = log_command_result::<PathBuf>(&state, "PdfExport", started, Err(error.clone()));
+            return Err(error);
+        }
+    };
+    if let Err(error) = ready {
+        let _ = window.destroy();
+        if let Ok(mut senders) = state.pdf_ready_senders.lock() {
+            senders.remove(&label);
+        }
+        let _ = log_command_result::<PathBuf>(&state, "PdfExport", started, Err(error.clone()));
+        return Err(error);
+    }
+
+    let result = pdf::export_window_pdf(window.clone(), path)
         .await
         .map_err(|error| error.to_string());
+    let _ = window.destroy();
+    if let Ok(mut senders) = state.pdf_ready_senders.lock() {
+        senders.remove(&label);
+    }
     log_command_result(&state, "PdfExport", started, result)
 }
 
@@ -760,6 +938,7 @@ pub async fn prepare_preview_image(
 
 #[tauri::command]
 pub async fn pick_preview_image_save_path(
+    window: WebviewWindow,
     suggested_name: String,
     format: String,
 ) -> CommandResult<Option<PathBuf>> {
@@ -772,7 +951,7 @@ pub async fn pick_preview_image_save_path(
         ),
     };
     tauri::async_runtime::spawn_blocking(move || {
-        rfd::FileDialog::new()
+        parented_file_dialog(&window)
             .set_title("图片另存为")
             .set_file_name(suggested_name)
             .add_filter(filter_name, extensions)

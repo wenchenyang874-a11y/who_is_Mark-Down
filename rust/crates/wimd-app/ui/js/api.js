@@ -77,6 +77,8 @@ async function fallbackInvoke(command, args) {
       return null;
     case "close_settings_window":
       return null;
+    case "mark_pdf_window_ready":
+      return null;
     case "render_preview":
       return renderFallbackMarkdown(args.markdown ?? "");
     case "format_markdown":

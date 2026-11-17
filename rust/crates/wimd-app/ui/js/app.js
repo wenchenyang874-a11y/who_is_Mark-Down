@@ -2366,16 +2366,21 @@ async function exportCurrentDocumentToPdf() {
     await preview.render(rendered, documentModel, resolvedPreviewSettings(documentModel.path), {
       preservePosition: false,
     });
-    await preview.preparePdfLayout();
-    const exportedPath = await invoke("export_pdf", { path: destination });
+    const pdfDocument = await preview.createPdfSnapshot();
+    dom.renderStatus.textContent = "正在生成 PDF...";
+    const exportedPath = await invoke("export_pdf", {
+      path: destination,
+      html: pdfDocument.html,
+      css: pdfDocument.css,
+      theme: pdfDocument.theme,
+      inlineStyle: pdfDocument.inlineStyle,
+    });
     toast(`PDF 已导出：${exportedPath}`, "success", 6000);
     dom.renderStatus.textContent = "PDF 导出完成";
   } catch (error) {
     dom.renderStatus.textContent = "PDF 导出失败";
     dom.renderStatus.classList.add("status-error");
     throw error;
-  } finally {
-    preview.restoreAfterPdf();
   }
 }
 

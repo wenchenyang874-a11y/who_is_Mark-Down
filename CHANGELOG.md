@@ -17,6 +17,8 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - 设置界面改为独立 Tauri 子窗口，不再复用主页面里的通用设置模态框。外观设置按旧版拆为“主题 / 字体 / 背景”三个分页，包含两列主题卡、字体试读、背景预览、恢复默认以及“应用不关闭 / 保存后关闭 / 取消丢弃草稿”；预览样式、图片设置、快捷键和文件行为分别使用独立窗口。
 - 修正主窗口初始化中残留的旧主题变量引用，确保初始化完成后能注册设置更新监听；设置窗口“应用”会即时刷新主窗口，“保存”会落盘并关闭，“取消”不会修改已保存设置。
 - 修复设置窗口保存后可能短暂或永久显示白色 `about:blank` 空页的问题；“保存”和“取消”改为宿主先隐藏、再销毁窗口，即使原生销毁失败也不会把白色空壳留在桌面上。
+- PDF 导出改为专用隐藏 WebView 打印预览正文，不再直接打印主窗口或 iframe 截图。导出前等待字体、本地图片和 Mermaid 结果，PDF 只包含 Markdown 内容，不包含菜单、侧栏、编辑器、标签或状态栏；短内容不会额外生成空白尾页。
+- 系统“打开/保存/另存为”对话框改为绑定当前 WIMD 窗口；设置窗口和图片查看器按父窗口所在显示器居中，并保持 owner 关系，不再固定弹到主显示器。
 - 修复空任务项 `- [x]`、`- [ ]` 不渲染复选框的问题；真实 Release WebView2 中已验证任务数量、输入内容和任务列表外观。窗口关闭增加脏文档保存确认，选择“不保存”后可由 Rust 宿主正常退出。
 - Rust 安装器改用独立的 `WIMD.Rust.Markdown` ProgID 和 `WIMD.Rust` 文件/文件夹右键动词，不再复用旧版 `WIMD.Markdown` 与 `WIMD`，并移除 Tauri 自动写入的默认文件关联宏；只有旧通用键的命令确实指向当前 Rust 安装时才会清理，避免旧版 `.NET` 的打开入口被 Rust 测试安装覆盖。
 
@@ -25,10 +27,12 @@ WIMD 的重要变化记录在此。版本遵循[语义化版本](https://semver.
 - Rust 格式、Check、Clippy 严格模式、前端语法检查通过；Core 49 + Desktop 22 = **71 项测试通过**。
 - 真实 Release WebView2 隔离验证通过：任务列表渲染 `taskCount=1`，输入 `- [x]` 正常；脏文档保存对话框可打开并选择“不保存”，进程退出码为 0。
 - Release WebView2 设置回归通过：外观窗口为 `820×760`，渲染 9 张主题卡和三个分页；主题“应用”会更新主窗口且窗口保持打开，“取消”不回写，“保存”会直接隐藏并销毁窗口，不留下 `about:blank` 白屏；保存后可重新打开其他设置窗口，快捷键捕获会更新当前组合并给出提示。
+- Release PDF 全链路回归通过：真实编辑器预览快照生成 A4 PDF，正文包含标题、任务、表格和代码，不包含“最近打开”等 WIMD UI 文本；短内容为 1 页。PDF 经 `pdfinfo` 和 `pdftoppm` 回读检查。
+- 多显示器弹窗回归通过：系统“导出 PDF”文件对话框 owner 指向当前 WIMD 主窗口；外观设置和图片查看器的 owner 均为主窗口，窗口矩形位于父窗口所在显示器并相对父窗口居中。
 - RustSec `cargo-audit` 扫描 527 个锁定 crate，未发现漏洞；报告 5 个 warning（`proc-macro-error` 未维护，`glib` unsound，`zbus_names`/`zvariant`/`zvariant_derive` 未维护），其中包含 Linux 目标依赖，不能据此认定为 Windows 运行时漏洞。
 - Tauri Release 与 NSIS 安装包已在本地生成；安装包包含许可证、第三方声明、WPR 启动诊断脚本和 Windows 文件关联/右键钩子。
-- Release 主程序 `rust/target/release/wimd.exe`：39,140,864 字节，SHA-256 `2E8B2E8643A3EB4E4E4A4426C4F999472D6650D3841F6584527C4A08C5BBFE6A`。
-- 本地安装包 `artifacts/rust-installer/WIMD-Setup-v2.0.0-win-x64.exe`：27,297,318 字节，SHA-256 `112CEF39F7B3D12B7922A4242FAEE722AB34F2568DA5849ED67D444CB1514B86`；安装包未签名。
+- Release 主程序 `rust/target/release/wimd.exe`：39,313,920 字节，SHA-256 `177E1F76D4EFC73D581EC9493B45797A09FCCCEFF2E09000E2A28E21F5E97438`。
+- 本地安装包 `artifacts/rust-installer/WIMD-Setup-v2.0.0-win-x64.exe`：27,330,274 字节，SHA-256 `4A6472834C4923B5F6EE92E6857BB8A2DF91E0709B516DE17CFB5BF54B76082A`；安装包未签名。
 - Rust 版仍处于 `rust-rewrite` 分支，不等同于已提交、已发布或已完成全量迁移；PDF/Mermaid 安装包冷热运行、Windows 10、覆盖安装/卸载和真实 ImgBB 账号仍需实测。
 
 ## [1.9.2] - 2026-11-16

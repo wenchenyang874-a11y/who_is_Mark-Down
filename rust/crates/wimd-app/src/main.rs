@@ -122,6 +122,7 @@ fn main() {
             commands::load_document,
             commands::save_document,
             commands::export_pdf,
+            commands::mark_pdf_window_ready,
             commands::inspect_document_stamp,
             commands::render_preview,
             commands::format_markdown,

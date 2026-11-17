@@ -1793,34 +1793,6 @@ body.has-background .line-numbers {
     background: #ffffff !important;
   }
 
-  body.pdf-exporting .app-header,
-  body.pdf-exporting .tab-strip,
-  body.pdf-exporting .sidebar,
-  body.pdf-exporting .sidebar-expand,
-  body.pdf-exporting .editor-pane,
-  body.pdf-exporting .splitter,
-  body.pdf-exporting .status-bar,
-  body.pdf-exporting .preview-pane > .pane-heading {
-    display: none !important;
-  }
-
-  body.pdf-exporting .main-layout,
-  body.pdf-exporting .preview-pane {
-    display: block !important;
-    overflow: visible !important;
-  }
-
-  body.pdf-exporting .preview-pane {
-    width: 100% !important;
-  }
-
-  body.pdf-exporting .preview-frame {
-    display: block !important;
-    width: 100% !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-    border: 0 !important;
-  }
 }
 
 @media (max-width: 1020px) {

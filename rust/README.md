@@ -22,6 +22,7 @@
 - 设置使用独立 Tauri/WebView2 窗口；外观设置保留旧版“主题 / 字体 / 背景”分页、主题卡、字体试读和背景草稿，并支持应用、保存、取消与恢复默认。
 - 设置保存/取消通过宿主先隐藏再销毁窗口，避免 WebView2 关闭过渡留下白色 `about:blank` 空页。
 - Rust 安装使用独立 `WIMD.Rust.Markdown` ProgID 和 `WIMD.Rust` 右键动词，不覆盖旧版 `WIMD.Markdown`、`WIMD` 右键命令或默认 Markdown 处理器。
+- PDF 由隐藏内容 WebView 生成，只打印 Markdown 预览正文；系统文件对话框绑定当前 WIMD 窗口，设置和图片查看器跟随父窗口所在显示器。
 
 ## 构建与运行
 
@@ -50,7 +51,7 @@ node --check rust/crates/wimd-app/ui/js/app.js
 .\rust\packaging\build-release.ps1
 ```
 
-安装包默认写入 `artifacts/rust-installer/WIMD-Setup-v2.0.0-win-x64.exe`。当前本地包为 27,297,318 字节，SHA-256 `112CEF39F7B3D12B7922A4242FAEE722AB34F2568DA5849ED67D444CB1514B86`；主程序为 39,140,864 字节，SHA-256 `2E8B2E8643A3EB4E4E4A4426C4F999472D6650D3841F6584527C4A08C5BBFE6A`。两者均未签名。本地打包不代表发布；提交、推送、Tag 和 Release 仍需明确授权。
+安装包默认写入 `artifacts/rust-installer/WIMD-Setup-v2.0.0-win-x64.exe`。当前本地包为 27,330,274 字节，SHA-256 `4A6472834C4923B5F6EE92E6857BB8A2DF91E0709B516DE17CFB5BF54B76082A`；主程序为 39,313,920 字节，SHA-256 `177E1F76D4EFC73D581EC9493B45797A09FCCCEFF2E09000E2A28E21F5E97438`。两者均未签名。本地打包不代表发布；提交、推送、Tag 和 Release 仍需明确授权。
 
 ## 边界
 

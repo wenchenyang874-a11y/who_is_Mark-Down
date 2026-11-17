@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src data: http: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        background: #ffffff;
+      }
+
+      body {
+        overflow: visible;
+      }
+    </style>
+    <style id="wimd-pdf-style"></style>
+    <style>
+      @media print {
+        html,
+        body,
+        #preview-document {
+          height: auto !important;
+          min-height: 0 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="preview-document" class="preview-document"></main>
+    <script type="module" src="./js/pdf.js"></script>
+  </body>
+</html>

@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use serde::Serialize;
 use tauri::WebviewWindow;
 use webview2_com::{
     Microsoft::Web::WebView2::Win32::{ICoreWebView2_16, ICoreWebView2Environment6},
@@ -12,7 +13,39 @@ use webview2_com::{
 use windows::core::Interface;
 
 const MAXIMUM_PDF_BYTES: usize = 256 * 1024 * 1024;
+const MAXIMUM_PDF_HTML_BYTES: usize = 128 * 1024 * 1024;
+const MAXIMUM_PDF_CSS_BYTES: usize = 4 * 1024 * 1024;
+const MAXIMUM_PDF_INLINE_STYLE_BYTES: usize = 64 * 1024;
 const PRINT_TIMEOUT: Duration = Duration::from_secs(45);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfDocumentPayload {
+    pub html: String,
+    pub css: String,
+    pub theme: String,
+    pub inline_style: String,
+}
+
+pub fn validate_document_payload(payload: &PdfDocumentPayload) -> Result<(), String> {
+    if payload.html.len() > MAXIMUM_PDF_HTML_BYTES {
+        return Err("PDF 内容超过 128 MiB 上限。".to_owned());
+    }
+    if payload.css.len() > MAXIMUM_PDF_CSS_BYTES {
+        return Err("PDF 样式超过 4 MiB 上限。".to_owned());
+    }
+    if payload.inline_style.len() > MAXIMUM_PDF_INLINE_STYLE_BYTES {
+        return Err("PDF 内联样式超过 64 KiB 上限。".to_owned());
+    }
+    Ok(())
+}
+
+pub fn initialization_script(payload: &PdfDocumentPayload) -> Result<String, String> {
+    validate_document_payload(payload)?;
+    let payload =
+        serde_json::to_string(payload).map_err(|error| format!("序列化 PDF 内容失败：{error}"))?;
+    Ok(format!("window.__WIMD_PDF_PAYLOAD__ = {payload};"))
+}
 
 pub async fn export_window_pdf(
     window: WebviewWindow,
