@@ -22,6 +22,12 @@ export class MarkdownEditor {
       this.lineNumbers.append(content);
     }
     this.lineNumberContent = this.lineNumbers.firstElementChild;
+    if (!this.highlight.firstElementChild) {
+      const content = document.createElement("code");
+      content.id = "highlight-content";
+      this.highlight.append(content);
+    }
+    this.highlightContent = this.highlight.firstElementChild;
 
     this.textarea.addEventListener("compositionstart", () => {
       this.composing = true;
@@ -42,7 +48,15 @@ export class MarkdownEditor {
     this.textarea.addEventListener("click", () => this.emitSelection());
     this.textarea.addEventListener("keyup", () => this.emitSelection());
     this.textarea.addEventListener("select", () => this.emitSelection());
-    this.textarea.addEventListener("keydown", (event) => this.handleTab(event));
+    this.textarea.addEventListener("keydown", (event) => {
+      if (this.handleEnter(event)) return;
+      this.handleTab(event);
+    });
+    this.resizeObserver = new ResizeObserver(() => {
+      this.syncGeometry();
+      this.layoutLineNumbers();
+    });
+    this.resizeObserver.observe(this.textarea);
   }
 
   get value() {
@@ -75,7 +89,8 @@ export class MarkdownEditor {
 
   refresh() {
     const value = this.value;
-    this.highlight.innerHTML = highlightMarkdown(value) + (value.endsWith("\n") ? " " : "");
+    this.highlightContent.innerHTML = highlightMarkdown(value);
+    this.syncGeometry();
     this.renderLineNumbers(value);
     this.syncScroll();
     this.emitSelection();
@@ -246,16 +261,82 @@ export class MarkdownEditor {
     this.indentSelection(event.shiftKey);
   }
 
+  handleEnter(event) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      this.selectionStart !== this.selectionEnd ||
+      isInsideFencedCode(this.value, this.selectionStart)
+    ) {
+      return false;
+    }
+
+    const caret = this.selectionStart;
+    const lineStart = this.value.lastIndexOf("\n", Math.max(0, caret - 1)) + 1;
+    const currentLine = this.value.slice(lineStart, caret);
+    const continuation = nextListContinuation(currentLine);
+    if (!continuation) return false;
+
+    event.preventDefault();
+    const replacement = continuation.empty
+      ? continuation.emptyLine
+      : `\n${continuation.nextPrefix}`;
+    const start = continuation.empty ? lineStart : caret;
+    this.replaceRange(
+      start,
+      caret,
+      replacement,
+      start + replacement.length,
+      start + replacement.length,
+    );
+    return true;
+  }
+
   renderLineNumbers(value) {
     const count = Math.max(1, value.split("\n").length);
-    this.lineNumberContent.textContent = Array.from({ length: count }, (_, index) => index + 1).join(
-      "\n",
-    );
+    const heights = this.measureLineHeights(count);
+    const fragment = document.createDocumentFragment();
+    for (let index = 0; index < count; index += 1) {
+      const row = document.createElement("div");
+      row.className = "line-number-row";
+      row.style.height = `${heights[index]}px`;
+      row.textContent = String(index + 1);
+      fragment.append(row);
+    }
+    this.lineNumberContent.replaceChildren(fragment);
+  }
+
+  measureLineHeights(count) {
+    const lines = this.highlight.querySelectorAll(".md-line");
+    const fallback = this.lineHeight();
+    return Array.from({ length: count }, (_, index) => {
+      const height = lines[index]?.getBoundingClientRect().height;
+      return Number.isFinite(height) && height > 0 ? height : fallback;
+    });
+  }
+
+  layoutLineNumbers() {
+    const count = Math.max(1, this.value.split("\n").length);
+    const heights = this.measureLineHeights(count);
+    const rows = this.lineNumberContent.querySelectorAll(".line-number-row");
+    rows.forEach((row, index) => {
+      if (index < heights.length) row.style.height = `${heights[index]}px`;
+    });
+  }
+
+  syncGeometry() {
+    const scrollbarWidth = Math.max(0, this.textarea.offsetWidth - this.textarea.clientWidth);
+    this.highlight.style.right = `${scrollbarWidth}px`;
   }
 
   syncScroll() {
+    // Bug fix: transform the inner text layer. Transforming this clipped container
+    // moved its own overflow box offscreen and made selected source text disappear.
     const transform = `translate(${-this.textarea.scrollLeft}px, ${-this.textarea.scrollTop}px)`;
-    this.highlight.style.transform = transform;
+    this.highlightContent.style.transform = transform;
     this.lineNumberContent.style.transform = `translateY(${-this.textarea.scrollTop}px)`;
   }
 
@@ -270,39 +351,54 @@ export class MarkdownEditor {
 }
 
 export function highlightMarkdown(value) {
+  let fence = null;
   return value
     .split("\n")
-    .map((line) => {
+    .map((line, index) => {
       const escaped = escapeHtml(line);
-      const fence = escaped.match(/^(\s*)(```+|~~~+)(.*)$/);
+      const fenceMatch = escaped.match(/^(\s*)(`{3,}|~{3,})(.*)$/);
+      let rendered;
+
       if (fence) {
-        return `${fence[1]}<span class="md-marker">${fence[2]}${escapeHtml(
-          fence[3],
-        )}</span>`;
+        const closes =
+          fenceMatch &&
+          fenceMatch[2][0] === fence.character &&
+          fenceMatch[2].length >= fence.length &&
+          fenceMatch[3].trim() === "";
+        if (closes) {
+          rendered = `${fenceMatch[1]}<span class="md-marker">${fenceMatch[2]}</span>`;
+          fence = null;
+        } else {
+          rendered = `<span class="md-fence-content">${escaped}</span>`;
+        }
+      } else if (fenceMatch) {
+        fence = { character: fenceMatch[2][0], length: fenceMatch[2].length };
+        rendered = `${fenceMatch[1]}<span class="md-marker">${fenceMatch[2]}${fenceMatch[3]}</span>`;
+      } else {
+        rendered = highlightMarkdownLine(escaped);
       }
 
-      let rendered = escaped;
-      const heading = rendered.match(/^(#{1,6})(\s+)(.*)$/);
-      if (heading) {
-        rendered = `<span class="md-heading">${heading[1]}${heading[2]}${highlightInline(
-          heading[3],
-        )}</span>`;
-      } else {
-        const quote = rendered.match(/^((?:\s*&gt;\s*)+)(.*)$/);
-        if (quote) {
-          rendered = `<span class="md-quote">${quote[1]}</span>${highlightInline(quote[2])}`;
-        } else {
-          const list = rendered.match(/^(\s*(?:[-+*]|\d+[.)]|[-+*]\s+\[[ xX]\])\s+)(.*)$/);
-          if (list) {
-            rendered = `<span class="md-marker">${list[1]}</span>${highlightInline(list[2])}`;
-          } else {
-            rendered = highlightInline(rendered);
-          }
-        }
-      }
-      return rendered;
+      return `<span class="md-line" data-editor-line="${index}">${rendered}</span>`;
     })
-    .join("\n");
+    .join("");
+}
+
+function highlightMarkdownLine(rendered) {
+  const heading = rendered.match(/^(#{1,6})(\s+)(.*)$/);
+  if (heading) {
+    return `<span class="md-heading">${heading[1]}${heading[2]}${highlightInline(
+      heading[3],
+    )}</span>`;
+  }
+  const quote = rendered.match(/^((?:\s*&gt;\s*)+)(.*)$/);
+  if (quote) {
+    return `<span class="md-quote">${quote[1]}</span>${highlightInline(quote[2])}`;
+  }
+  const list = rendered.match(/^(\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)(.*)$/);
+  if (list) {
+    return `<span class="md-marker">${list[1]}</span>${highlightInline(list[2])}`;
+  }
+  return highlightInline(rendered);
 }
 
 function highlightInline(value) {
@@ -324,4 +420,42 @@ function escapeRegExp(value) {
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function isInsideFencedCode(value, offset) {
+  let fence = null;
+  const beforeCaret = value.slice(0, Math.max(0, offset));
+  for (const line of beforeCaret.split("\n")) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (!match) continue;
+    if (!fence) {
+      fence = { character: match[1][0], length: match[1].length };
+      continue;
+    }
+    if (match[1][0] === fence.character && match[1].length >= fence.length) {
+      const rest = line.slice(line.indexOf(match[1]) + match[1].length);
+      if (rest.trim() === "") fence = null;
+    }
+  }
+  return fence !== null;
+}
+
+export function nextListContinuation(line) {
+  const match = line.match(/^(\s*(?:>\s*)*)([-+*]|\d+[.)])\s+(?:\[([ xX])\]\s+)?(.*)$/);
+  if (!match) return null;
+
+  const [, linePrefix, marker, taskState, content] = match;
+  let nextMarker = marker;
+  if (/^\d/.test(marker)) {
+    const delimiter = marker.at(-1);
+    const number = Number.parseInt(marker.slice(0, -1), 10);
+    if (!Number.isFinite(number)) return null;
+    nextMarker = `${number + 1}${delimiter}`;
+  }
+  const taskPrefix = taskState === undefined ? "" : "[ ] ";
+  return {
+    empty: content.trim() === "",
+    emptyLine: `${linePrefix}\n`,
+    nextPrefix: `${linePrefix}${nextMarker} ${taskPrefix}`,
+  };
 }

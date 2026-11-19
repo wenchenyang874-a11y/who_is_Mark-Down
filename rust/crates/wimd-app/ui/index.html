@@ -8,6 +8,15 @@
   </head>
   <body>
     <div id="app-shell" class="app-shell">
+      <header id="window-titlebar" class="window-titlebar" data-tauri-drag-region>
+        <div class="window-brand" data-tauri-drag-region>WIMD</div>
+        <div id="window-title" class="window-title" data-tauri-drag-region>WIMD</div>
+        <div class="window-controls">
+          <button id="window-minimize" type="button" title="最小化" aria-label="最小化">−</button>
+          <button id="window-maximize" type="button" title="最大化或还原" aria-label="最大化或还原">□</button>
+          <button id="window-close" class="window-close" type="button" title="关闭" aria-label="关闭">×</button>
+        </div>
+      </header>
       <header class="app-header">
         <nav class="menu-bar" aria-label="主菜单">
           <div class="menu" data-menu="file">
@@ -523,6 +532,7 @@
       <option value="Consolas"></option>
     </datalist>
 
+    <script src="./vendor/highlight.min.js"></script>
     <script type="module" src="./js/app.js"></script>
   </body>
 </html>

@@ -195,8 +195,10 @@ pub struct ApplicationSettings {
     pub recent_workspaces: Vec<RecentFile>,
     #[serde(deserialize_with = "deserialize_theme")]
     pub theme: Theme,
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
     pub editor_font_family: String,
     pub editor_font_size: f64,
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
     pub preview_font_family: String,
     pub preview_font_size: f64,
     pub sidebar_visible: bool,
@@ -652,6 +654,13 @@ pub struct SettingsLoad {
     pub warning: Option<String>,
 }
 
+fn read_settings_file(path: &Path) -> CoreResult<ApplicationSettings> {
+    let json = fs::read_to_string(path).map_err(|error| CoreError::io("读取设置", path, error))?;
+    serde_json::from_str::<ApplicationSettings>(&json).map_err(|_| CoreError::InvalidSettings {
+        path: path.to_path_buf(),
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct SettingsStore {
     path: PathBuf,
@@ -691,30 +700,52 @@ impl SettingsStore {
     }
 
     fn load_unlocked(&self) -> SettingsLoad {
-        let source_path = if self.path.exists() {
-            self.path.as_path()
-        } else if let Some(legacy_path) = self
+        let mut load_error = None;
+        if self.path.exists() {
+            match read_settings_file(&self.path) {
+                Ok(settings) => {
+                    return SettingsLoad {
+                        settings: settings.normalize(),
+                        warning: None,
+                    };
+                }
+                Err(error) => load_error = Some(error),
+            }
+            let backup_path = self.backup_path();
+            if let Ok(settings) = read_settings_file(&backup_path) {
+                let warning = Some("主设置文件不可读，已从最近一次有效备份恢复。".to_owned());
+                if let Ok(bytes) = fs::read(&backup_path) {
+                    let _ = write_atomic_json(&self.path, &bytes);
+                }
+                return SettingsLoad {
+                    settings: settings.normalize(),
+                    warning,
+                };
+            }
+        }
+
+        if !self.path.exists() {
+            let backup_path = self.backup_path();
+            if let Ok(settings) = read_settings_file(&backup_path) {
+                return SettingsLoad {
+                    settings: settings.normalize(),
+                    warning: Some("主设置文件缺失，已从最近一次有效备份恢复。".to_owned()),
+                };
+            }
+        }
+
+        let Some(source_path) = self
             .legacy_path
             .as_deref()
             .filter(|legacy_path| legacy_path.exists())
-        {
-            legacy_path
-        } else {
+        else {
             return SettingsLoad {
                 settings: ApplicationSettings::default(),
-                warning: None,
+                warning: load_error.map(|error| error.to_string()),
             };
         };
 
-        match fs::read_to_string(source_path)
-            .map_err(|error| CoreError::io("读取设置", source_path, error))
-            .and_then(|json| {
-                serde_json::from_str::<ApplicationSettings>(&json).map_err(|_| {
-                    CoreError::InvalidSettings {
-                        path: source_path.to_path_buf(),
-                    }
-                })
-            }) {
+        match read_settings_file(source_path) {
             Ok(settings) => SettingsLoad {
                 settings: settings.normalize(),
                 warning: None,
@@ -755,7 +786,24 @@ impl SettingsStore {
         let normalized = settings.clone().normalize();
         let json = serde_json::to_vec_pretty(&normalized)
             .map_err(|error| CoreError::Internal(format!("序列化设置失败：{error}")))?;
-        write_atomic_json(&self.path, &json)
+        let backup_path = self.backup_path();
+        let previous_valid = fs::read(&self.path)
+            .ok()
+            .filter(|bytes| serde_json::from_slice::<ApplicationSettings>(bytes).is_ok());
+        if let Some(bytes) = previous_valid {
+            let _ = write_atomic_json(&backup_path, &bytes);
+        }
+        write_atomic_json(&self.path, &json)?;
+        if !backup_path.exists() {
+            let _ = write_atomic_json(&backup_path, &json);
+        }
+        Ok(())
+    }
+
+    fn backup_path(&self) -> PathBuf {
+        let mut path = self.path.as_os_str().to_owned();
+        path.push(".bak");
+        PathBuf::from(path)
     }
 }
 
@@ -822,6 +870,13 @@ impl SettingsTransactionLock {
 enum FlexibleEnum {
     Name(String),
     Number(u32),
+}
+
+fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 fn deserialize_flexible_enum<'de, D>(deserializer: D) -> Result<FlexibleEnum, D::Error>
@@ -1357,6 +1412,68 @@ mod tests {
 
         assert!(loaded.warning.is_some());
         assert_eq!(loaded.settings.theme, Theme::System);
+    }
+
+    #[test]
+    fn null_font_families_do_not_reset_the_rest_of_appearance() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        fs::write(
+            &path,
+            r#"{
+              "theme": "rose",
+              "editorFontFamily": null,
+              "previewFontFamily": null,
+              "editorFontSize": 19,
+              "previewFontSize": 21,
+              "backgroundOpacity": 0.42
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = SettingsStore::new(&path).load();
+
+        assert!(loaded.warning.is_none());
+        assert_eq!(loaded.settings.theme, Theme::Rose);
+        assert_eq!(loaded.settings.editor_font_family, "");
+        assert_eq!(loaded.settings.preview_font_family, "");
+        assert_eq!(loaded.settings.editor_font_size, 19.0);
+        assert_eq!(loaded.settings.preview_font_size, 21.0);
+        assert_eq!(loaded.settings.background_opacity, 0.42);
+    }
+
+    #[test]
+    fn corrupt_settings_are_recovered_from_the_last_valid_backup() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        let store = SettingsStore::new(&path);
+        store
+            .save(&ApplicationSettings {
+                theme: Theme::Rose,
+                editor_font_size: 19.0,
+                ..ApplicationSettings::default()
+            })
+            .unwrap();
+        store
+            .save(&ApplicationSettings {
+                theme: Theme::Mist,
+                editor_font_size: 21.0,
+                ..ApplicationSettings::default()
+            })
+            .unwrap();
+        fs::write(&path, "{broken").unwrap();
+
+        let loaded = store.load();
+
+        assert!(loaded.warning.is_some());
+        assert_eq!(loaded.settings.theme, Theme::Rose);
+        assert_eq!(loaded.settings.editor_font_size, 19.0);
+        assert_eq!(
+            read_settings_file(&path)
+                .expect("load repaired primary")
+                .theme,
+            Theme::Rose
+        );
     }
 
     #[test]

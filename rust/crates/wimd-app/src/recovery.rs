@@ -90,7 +90,7 @@ pub fn list(directory: &Path) -> Result<Vec<RecoverySnapshot>, String> {
 }
 
 #[cfg(windows)]
-fn is_live_wimd_process(process_id: u32) -> bool {
+pub(crate) fn is_live_wimd_process(process_id: u32) -> bool {
     use std::{ffi::OsString, os::windows::ffi::OsStringExt};
     use windows_sys::Win32::{
         Foundation::CloseHandle,
@@ -126,7 +126,7 @@ fn is_live_wimd_process(process_id: u32) -> bool {
 }
 
 #[cfg(not(windows))]
-fn is_live_wimd_process(_process_id: u32) -> bool {
+pub(crate) fn is_live_wimd_process(_process_id: u32) -> bool {
     false
 }
 

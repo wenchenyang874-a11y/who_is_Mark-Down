@@ -11,12 +11,77 @@
   Pop $0
 !macroend
 
+!macro WimdPromoteRestartRequest
+  ; Capture and restore must use the same token. Reuse the token already written
+  ; by PREINSTALL instead of generating a second value.
+  !define UniqueID ${__LINE__}
+  Push $0
+  Push $1
+  Push $2
+  ClearErrors
+  FileOpen $0 "$LOCALAPPDATA\WIMD\update-restart.request" r
+  IfErrors wimd_restart_missing_${UniqueID}
+  FileRead $0 $1
+  FileClose $0
+  StrCpy $2 $1 8
+  StrCmp $2 "capture:" 0 wimd_restart_missing_${UniqueID}
+  StrCpy $1 $1 -1 8
+  StrCpy $1 "restore:$1"
+  FileOpen $0 "$LOCALAPPDATA\WIMD\update-restart.request" w
+  FileWrite $0 $1
+  FileClose $0
+  Goto wimd_restart_done_${UniqueID}
+
+wimd_restart_missing_${UniqueID}:
+  !insertmacro WimdWriteRestartRequest "restore"
+
+wimd_restart_done_${UniqueID}:
+  Pop $2
+  Pop $1
+  Pop $0
+  !undef UniqueID
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro WimdWriteRestartRequest "capture"
+  ; Restart Manager force-shutdown bypasses Tauri's close-requested handler.
+  ; Ask every matching WIMD window to close normally first so the frontend can
+  ; finish its update snapshot. Restart Manager remains the timeout fallback.
+  Push $0
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\wimd-updater-helper.exe "${__FILEDIR__}\..\..\wimd-updater-helper.exe"
+  ExecWait '"$PLUGINSDIR\wimd-updater-helper.exe" "$INSTDIR\${MAINBINARYNAME}.exe"' $0
+  Pop $0
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  !insertmacro WimdWriteRestartRequest "restore"
+  !insertmacro WimdPromoteRestartRequest
+  ; Older Rust preview installers used the same root Start Menu shortcut name
+  ; as the legacy .NET application. Tauri creates the new Rust shortcut in a
+  ; separate folder, but an already overwritten root shortcut must be repaired
+  ; from the legacy installer's registered install location.
+  Push $0
+  Push $1
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A278F55A-4D41-46B4-A1D9-DA41D8C7D655}_is1" "InstallLocation"
+  StrCmp $0 "" wimd_repair_legacy_shortcut_without_install
+  IfFileExists "$0\WIMD.exe" 0 wimd_repair_legacy_shortcut_without_install
+  Delete "$SMPROGRAMS\WIMD.lnk"
+  SetOutPath "$0"
+  CreateShortcut "$SMPROGRAMS\WIMD.lnk" "$0\WIMD.exe" "" "$0\WIMD.exe" 0
+  SetOutPath "$INSTDIR"
+  Goto wimd_repair_legacy_shortcut_done
+
+wimd_repair_legacy_shortcut_without_install:
+  ; Never remove an unrelated legacy shortcut. If the old installer is absent,
+  ; delete only a root shortcut that still targets this Rust installation.
+  !insertmacro IsShortcutTarget "$SMPROGRAMS\WIMD.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  Pop $1
+  StrCmp $1 1 0 wimd_repair_legacy_shortcut_done
+  Delete "$SMPROGRAMS\WIMD.lnk"
+wimd_repair_legacy_shortcut_done:
+  Pop $1
+  Pop $0
+
   ; Keep the Rust rewrite in a distinct ProgID. The legacy .NET installer used
   ; WIMD.Markdown; reusing it made Explorer and legacy integrations launch the
   ; Rust test build instead of the installed legacy application.

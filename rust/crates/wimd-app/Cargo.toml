@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 description = "Offline-first Markdown editor with a Rust core and WebView2 UI."
+default-run = "wimd"
 
 [build-dependencies]
 tauri-build.workspace = true

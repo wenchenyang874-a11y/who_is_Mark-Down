@@ -73,6 +73,14 @@ async function fallbackInvoke(command, args) {
         kind: args.kind || "appearance",
         documentPath: args.documentPath || null,
       };
+    case "installed_fonts":
+      return [];
+    case "inspect_recent_paths":
+      return (args.paths || []).map((path) => ({
+        path,
+        exists: true,
+        isDirectory: false,
+      }));
     case "open_settings_window":
       return null;
     case "close_settings_window":
@@ -119,6 +127,8 @@ async function fallbackInvoke(command, args) {
       return [];
     case "save_recovery_snapshot":
     case "remove_recovery_snapshot":
+    case "save_update_restart_window":
+    case "finish_update_restart_window":
       return null;
     case "installer_capture_requested":
       return false;
@@ -143,6 +153,9 @@ async function fallbackInvoke(command, args) {
     case "open_external":
       window.open(args.url, "_blank", "noopener,noreferrer");
       return null;
+    case "resolve_local_link":
+    case "open_local_link":
+      throw new Error("浏览器开发模式不能打开本地链接。");
     case "reveal_in_explorer":
     case "watch_document":
       return null;
@@ -539,6 +552,18 @@ export function pathDirectory(path) {
   if (!path) return "";
   const normalized = String(path).replaceAll("\\", "/");
   return normalized.slice(0, Math.max(0, normalized.lastIndexOf("/")));
+}
+
+export function displayPath(path) {
+  if (!path) return "";
+  const normalized = String(path).replaceAll("/", "\\");
+  if (normalized.startsWith("\\\\?\\UNC\\")) {
+    return `\\\\${normalized.slice(8)}`;
+  }
+  if (normalized.startsWith("\\\\?\\")) {
+    return normalized.slice(4);
+  }
+  return normalized;
 }
 
 export function formatError(error) {

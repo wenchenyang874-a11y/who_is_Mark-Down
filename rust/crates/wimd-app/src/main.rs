@@ -2,9 +2,11 @@
 
 mod commands;
 mod diagnostics;
+mod fonts;
 mod heartbeat;
 mod image_export;
 mod imgbb;
+mod local_links;
 mod pdf;
 mod process_usage;
 mod recovery;
@@ -13,12 +15,15 @@ mod secrets;
 mod state;
 mod updates;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::Command};
 
 use tauri::{Manager, PhysicalPosition, PhysicalSize};
 use wimd_core::settings::SettingsStore;
 
-use crate::state::AppState;
+use crate::state::{AppState, AppStateInit};
+
+#[cfg(windows)]
+use windows_sys::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
 
 fn main() {
     let result = tauri::Builder::default()
@@ -43,10 +48,56 @@ fn main() {
             std::fs::create_dir_all(&local_data)
                 .map_err(|error| format!("无法创建设置目录：{error}"))?;
             crate::restart_session::promote_capture_for_startup(&local_data);
-            crate::restart_session::migrate_legacy_update_restart(
-                &local_data,
-                &local_data.join("Recovery"),
-            );
+            if crate::restart_session::pending_restore_window_count(&local_data) == 0 {
+                crate::restart_session::migrate_legacy_update_restart(
+                    &local_data,
+                    &local_data.join("Recovery"),
+                );
+            }
+            let arguments = std::env::args_os().collect::<Vec<_>>();
+            let restore_worker = arguments
+                .iter()
+                .skip(1)
+                .any(|argument| argument == crate::restart_session::RESTORE_WINDOW_ARGUMENT);
+            let restore_window_count =
+                crate::restart_session::pending_restore_window_count(&local_data);
+            let claimed_update_restart_window =
+                crate::restart_session::claim_restore_window(&local_data)
+                    .map_err(|error| format!("读取更新恢复窗口失败：{error}"))?;
+            let update_restart_window = claimed_update_restart_window
+                .as_ref()
+                .map(|claimed| claimed.snapshot.clone());
+            let update_restart_claim_path = claimed_update_restart_window
+                .as_ref()
+                .map(|claimed| claimed.claim_path.clone());
+            if update_restart_window.is_some() && !restore_worker {
+                let remaining = restore_window_count.saturating_sub(1);
+                if remaining > 0 {
+                    let executable = std::env::current_exe()
+                        .map_err(|error| format!("无法定位 WIMD 可执行文件：{error}"))?;
+                    for index in 0..remaining {
+                        let mut command = Command::new(&executable);
+                        command.arg(crate::restart_session::RESTORE_WINDOW_ARGUMENT);
+                        if std::env::var_os("WIMD_QA_BACKGROUND_WINDOW").is_some() {
+                            command.env_remove("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS");
+                            if let Some(profile) = std::env::var_os("WEBVIEW2_USER_DATA_FOLDER") {
+                                let profile = PathBuf::from(profile);
+                                let name = profile
+                                    .file_name()
+                                    .map(|value| value.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| "webview".to_owned());
+                                command.env(
+                                    "WEBVIEW2_USER_DATA_FOLDER",
+                                    profile.with_file_name(format!("{name}-restore-{index}")),
+                                );
+                            }
+                        }
+                        command
+                            .spawn()
+                            .map_err(|error| format!("重新打开更新前窗口失败：{error}"))?;
+                    }
+                }
+            }
             let diagnostics = crate::diagnostics::DiagnosticLog::new(local_data.join("Logs"));
             let panic_diagnostics = diagnostics.clone();
             let previous_panic_hook = std::panic::take_hook();
@@ -59,30 +110,59 @@ fn main() {
                 local_data.join("settings.json"),
                 legacy_settings_path,
             );
-            let startup_paths = std::env::args_os()
+            let startup_paths = arguments
+                .into_iter()
                 .skip(1)
+                .filter(|argument| argument != crate::restart_session::RESTORE_WINDOW_ARGUMENT)
                 .map(PathBuf::from)
                 .collect::<Vec<_>>();
-            let state = AppState::new(
-                local_data.clone(),
+            let state = AppState::new(AppStateInit {
+                data_directory: local_data.clone(),
                 settings_store,
                 startup_paths,
-                local_data.join("Backgrounds"),
-                local_data.join("Recovery"),
-                local_data.join("Updates"),
+                restart_window_id: crate::restart_session::new_window_id(),
+                update_restart_window: update_restart_window.clone(),
+                update_restart_claim_path,
+                background_directory: local_data.join("Backgrounds"),
+                recovery_directory: local_data.join("Recovery"),
+                updates_directory: local_data.join("Updates"),
                 diagnostics,
-            );
-            if let Ok(settings) = state.settings_snapshot()
-                && let Some(window) = app.get_webview_window("main")
-            {
-                let width = settings.window_width;
-                let height = settings.window_height;
-                let _ = window.set_size(PhysicalSize::new(width, height));
-                if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
-                    let _ = window.set_position(PhysicalPosition::new(x, y));
+            });
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(snapshot) = update_restart_window.as_ref() {
+                    let _ = window.set_size(PhysicalSize::new(
+                        snapshot.window_width,
+                        snapshot.window_height,
+                    ));
+                    if let (Some(x), Some(y)) = (snapshot.window_x, snapshot.window_y) {
+                        let _ = window.set_position(PhysicalPosition::new(x, y));
+                    }
+                    if snapshot.window_maximized {
+                        let _ = window.maximize();
+                    }
+                } else if let Ok(settings) = state.settings_snapshot() {
+                    let width = settings.window_width;
+                    let height = settings.window_height;
+                    let _ = window.set_size(PhysicalSize::new(width, height));
+                    if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
+                        let _ = window.set_position(PhysicalPosition::new(x, y));
+                    }
+                    if settings.window_maximized {
+                        let _ = window.maximize();
+                    }
                 }
-                if settings.window_maximized {
-                    let _ = window.maximize();
+                let background_test = std::env::var_os("WIMD_QA_BACKGROUND_WINDOW").is_some();
+                if background_test {
+                    let _ = window.set_skip_taskbar(true);
+                    let _ = window.set_position(PhysicalPosition::new(-32_000, -32_000));
+                    #[cfg(windows)]
+                    if let Ok(hwnd) = window.hwnd() {
+                        unsafe {
+                            ShowWindow(hwnd.0, SW_SHOWNOACTIVATE);
+                        }
+                    }
+                } else {
+                    let _ = window.show();
                 }
             }
             app.manage(state);
@@ -90,6 +170,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap,
+            commands::installed_fonts,
+            commands::inspect_recent_paths,
             commands::settings_context,
             commands::open_settings_window,
             commands::close_settings_window,
@@ -98,6 +180,8 @@ fn main() {
             commands::report_frontend_error,
             commands::current_process_usage,
             commands::installer_capture_requested,
+            commands::save_update_restart_window,
+            commands::finish_update_restart_window,
             commands::consume_installer_restore,
             commands::open_image_viewer,
             commands::get_viewer_image,
@@ -152,6 +236,8 @@ fn main() {
             commands::copy_text,
             commands::read_clipboard_text,
             commands::open_external,
+            commands::resolve_local_link,
+            commands::open_local_link,
             commands::reveal_in_explorer,
             commands::open_in_new_window,
         ])

@@ -1,4 +1,5 @@
 import {
+  displayPath,
   formatError,
   getCurrentWindow,
   invoke,
@@ -49,6 +50,7 @@ const state = {
   capturingShortcut: null,
   shortcutMessage: "",
   shortcutMessageTone: "normal",
+  installedFonts: [],
 };
 
 void initialize();
@@ -66,6 +68,8 @@ async function initialize() {
     state.settings = bootstrap.settings;
     state.draft = structuredClone(bootstrap.settings);
     state.context = context || {};
+    state.installedFonts = await invoke("installed_fonts").catch(() => []);
+    populateFontFamilyOptions();
     if (validModes.has(context?.kind)) state.mode = context.kind;
     state.backgroundDataUri = "";
     if (state.mode === "appearance" && state.draft.backgroundImagePath) {
@@ -271,19 +275,25 @@ function renderFontPage() {
   );
   previewCard.append(editorPreview, previewPreview);
 
-  function updateFontPreview() {
-    state.draft.editorFontFamily = normalizeFontValue(editorInput.value);
-    state.draft.previewFontFamily = normalizeFontValue(previewInput.value);
+  function updateFontPreview({ commitFonts = false } = {}) {
+    const editorFontFamily = normalizeFontValue(editorInput.value);
+    const previewFontFamily = normalizeFontValue(previewInput.value);
+    if (commitFonts) {
+      state.draft.editorFontFamily = editorFontFamily;
+      state.draft.previewFontFamily = previewFontFamily;
+    }
     state.draft.editorFontSize = clampNumber(editorSize.value, 10, 32, 15);
     state.draft.previewFontSize = clampNumber(previewSize.value, 10, 32, 16);
-    editorPreview.style.fontFamily = fontStack(state.draft.editorFontFamily, true);
+    editorPreview.style.fontFamily = fontStack(editorFontFamily, true);
     editorPreview.style.fontSize = `${state.draft.editorFontSize}px`;
-    previewPreview.style.fontFamily = fontStack(state.draft.previewFontFamily, false);
+    previewPreview.style.fontFamily = fontStack(previewFontFamily, false);
     previewPreview.style.fontSize = `${state.draft.previewFontSize}px`;
   }
 
   editorInput.addEventListener("input", updateFontPreview);
+  editorInput.addEventListener("change", () => updateFontPreview({ commitFonts: true }));
   previewInput.addEventListener("input", updateFontPreview);
+  previewInput.addEventListener("change", () => updateFontPreview({ commitFonts: true }));
   editorSize.addEventListener("input", updateFontPreview);
   previewSize.addEventListener("input", updateFontPreview);
 
@@ -877,9 +887,9 @@ function prepareExternalOverrides() {
 
 function resetAppearanceDraft() {
   state.draft.theme = "system";
-  state.draft.editorFontFamily = null;
+  state.draft.editorFontFamily = "";
   state.draft.editorFontSize = 15;
-  state.draft.previewFontFamily = null;
+  state.draft.previewFontFamily = "";
   state.draft.previewFontSize = 16;
   state.draft.backgroundImagePath = null;
   state.draft.backgroundOpacity = 0.18;
@@ -1205,6 +1215,27 @@ function fontDisplayName(value) {
     (font) => font.id.toLowerCase() === String(value || "").toLowerCase(),
   );
   return bundled ? `内置 · ${bundled.label}` : value || "";
+}
+
+function populateFontFamilyOptions() {
+  const datalist = document.getElementById("font-families");
+  if (!datalist) return;
+  const values = new Set();
+  for (const font of bundledFonts) {
+    values.add(`内置 · ${font.label}`);
+    values.add(font.family);
+    values.add(font.label);
+  }
+  for (const font of state.installedFonts || []) {
+    if (typeof font === "string" && font.trim()) values.add(font.trim());
+  }
+  const fragment = document.createDocumentFragment();
+  for (const value of values) {
+    const option = document.createElement("option");
+    option.value = value;
+    fragment.append(option);
+  }
+  datalist.replaceChildren(fragment);
 }
 
 function normalizeFontValue(value) {

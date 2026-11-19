@@ -373,10 +373,77 @@ select {
   pointer-events: none;
 }
 
+.window-titlebar {
+  position: relative;
+  z-index: 40;
+  display: grid;
+  height: 32px;
+  flex: 0 0 32px;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.window-brand,
+.window-title {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 31px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-brand {
+  padding-left: 12px;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.window-title {
+  padding: 0 12px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.window-controls {
+  display: flex;
+  height: 31px;
+  align-items: stretch;
+}
+
+.window-controls button {
+  width: 46px;
+  height: 31px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.window-controls button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.window-controls .window-close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
 body.has-background .app-shell {
   background: transparent;
 }
 
+body.has-background .window-titlebar,
 body.has-background .app-header,
 body.has-background .tab-strip,
 body.has-background .sidebar,
@@ -796,10 +863,22 @@ body.has-background .line-numbers {
 }
 
 .recent-item.active,
-.workspace-file.active {
+.workspace-file.active,
+.workspace-file.selected {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
   background: var(--surface-accent);
   color: var(--text);
+}
+
+.recent-item.missing {
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--border));
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.recent-item.missing .item-icon,
+.recent-item.missing strong {
+  color: var(--text-muted);
 }
 
 .item-icon {
@@ -898,6 +977,12 @@ body.has-background .line-numbers {
 
 .workspace-tree summary:hover {
   background: var(--surface-muted);
+}
+
+.workspace-tree summary.selected {
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border));
+  background: var(--surface-accent);
+  color: var(--text);
 }
 
 .workspace-folder-mark {
@@ -1116,21 +1201,27 @@ body.has-background .line-numbers {
 
 #line-number-content {
   padding: 17px 10px 17px 6px;
-  white-space: pre;
+  line-height: 1.65;
   will-change: transform;
 }
 
 .highlight-layer {
-  display: none;
+  right: 0;
+  left: 52px;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-#highlight-content {
+.highlight-layer {
   display: block;
   min-height: 100%;
   margin: 0;
   padding: 17px 24px 80px;
   color: var(--text);
-  font: inherit;
+  font-family: var(--editor-font);
+  font-size: var(--editor-size);
+  line-height: 1.65;
   font-weight: 400;
   font-style: normal;
   letter-spacing: 0;
@@ -1138,13 +1229,35 @@ body.has-background .line-numbers {
   font-variant-ligatures: none;
   text-align: left;
   text-indent: 0;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#highlight-content {
+  display: block;
+  min-height: 100%;
+  font: inherit;
   will-change: transform;
+}
+
+.line-number-row {
+  overflow: hidden;
+  line-height: 1.65;
+}
+
+.md-line {
+  display: block;
+  min-height: 1.65em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .editor {
   right: 0;
   left: 52px;
+  z-index: 2;
   width: calc(100% - 52px);
   height: 100%;
   resize: none;
@@ -1155,7 +1268,7 @@ body.has-background .line-numbers {
   margin: 0;
   background: transparent;
   caret-color: var(--text);
-  color: var(--text);
+  color: transparent;
   font-weight: 400;
   font-style: normal;
   letter-spacing: 0;
@@ -1163,12 +1276,15 @@ body.has-background .line-numbers {
   font-variant-ligatures: none;
   text-align: left;
   text-indent: 0;
-  white-space: pre;
-  -webkit-text-fill-color: currentColor;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-text-fill-color: transparent;
 }
 
 .editor::selection {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
+  -webkit-text-fill-color: transparent;
 }
 
 .editor:focus-visible {
@@ -1200,6 +1316,10 @@ body.has-background .line-numbers {
   background: var(--surface-muted);
   color: var(--danger);
   font-family: var(--editor-font);
+}
+
+.md-fence-content {
+  color: var(--success);
 }
 
 .md-link {
@@ -1326,6 +1446,13 @@ body.has-background .line-numbers {
 
 .context-menu button:hover {
   background: var(--surface-accent);
+}
+
+.context-menu button:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
 }
 
 .context-menu button.danger {

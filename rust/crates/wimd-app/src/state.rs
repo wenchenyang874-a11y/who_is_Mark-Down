@@ -14,6 +14,7 @@ use wimd_core::settings::{ApplicationSettings, SettingsStore};
 
 use crate::{
     diagnostics::DiagnosticLog, heartbeat::UiHeartbeatMonitor, image_export::ImageResponseCache,
+    restart_session::UpdateRestartWindowSnapshot,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +39,9 @@ pub struct AppState {
     pub settings: Mutex<ApplicationSettings>,
     pub settings_warning: Option<String>,
     pub startup_paths: Vec<PathBuf>,
+    pub restart_window_id: String,
+    pub update_restart_window: Option<UpdateRestartWindowSnapshot>,
+    pub update_restart_claim_path: Mutex<Option<PathBuf>>,
     pub background_directory: PathBuf,
     pub recovery_directory: PathBuf,
     pub updates_directory: PathBuf,
@@ -54,28 +58,36 @@ pub struct AppState {
     pub image_cache: ImageResponseCache,
 }
 
+pub struct AppStateInit {
+    pub data_directory: PathBuf,
+    pub settings_store: SettingsStore,
+    pub startup_paths: Vec<PathBuf>,
+    pub restart_window_id: String,
+    pub update_restart_window: Option<UpdateRestartWindowSnapshot>,
+    pub update_restart_claim_path: Option<PathBuf>,
+    pub background_directory: PathBuf,
+    pub recovery_directory: PathBuf,
+    pub updates_directory: PathBuf,
+    pub diagnostics: DiagnosticLog,
+}
+
 impl AppState {
-    pub fn new(
-        data_directory: PathBuf,
-        settings_store: SettingsStore,
-        startup_paths: Vec<PathBuf>,
-        background_directory: PathBuf,
-        recovery_directory: PathBuf,
-        updates_directory: PathBuf,
-        diagnostics: DiagnosticLog,
-    ) -> Self {
-        let loaded = settings_store.load();
-        let heartbeat = UiHeartbeatMonitor::new(diagnostics.clone());
+    pub fn new(init: AppStateInit) -> Self {
+        let loaded = init.settings_store.load();
+        let heartbeat = UiHeartbeatMonitor::new(init.diagnostics.clone());
         Self {
-            data_directory,
-            settings_store,
+            data_directory: init.data_directory,
+            settings_store: init.settings_store,
             settings: Mutex::new(loaded.settings),
             settings_warning: loaded.warning,
-            startup_paths,
-            background_directory,
-            recovery_directory,
-            updates_directory,
-            diagnostics,
+            startup_paths: init.startup_paths,
+            restart_window_id: init.restart_window_id,
+            update_restart_window: init.update_restart_window,
+            update_restart_claim_path: Mutex::new(init.update_restart_claim_path),
+            background_directory: init.background_directory,
+            recovery_directory: init.recovery_directory,
+            updates_directory: init.updates_directory,
+            diagnostics: init.diagnostics,
             heartbeat,
             watchers: Mutex::new(HashMap::new()),
             viewer_image: Mutex::new(None),

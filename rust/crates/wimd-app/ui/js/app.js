@@ -1,5 +1,6 @@
 import {
   defaultShortcutMap,
+  displayPath,
   formatError,
   getCurrentWindow,
   invoke,
@@ -11,10 +12,16 @@ import {
 import { MarkdownEditor } from "./editor.js";
 import { PreviewController } from "./preview.js";
 import { THEME_OPTIONS, themeOption } from "./theme-catalog.js";
+import { workspaceParentForSelection } from "./workspace-context.js";
 
 const dom = {
   root: document.documentElement,
   appShell: document.getElementById("app-shell"),
+  windowTitlebar: document.getElementById("window-titlebar"),
+  windowTitle: document.getElementById("window-title"),
+  windowMinimize: document.getElementById("window-minimize"),
+  windowMaximize: document.getElementById("window-maximize"),
+  windowClose: document.getElementById("window-close"),
   mainLayout: document.getElementById("main-layout"),
   tabs: document.getElementById("tabs"),
   tabStrip: document.querySelector(".tab-strip"),
@@ -122,6 +129,8 @@ const state = {
   workspaceRoot: null,
   workspaceEntries: [],
   workspaceExpanded: new Set(),
+  workspaceSelection: null,
+  recentAvailability: new Map(),
   workspaceRefreshTimer: null,
   externalTimers: new Map(),
   suppressExternalUntil: 0,
@@ -181,7 +190,7 @@ async function initialize() {
     applySettings();
     await restoreSavedBackground();
     dom.aboutVersion.textContent = state.bootstrap.version;
-    dom.aboutSettingsPath.textContent = state.bootstrap.settingsPath;
+    dom.aboutSettingsPath.textContent = displayPath(state.bootstrap.settingsPath);
     if (state.bootstrap.settingsWarning) {
       toast(state.bootstrap.settingsWarning, "error", 6000);
     }
@@ -198,16 +207,26 @@ async function initialize() {
     toast(`初始化失败：${formatError(error)}`, "error", 7000);
   }
 
-  createDocument({ activate: true });
+  let restoredUpdateWindow = false;
+  const updateRestartWindow = state.bootstrap?.updateRestartWindow;
+  if (Array.isArray(updateRestartWindow?.documents) && updateRestartWindow.documents.length) {
+    try {
+      restoredUpdateWindow = await restoreUpdateRestartWindow(updateRestartWindow);
+    } catch (error) {
+      toast(`恢复更新前窗口失败：${formatError(error)}`, "error", 8000);
+    }
+  }
+  if (!restoredUpdateWindow) createDocument({ activate: true });
   renderEverything();
+  void refreshRecentPathAvailability();
   bindExternalFileEvents();
   bindSettingsChangedEvents();
   bindUpdateDownloadEvents();
   bindWindowDragDrop();
+  bindWindowControls();
   bindWindowClose();
   startProcessStatusSampling();
-  await restoreRecoverySnapshots();
-  await invoke("consume_installer_restore").catch(() => false);
+  if (!restoredUpdateWindow) await restoreRecoverySnapshots();
   await openStartupPaths();
   await markInitialStartupPreview();
   if (state.settings.checkForUpdatesOnStartup) {
@@ -421,6 +440,49 @@ function bindWindowDragDrop() {
   });
 }
 
+function bindWindowControls() {
+  const appWindow = getCurrentWindow();
+  if (!appWindow) {
+    dom.windowMinimize.disabled = true;
+    dom.windowMaximize.disabled = true;
+    dom.windowClose.disabled = true;
+    return;
+  }
+
+  const refreshMaximizeState = async () => {
+    if (!appWindow.isMaximized) return;
+    const maximized = await appWindow.isMaximized().catch(() => false);
+    dom.windowMaximize.textContent = maximized ? "❐" : "□";
+    dom.windowMaximize.dataset.maximized = String(maximized);
+  };
+  const toggleMaximize = async () => {
+    if (appWindow.toggleMaximize) {
+      await appWindow.toggleMaximize();
+    } else if ((await appWindow.isMaximized?.()) && appWindow.unmaximize) {
+      await appWindow.unmaximize();
+    } else {
+      await appWindow.maximize?.();
+    }
+    await refreshMaximizeState();
+  };
+
+  dom.windowMinimize.addEventListener("click", () => {
+    void appWindow.minimize?.();
+  });
+  dom.windowMaximize.addEventListener("click", () => {
+    void toggleMaximize();
+  });
+  dom.windowClose.addEventListener("click", () => {
+    void appWindow.close();
+  });
+  if (appWindow.onResized) {
+    void appWindow.onResized(() => {
+      void refreshMaximizeState();
+    });
+  }
+  void refreshMaximizeState();
+}
+
 function bindWindowClose() {
   const appWindow = getCurrentWindow();
   if (!appWindow?.onCloseRequested) return;
@@ -441,11 +503,15 @@ function bindWindowClose() {
     window.clearInterval(state.processTimer);
     window.clearInterval(state.heartbeatTimer);
     const cleanup = (async () => {
+      let restartSnapshotSaved = false;
       if (state.recoveryWritePromise) {
         await state.recoveryWritePromise.catch(() => {});
       }
       if (installerCapture) {
-        await persistDirtyRecoverySnapshots({ force: true, includeClean: true });
+        restartSnapshotSaved = await persistUpdateRestartWindowSnapshot();
+        if (!restartSnapshotSaved) {
+          await persistDirtyRecoverySnapshots({ force: true, includeClean: true });
+        }
       }
       await persistCurrentSessionSettings().catch(() => {});
       if (!installerCapture) {
@@ -501,6 +567,92 @@ async function openStartupPaths() {
     if (latest) activateDocument(latest.id);
   }
   if (errors.length) toast(errors.join("\n"), "error", 8000);
+}
+
+async function restoreUpdateRestartWindow(snapshot) {
+  const documents = snapshot.documents.slice(0, 32);
+  if (!documents.length) return false;
+
+  state.documents = [];
+  state.activeId = null;
+  state.untitledCounter = 0;
+  let activeDocumentId = null;
+
+  for (const [index, saved] of documents.entries()) {
+    const cleanFile = Boolean(saved.originalPath) && saved.text === saved.savedText;
+    let loaded = null;
+    if (cleanFile) {
+      try {
+        loaded = await invoke("load_document", { path: saved.originalPath });
+      } catch {
+        // Keep the captured copy available as a dirty document if the file
+        // disappeared while the installer was replacing the application.
+      }
+    }
+    const text = loaded?.text ?? saved.text;
+    const savedText = loaded ? loaded.text : cleanFile ? "" : saved.savedText;
+    const documentModel = createDocument({
+      id: saved.id,
+      activate: false,
+      path: loaded?.path ?? saved.originalPath,
+      title: saved.title,
+      text,
+      savedText,
+      hadUtf8Bom: loaded?.hadUtf8Bom ?? saved.hadUtf8Bom,
+      lineEnding: loaded?.lineEnding ?? saved.lineEnding,
+      readOnly: loaded?.readOnly ?? saved.readOnly,
+      stamp: loaded?.stamp ?? null,
+      viewMode: saved.viewMode,
+      selectionStart: Math.min(saved.selectionStart || 0, text.length),
+      selectionEnd: Math.min(saved.selectionEnd || 0, text.length),
+      scrollTop: Number(saved.scrollTop) || 0,
+      previewScrollRatio: Number(saved.previewScrollRatio) || 0,
+    });
+    if (index === snapshot.activeDocumentIndex) activeDocumentId = documentModel.id;
+    if (documentModel.path) {
+      await recordRecent(documentModel.path).catch(() => {});
+      await invoke("watch_document", { path: documentModel.path }).catch(() => {});
+    }
+    const untitled = /^未命名-(\d+)$/.exec(documentModel.title);
+    if (untitled) {
+      state.untitledCounter = Math.max(state.untitledCounter, Number(untitled[1]) || 0);
+    }
+  }
+
+  const active =
+    state.documents.find((documentModel) => documentModel.id === activeDocumentId) ||
+    state.documents[0];
+  if (active) activateDocument(active.id);
+
+  if (snapshot.workspaceRoot) {
+    try {
+      const workspace = await invoke("open_workspace", { path: snapshot.workspaceRoot });
+      state.workspaceRoot = workspace.root;
+      state.workspaceEntries = workspace.entries || [];
+      state.workspaceExpanded = new Set(
+        (snapshot.workspaceExpanded || []).filter((path) =>
+          isPathAtOrBelow(path, workspace.root),
+        ),
+      );
+      const selection = snapshot.workspaceSelection;
+      state.workspaceSelection =
+        selection && isPathAtOrBelow(selection.path, workspace.root)
+          ? { path: selection.path, isDirectory: Boolean(selection.isDirectory) }
+          : null;
+      state.settings.lastWorkspace = workspace.root;
+      await invoke("watch_workspace", { root: workspace.root }).catch(() => {});
+      await recordRecentWorkspace(workspace.root).catch(() => {});
+      renderSidebar();
+    } catch (error) {
+      toast(`恢复工作区失败：${formatError(error)}`, "error", 7000);
+    }
+  }
+
+  for (const documentModel of state.documents) {
+    await invoke("remove_recovery_snapshot", { id: documentModel.id }).catch(() => {});
+  }
+  await invoke("finish_update_restart_window").catch(() => false);
+  return true;
 }
 
 async function restoreRecoverySnapshots() {
@@ -586,7 +738,7 @@ function createDocument({
   selectionStart = 0,
   selectionEnd = selectionStart,
   scrollTop = 0,
-  previewScrollRatio = 0,
+    previewScrollRatio = 0,
 } = {}) {
   id = id || `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   if (!path && !title) state.untitledCounter += 1;
@@ -706,7 +858,10 @@ async function handleUnsavedDialogClick(event) {
   dom.unsavedDialog.close();
 }
 
-async function openDocument(path, { activate = true, recordRecent = true } = {}) {
+async function openDocument(
+  path,
+  { activate = true, recordRecent: recordRecentEntry = true } = {},
+) {
   const existing = state.documents.find(
     (documentModel) => samePath(documentModel.path, path),
   );
@@ -727,7 +882,7 @@ async function openDocument(path, { activate = true, recordRecent = true } = {})
     stamp: loaded.stamp,
     viewMode: resolveOpenViewMode(),
   });
-  if (recordRecent) await recordRecent(loaded.path);
+  if (recordRecentEntry) await recordRecent(loaded.path);
   await invoke("watch_document", { path: loaded.path }).catch(() => {});
   renderEverything();
   return documentModel;
@@ -737,6 +892,7 @@ async function openWorkspacePath(path, { activate = true } = {}) {
   const workspace = await invoke("open_workspace", { path });
   if (!samePath(state.workspaceRoot, workspace.root)) {
     state.workspaceExpanded.clear();
+    state.workspaceSelection = null;
   }
   state.workspaceRoot = workspace.root;
   state.workspaceEntries = workspace.entries || [];
@@ -750,7 +906,7 @@ async function openWorkspacePath(path, { activate = true } = {}) {
       await openDocument(firstFile.path, { activate: true, recordRecent: true });
     }
   }
-  toast(`已打开工作区：${workspace.root}`, "success");
+  toast(`已打开工作区：${displayPath(workspace.root)}`, "success");
 }
 
 async function saveDocument(documentModel, { saveAs = false } = {}) {
@@ -777,7 +933,7 @@ async function saveDocument(documentModel, { saveAs = false } = {}) {
   await recordRecent(path);
   await invoke("watch_document", { path }).catch(() => {});
   renderEverything();
-  toast(`已保存：${path}`, "success");
+  toast(`已保存：${displayPath(path)}`, "success");
   return true;
 }
 
@@ -888,19 +1044,35 @@ async function handleOpenLink(href) {
       await invoke("open_external", { url: href });
       return;
     }
-    if (documentModel?.path && /\.(?:md|markdown)(?:[?#].*)?$/i.test(href)) {
-      const path = joinPath(
-        pathDirectory(documentModel.path),
-        decodeURIComponent(href.split(/[?#]/)[0]),
-      );
-      await openDocument(path);
+    if (!documentModel?.path) {
+      toast("未保存文档不能解析本地相对链接。", "error");
       return;
     }
+    const target = await invoke("resolve_local_link", {
+      documentPath: documentModel.path,
+      href,
+    });
+    if (!target.exists) {
+      toast(`本地链接目标不存在：\n${displayPath(target.path)}`, "error", 8000);
+      return;
+    }
+    const accepted = window.confirm(
+      `将打开当前文档目录内的本地文件：\n\n${displayPath(target.path)}\n\n是否继续？`,
+    );
+    if (!accepted) return;
+    if (target.isMarkdown) {
+      await openDocument(target.path);
+      return;
+    }
+    await invoke("open_local_link", {
+      documentPath: documentModel.path,
+      href,
+    });
+    return;
   } catch (error) {
     toast(`打开链接失败：${formatError(error)}`, "error");
     return;
   }
-  toast("已阻止非 HTTP/HTTPS/mailto 链接。", "error");
 }
 
 function schedulePreview({ preservePosition = true, immediate = false } = {}) {
@@ -928,14 +1100,22 @@ function schedulePreview({ preservePosition = true, immediate = false } = {}) {
         });
         state.previewReady = true;
         dom.renderStatus.classList.remove("status-error");
+        dom.renderStatus.removeAttribute("title");
         const elapsed = Math.round(performance.now() - started);
         dom.renderStatus.textContent = `预览 ${elapsed} ms · ${rendered.headings.length} 个标题`;
         dom.previewSummary.textContent = "离线安全";
         resolve(true);
       } catch (error) {
-        await preview.renderError(formatError(error));
-        dom.renderStatus.textContent = "预览失败";
+        const message = formatError(error);
+        const contextLine = editor.currentLineIndex();
+        const stage = message.includes("预览页面")
+          ? "预览页面初始化"
+          : "预览生成或更新";
+        await preview.renderError(message, { stage, contextLine });
+        dom.renderStatus.textContent = `${stage}失败 · 第 ${contextLine + 1} 行上下文`;
+        dom.renderStatus.title = message;
         dom.renderStatus.classList.add("status-error");
+        dom.previewSummary.textContent = "预览失败";
         resolve(false);
       }
     }, delay);
@@ -991,13 +1171,16 @@ function updateDocumentChrome() {
       ? "只读"
       : "已保存";
   dom.dirtyStatus.classList.toggle("dirty", unsaved);
-  dom.documentPath.textContent = documentModel.path || "未保存";
-  dom.documentPath.title = documentModel.path || "";
+  dom.documentPath.textContent = documentModel.path ? displayPath(documentModel.path) : "未保存";
+  dom.documentPath.title = documentModel.path ? displayPath(documentModel.path) : "";
   dom.documentPath.hidden = !documentModel.path;
   dom.readOnlyBadge.hidden = !documentModel.readOnly;
   dom.editorTitle.textContent = documentModel.title;
-  dom.editorTitle.title = documentModel.path || documentModel.title;
+  dom.editorTitle.title = documentModel.path
+    ? displayPath(documentModel.path)
+    : documentModel.title;
   document.title = `${dirty ? "* " : ""}${documentModel.title} - WIMD`;
+  dom.windowTitle.textContent = document.title;
   const currentWindow = getCurrentWindow();
   if (currentWindow?.setTitle) {
     void currentWindow.setTitle(document.title).catch(() => {});
@@ -1068,12 +1251,51 @@ function renderSidebar() {
   dom.sidebarContent.replaceChildren();
   if (state.workspaceRoot) {
     dom.sidebarTitle.textContent = "工作区";
-    dom.sidebarSubtitle.textContent = state.workspaceRoot;
+    dom.sidebarSubtitle.textContent = displayPath(state.workspaceRoot);
     renderWorkspaceSidebar();
   } else {
     dom.sidebarTitle.textContent = "最近打开";
     dom.sidebarSubtitle.textContent = "打开文件夹后切换为资源管理器";
     renderRecentSidebar();
+  }
+}
+
+function recentAvailabilityKey(path) {
+  return String(path || "").replaceAll("/", "\\").toLowerCase();
+}
+
+function recentAvailabilityFor(path) {
+  return state.recentAvailability.get(recentAvailabilityKey(path)) || null;
+}
+
+function recentPathUsable(path, isDirectoryRequired) {
+  const availability = recentAvailabilityFor(path);
+  if (!availability) return true;
+  return (
+    availability.exists &&
+    (isDirectoryRequired ? availability.isDirectory : !availability.isDirectory)
+  );
+}
+
+async function refreshRecentPathAvailability() {
+  const paths = [
+    ...(state.settings?.recentFiles || []).map((item) => item.path),
+    ...(state.settings?.recentWorkspaces || []).map((item) => item.path),
+  ].filter(Boolean);
+  if (!paths.length) {
+    state.recentAvailability.clear();
+    if (!state.workspaceRoot) renderSidebar();
+    return;
+  }
+  try {
+    const availability = await invoke("inspect_recent_paths", { paths });
+    state.recentAvailability = new Map(
+      availability.map((item) => [recentAvailabilityKey(item.path), item]),
+    );
+    if (!state.workspaceRoot) renderSidebar();
+  } catch {
+    // Keep entries enabled when availability cannot be inspected. Opening the
+    // path still goes through the normal validated backend commands.
   }
 }
 
@@ -1113,8 +1335,20 @@ function createRecentButton(path, active, datasetName = "recentPath", openedAt =
   const button = document.createElement("button");
   button.type = "button";
   button.className = `recent-item${active ? " active" : ""}`;
+  const availability = recentAvailabilityFor(path);
+  const missing =
+    availability &&
+    (!availability.exists ||
+      (datasetName === "recentWorkspace"
+        ? !availability.isDirectory
+        : availability.isDirectory));
+  if (missing) {
+    button.classList.add("missing");
+    button.setAttribute("aria-disabled", "true");
+  }
   button.dataset[datasetName] = path;
-  button.title = path;
+  const shownPath = displayPath(path);
+  button.title = missing ? `${shownPath}\n路径不存在或类型已改变` : shownPath;
   const copy = document.createElement("span");
   copy.className = "item-copy";
   const name = document.createElement("strong");
@@ -1124,10 +1358,14 @@ function createRecentButton(path, active, datasetName = "recentPath", openedAt =
       : pathFileName(path);
   const directory = document.createElement("small");
   directory.textContent =
-    datasetName === "recentWorkspace" ? path : pathDirectory(path) || path;
+    datasetName === "recentWorkspace"
+      ? shownPath
+      : displayPath(pathDirectory(path)) || shownPath;
   const date = document.createElement("small");
   date.className = "item-date";
-  date.textContent = formatRecentDate(openedAt);
+  date.textContent = missing
+    ? "路径已失效，可复制或移出记录"
+    : formatRecentDate(openedAt);
   copy.append(name, directory, date);
   button.append(copy);
   const remove = document.createElement("button");
@@ -1170,8 +1408,8 @@ function renderWorkspaceSidebar() {
   const header = document.createElement("div");
   header.className = "workspace-header";
   const path = document.createElement("span");
-  path.textContent = state.workspaceRoot;
-  path.title = state.workspaceRoot;
+  path.textContent = displayPath(state.workspaceRoot);
+  path.title = displayPath(state.workspaceRoot);
   const actions = document.createElement("div");
   actions.className = "workspace-actions";
   actions.append(
@@ -1192,6 +1430,43 @@ function renderWorkspaceSidebar() {
   dom.sidebarContent.append(tree);
 }
 
+function isWorkspaceSelected(path, isDirectory) {
+  const selection = state.workspaceSelection;
+  return (
+    selection &&
+    selection.isDirectory === isDirectory &&
+    samePath(selection.path, path)
+  );
+}
+
+function selectWorkspaceEntry(path, isDirectory) {
+  state.workspaceSelection = path ? { path, isDirectory } : null;
+  dom.sidebarContent
+    .querySelectorAll("[data-workspace-path]")
+    .forEach((element) => {
+      const elementIsDirectory = element.dataset.workspaceDirectory === "true";
+      element.classList.toggle(
+        "selected",
+        isWorkspaceSelected(element.dataset.workspacePath, elementIsDirectory),
+      );
+    });
+}
+
+function selectedWorkspaceParent() {
+  return workspaceParentForSelection(state.workspaceRoot, state.workspaceSelection);
+}
+
+function createNewDocumentFromShortcut() {
+  const parent = selectedWorkspaceParent();
+  if (state.workspaceRoot && parent) {
+    void createWorkspaceEntry(parent, "file").catch((error) => {
+      toast(`新建工作区文档失败：${formatError(error)}`, "error", 7000);
+    });
+    return;
+  }
+  createDocument({ activate: true });
+}
+
 function appendWorkspaceEntries(container, entries) {
   for (const entry of entries) {
     if (entry.isDirectory) {
@@ -1200,7 +1475,8 @@ function appendWorkspaceEntries(container, entries) {
       const summary = document.createElement("summary");
       summary.dataset.workspacePath = entry.path;
       summary.dataset.workspaceDirectory = "true";
-      summary.title = entry.path;
+      summary.title = displayPath(entry.path);
+      summary.classList.toggle("selected", isWorkspaceSelected(entry.path, true));
       const mark = document.createElement("span");
       mark.className = "workspace-folder-mark";
       mark.textContent = "▰";
@@ -1224,8 +1500,9 @@ function appendWorkspaceEntries(container, entries) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `workspace-file${isActivePath(entry.path) ? " active" : ""}`;
+      button.classList.toggle("selected", isWorkspaceSelected(entry.path, false));
       button.dataset.workspacePath = entry.path;
-      button.title = entry.path;
+      button.title = displayPath(entry.path);
       const icon = document.createElement("span");
       icon.className = "item-icon";
       icon.textContent = "MD";
@@ -1378,6 +1655,7 @@ async function recordRecent(path) {
   try {
     state.settings = await invoke("record_recent_path", { path });
     renderSidebar();
+    void refreshRecentPathAvailability();
   } catch (error) {
     toast(`更新最近文件失败：${formatError(error)}`, "error");
   }
@@ -1387,6 +1665,7 @@ async function removeRecent(path) {
   try {
     state.settings = await invoke("remove_recent_path", { path });
     renderSidebar();
+    void refreshRecentPathAvailability();
   } catch (error) {
     toast(`移出最近文件失败：${formatError(error)}`, "error");
   }
@@ -1396,6 +1675,7 @@ async function recordRecentWorkspace(path) {
   try {
     state.settings = await invoke("record_recent_workspace", { path });
     renderSidebar();
+    void refreshRecentPathAvailability();
   } catch (error) {
     toast(`更新最近文件夹失败：${formatError(error)}`, "error");
   }
@@ -1405,6 +1685,7 @@ async function removeRecentWorkspace(path) {
   try {
     state.settings = await invoke("remove_recent_workspace", { path });
     renderSidebar();
+    void refreshRecentPathAvailability();
   } catch (error) {
     toast(`移出最近文件夹失败：${formatError(error)}`, "error");
   }
@@ -1424,6 +1705,53 @@ function scheduleRecoverySnapshots() {
       state.recoveryWritePromise = null;
     });
   }, 2000);
+}
+
+async function persistUpdateRestartWindowSnapshot() {
+  try {
+    const geometry = await readWindowGeometry();
+    const activeIndex = Math.max(
+      0,
+      state.documents.findIndex((documentModel) => documentModel.id === state.activeId),
+    );
+    const snapshot = {
+      schemaVersion: 1,
+      savedAtUtc: new Date().toISOString(),
+      activeDocumentIndex: activeIndex,
+      workspaceRoot: state.workspaceRoot,
+      workspaceExpanded: [...state.workspaceExpanded],
+      workspaceSelection: state.workspaceSelection
+        ? {
+            path: state.workspaceSelection.path,
+            isDirectory: Boolean(state.workspaceSelection.isDirectory),
+          }
+        : null,
+      windowX: geometry?.position?.x ?? state.settings.windowX ?? null,
+      windowY: geometry?.position?.y ?? state.settings.windowY ?? null,
+      windowWidth: geometry?.size?.width || state.settings.windowWidth || 1320,
+      windowHeight: geometry?.size?.height || state.settings.windowHeight || 820,
+      windowMaximized: Boolean(geometry?.maximized ?? state.settings.windowMaximized),
+      documents: state.documents.map((documentModel) => ({
+        id: documentModel.id,
+        originalPath: documentModel.path,
+        title: documentModel.title,
+        text: documentModel.text,
+        savedText: documentModel.savedText,
+        hadUtf8Bom: Boolean(documentModel.hadUtf8Bom),
+        lineEnding: documentModel.lineEnding || "none",
+        readOnly: Boolean(documentModel.readOnly),
+        viewMode: documentModel.viewMode,
+        selectionStart: documentModel.selectionStart,
+        selectionEnd: documentModel.selectionEnd,
+        scrollTop: Number(documentModel.scrollTop) || 0,
+        previewScrollRatio: Number(documentModel.previewScrollRatio) || 0,
+      })),
+    };
+    return await invoke("save_update_restart_window", { snapshot });
+  } catch (error) {
+    toast(`保存更新恢复窗口失败：${formatError(error)}`, "error", 7000);
+    return false;
+  }
 }
 
 async function persistDirtyRecoverySnapshots({
@@ -1470,8 +1798,25 @@ async function persistCurrentSessionSettings() {
 }
 
 async function captureWindowState() {
+  const geometry = await readWindowGeometry();
+  if (!geometry) return;
+  state.settings.windowMaximized = geometry.maximized;
+  if (
+    !geometry.maximized &&
+    !geometry.minimized &&
+    geometry.size.width >= 860 &&
+    geometry.size.height >= 560
+  ) {
+    state.settings.windowX = geometry.position.x;
+    state.settings.windowY = geometry.position.y;
+    state.settings.windowWidth = geometry.size.width;
+    state.settings.windowHeight = geometry.size.height;
+  }
+}
+
+async function readWindowGeometry() {
   const appWindow = getCurrentWindow();
-  if (!appWindow?.outerPosition || !appWindow?.outerSize) return;
+  if (!appWindow?.outerPosition || !appWindow?.outerSize) return null;
   try {
     const [position, size, maximized, minimized] = await Promise.all([
       appWindow.outerPosition(),
@@ -1479,15 +1824,15 @@ async function captureWindowState() {
       appWindow.isMaximized?.() ?? false,
       appWindow.isMinimized?.() ?? false,
     ]);
-    state.settings.windowMaximized = Boolean(maximized);
-    if (!maximized && !minimized && size.width >= 860 && size.height >= 560) {
-      state.settings.windowX = position.x;
-      state.settings.windowY = position.y;
-      state.settings.windowWidth = size.width;
-      state.settings.windowHeight = size.height;
-    }
+    return {
+      position,
+      size,
+      maximized: Boolean(maximized),
+      minimized: Boolean(minimized),
+    };
   } catch {
     // Window geometry is best-effort and must never block settings persistence.
+    return null;
   }
 }
 
@@ -1529,8 +1874,19 @@ function handleSidebarClick(event) {
     );
     return;
   }
+  const workspaceEntry = event.target.closest("[data-workspace-path]");
+  if (workspaceEntry) {
+    selectWorkspaceEntry(
+      workspaceEntry.dataset.workspacePath,
+      workspaceEntry.dataset.workspaceDirectory === "true",
+    );
+  }
   const recent = event.target.closest("[data-recent-path]");
   if (recent) {
+    if (!recentPathUsable(recent.dataset.recentPath, false)) {
+      toast("该最近文件路径已失效，可从右键菜单复制路径或移出记录。", "error");
+      return;
+    }
     void openDocument(recent.dataset.recentPath).catch((error) =>
       toast(`打开文档失败：${formatError(error)}`, "error", 7000),
     );
@@ -1538,6 +1894,10 @@ function handleSidebarClick(event) {
   }
   const recentWorkspace = event.target.closest("[data-recent-workspace]");
   if (recentWorkspace) {
+    if (!recentPathUsable(recentWorkspace.dataset.recentWorkspace, true)) {
+      toast("该最近文件夹路径已失效，可从右键菜单复制路径或移出记录。", "error");
+      return;
+    }
     void openWorkspacePath(recentWorkspace.dataset.recentWorkspace).catch((error) =>
       toast(`打开最近文件夹失败：${formatError(error)}`, "error", 7000),
     );
@@ -1576,10 +1936,11 @@ function handleSidebarContextMenu(event) {
 }
 
 function showRecentWorkspaceContextMenu(path, x, y) {
+  const available = recentPathUsable(path, true);
   state.contextMenuItems = [
-    ["打开文件夹", () => openWorkspacePath(path)],
-    ["在文件资源管理器中显示", () => invoke("reveal_in_explorer", { path })],
-    ["复制文件夹路径", () => copyText(path)],
+    ["打开文件夹", () => openWorkspacePath(path), null, !available],
+    ["在文件资源管理器中显示", () => invoke("reveal_in_explorer", { path }), null, !available],
+    ["复制文件夹路径", () => copyText(displayPath(path))],
     ["separator"],
     ["移出最近记录（不删除文件夹）", () => removeRecentWorkspace(path), "danger"],
   ];
@@ -1704,13 +2065,14 @@ async function convertImageDataUriToPng(dataUri) {
 }
 
 function showRecentContextMenu(path, x, y) {
+  const available = recentPathUsable(path, false);
   state.contextMenuItems = [
-    ["打开", () => openDocument(path)],
-    ["在新窗口中打开", () => invoke("open_in_new_window", { path })],
-    ["在文件资源管理器中显示", () => invoke("reveal_in_explorer", { path })],
+    ["打开", () => openDocument(path), null, !available],
+    ["在新窗口中打开", () => invoke("open_in_new_window", { path }), null, !available],
+    ["在文件资源管理器中显示", () => invoke("reveal_in_explorer", { path }), null, !available],
     ["separator"],
-    ["复制文件路径", () => copyText(path)],
-    ["复制所在文件夹路径", () => copyText(pathDirectory(path))],
+    ["复制文件路径", () => copyText(displayPath(path))],
+    ["复制所在文件夹路径", () => copyText(displayPath(pathDirectory(path)))],
     ["复制文件名", () => copyText(pathFileName(path))],
     ["separator"],
     ["移出最近记录（不删除文件）", () => removeRecent(path), "danger"],
@@ -1732,7 +2094,7 @@ function showWorkspaceContextMenu(path, isDirectory, x, y) {
   }
   items.push(["separator"]);
   items.push(["在文件资源管理器中显示", () => invoke("reveal_in_explorer", { path })]);
-  items.push(["复制路径", () => copyText(path)]);
+  items.push(["复制路径", () => copyText(displayPath(path))]);
   if (!isDirectory) items.push(["复制文件名", () => copyText(pathFileName(path))]);
   items.push(["separator"]);
   items.push(["删除", () => deleteWorkspaceEntry(path), "danger"]);
@@ -1749,12 +2111,13 @@ function renderContextMenu(x, y) {
       dom.contextMenu.append(separator);
       continue;
     }
-    const [label, action, className] = item;
+    const [label, action, className, disabled = false] = item;
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
     if (className) button.classList.add(className);
-    button._wimdAction = action;
+    button.disabled = disabled;
+    if (!disabled) button._wimdAction = action;
     dom.contextMenu.append(button);
   }
   dom.contextMenu.hidden = false;
@@ -1784,6 +2147,7 @@ async function handleWorkspaceAction(action) {
     state.workspaceRoot = null;
     state.workspaceEntries = [];
     state.workspaceExpanded.clear();
+    state.workspaceSelection = null;
     state.settings.lastWorkspace = null;
     renderSidebar();
     scheduleSettingsPersistence();
@@ -1805,14 +2169,16 @@ async function createWorkspaceEntry(parent, kind) {
       parent,
       name,
     });
+    state.workspaceSelection = { path, isDirectory: false };
     await refreshWorkspace();
     await openDocument(path);
   } else {
-    await invoke("create_workspace_directory", {
+    const path = await invoke("create_workspace_directory", {
       root: state.workspaceRoot,
       parent,
       name,
     });
+    state.workspaceSelection = { path, isDirectory: true };
     await refreshWorkspace();
   }
 }
@@ -1850,15 +2216,36 @@ async function renameWorkspaceEntry(path, isDirectory) {
       }
     }
   }
+  if (
+    state.workspaceSelection &&
+    isPathAtOrBelow(state.workspaceSelection.path, path)
+  ) {
+    state.workspaceSelection.path =
+      target + state.workspaceSelection.path.slice(path.length);
+  }
   await refreshWorkspace();
   renderEverything();
 }
 
 async function deleteWorkspaceEntry(path) {
   if (!state.workspaceRoot) return;
-  const first = window.confirm(`将删除磁盘上的实际内容：\n${path}\n\n此操作不能通过 WIMD 撤销。是否继续？`);
+  const affectedDocuments = state.documents.filter(
+    (documentModel) =>
+      documentModel.path && isPathAtOrBelow(documentModel.path, path),
+  );
+  const activeAffected = affectedDocuments.some(
+    (documentModel) => documentModel.id === state.activeId,
+  );
+  const dirtyAffected = affectedDocuments.some(isDirty);
+  const dirtyWarning = dirtyAffected
+    ? "\n\n其中包含未保存的编辑内容，继续后将丢失这些内容。"
+    : "";
+  const shownPath = displayPath(path);
+  const first = window.confirm(
+    `将删除磁盘上的实际内容：\n${shownPath}\n\n此操作不能通过 WIMD 撤销。${dirtyWarning}\n\n是否继续？`,
+  );
   if (!first) return;
-  const second = window.confirm(`请再次确认删除：\n${path}`);
+  const second = window.confirm(`请再次确认删除：\n${shownPath}`);
   if (!second) return;
   const deleted = await invoke("delete_workspace_entry", {
     root: state.workspaceRoot,
@@ -1870,16 +2257,28 @@ async function deleteWorkspaceEntry(path) {
       (expandedPath) => !isPathAtOrBelow(expandedPath, path),
     ),
   );
-  for (const documentModel of state.documents) {
-    if (isPathAtOrBelow(documentModel.path, path)) {
-      documentModel.path = null;
-      documentModel.title = `${documentModel.title}（已删除）`;
-      documentModel.savedText = "";
-      documentModel.hadUtf8Bom = false;
-    }
+  for (const documentModel of affectedDocuments) {
+    await invoke("remove_recovery_snapshot", { id: documentModel.id }).catch(() => {});
+  }
+  state.documents = state.documents.filter(
+    (documentModel) => !affectedDocuments.includes(documentModel),
+  );
+  if (
+    state.workspaceSelection &&
+    isPathAtOrBelow(state.workspaceSelection.path, path)
+  ) {
+    state.workspaceSelection = {
+      path: state.workspaceRoot,
+      isDirectory: true,
+    };
   }
   await refreshWorkspace();
-  renderEverything();
+  if (activeAffected) {
+    state.activeId = null;
+    createDocument({ activate: true });
+  } else {
+    renderEverything();
+  }
 }
 
 async function refreshWorkspace() {
@@ -2703,8 +3102,9 @@ async function saveSettingsFromDialog() {
 
 function openAboutDialog() {
   dom.aboutVersion.textContent = state.bootstrap?.version || "2.0.0";
-  dom.aboutSettingsPath.textContent =
-    state.bootstrap?.settingsPath || "浏览器开发模式（未连接 Rust 后端）";
+    dom.aboutSettingsPath.textContent = state.bootstrap?.settingsPath
+      ? displayPath(state.bootstrap.settingsPath)
+      : "浏览器开发模式（未连接 Rust 后端）";
   dom.aboutDialog.showModal();
 }
 
@@ -2781,7 +3181,7 @@ function handleGlobalKeydown(event) {
   event.preventDefault();
   switch (shortcutId) {
     case "new":
-      createDocument({ activate: true });
+      createNewDocumentFromShortcut();
       break;
     case "open":
       void commandOpen();
@@ -3007,11 +3407,6 @@ function sameStamp(left, right) {
     left?.length === right?.length &&
     left?.modifiedUnixMs === right?.modifiedUnixMs
   );
-}
-
-function joinPath(directory, relative) {
-  if (!directory) return relative;
-  return `${directory.replace(/[\\/]+$/, "")}\\${relative.replaceAll("/", "\\")}`;
 }
 
 async function firstWorkspaceFileAsync(entries, budget = { remaining: 500 }) {

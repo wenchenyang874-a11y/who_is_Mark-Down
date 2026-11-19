@@ -1,5 +1,46 @@
 const TRANSPARENT_PIXEL =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const MAXIMUM_HIGHLIGHT_CHARACTERS = 512 * 1024;
+const HIGHLIGHT_LANGUAGE_ALIASES = new Map([
+  ["c#", "csharp"],
+  ["cs", "csharp"],
+  ["html", "xml"],
+  ["js", "javascript"],
+  ["md", "markdown"],
+  ["ps1", "powershell"],
+  ["py", "python"],
+  ["sh", "bash"],
+  ["shell", "bash"],
+  ["ts", "typescript"],
+  ["yml", "yaml"],
+]);
+
+export function highlightCodeText(source, requested, highlighter = globalThis.hljs) {
+  const normalized = String(requested || "").toLowerCase();
+  if (
+    !normalized ||
+    normalized === "mermaid" ||
+    normalized === "plaintext" ||
+    normalized === "text"
+  ) {
+    return null;
+  }
+  const language = HIGHLIGHT_LANGUAGE_ALIASES.get(normalized) || normalized;
+  if (!highlighter?.getLanguage(language) || source.length > MAXIMUM_HIGHLIGHT_CHARACTERS) {
+    return null;
+  }
+  try {
+    return {
+      language,
+      value: highlighter.highlight(source, {
+        language,
+        ignoreIllegals: true,
+      }).value,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const PREVIEW_DOCUMENT_SHELL = `<!doctype html>
 <html lang="zh-CN" data-theme="light">
@@ -47,8 +88,11 @@ export class PreviewController {
     if (this.readyPromise) return this.readyPromise;
     this.readyPromise = (async () => {
       this.previewCss = await fetch("./preview.css").then((response) => response.text());
-      await new Promise((resolve) => {
-        const timeout = window.setTimeout(resolve, 2500);
+      await new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(
+          () => reject(new Error("预览页面在 2.5 秒内未完成加载。")),
+          2500,
+        );
         this.frame.addEventListener(
           "load",
           () => {
@@ -62,7 +106,10 @@ export class PreviewController {
       const style = this.document?.getElementById("wimd-preview-style");
       if (style) style.textContent = this.previewCss;
       this.document?.addEventListener("scroll", () => this.emitScroll(), { passive: true });
-    })();
+    })().catch((error) => {
+      this.readyPromise = null;
+      throw error;
+    });
     return this.readyPromise;
   }
 
@@ -123,11 +170,24 @@ export class PreviewController {
     return true;
   }
 
-  async renderError(message) {
-    await this.initialize();
+  async renderError(message, { stage = "预览处理", contextLine = null } = {}) {
+    try {
+      await this.initialize();
+    } catch {
+      return;
+    }
     const main = this.main;
     if (!main) return;
-    main.innerHTML = `<div class="preview-error">预览失败：${escapeHtml(message)}</div>`;
+    const lineText = Number.isInteger(contextLine)
+      ? `<p>当前编辑上下文：第 ${contextLine + 1} 行。此位置用于回到编辑区，不代表已确认的解析错误行。</p>`
+      : "<p>当前错误未提供可确认的源行。</p>";
+    main.innerHTML = `
+      <div class="preview-error" role="alert">
+        <strong>${escapeHtml(stage)}失败</strong>
+        <p>${escapeHtml(message)}</p>
+        ${lineText}
+        <p>编辑内容仍保留，可继续修改或切换为“仅编辑”。</p>
+      </div>`;
   }
 
   setTheme(theme) {
@@ -289,6 +349,7 @@ export class PreviewController {
     if (!main) return;
     main.querySelectorAll("pre > code").forEach((code) => {
       if (!code.textContent?.trim()) return;
+      this.highlightCodeBlock(code);
       const pre = code.parentElement;
       if (!pre || pre.querySelector(":scope > .code-copy-button")) return;
       const button = document.createElement("button");
@@ -315,6 +376,25 @@ export class PreviewController {
       });
       pre.append(button);
     });
+  }
+
+  highlightCodeBlock(code) {
+    if (code.dataset.highlighted === "yes") return;
+    const highlighter = globalThis.hljs;
+    if (!highlighter) return;
+    const languageClass = [...code.classList].find((name) => name.startsWith("language-"));
+    const requested = languageClass?.slice("language-".length)?.toLowerCase();
+    const source = code.textContent || "";
+    const highlighted = highlightCodeText(source, requested, highlighter);
+    if (!highlighted && source.length > MAXIMUM_HIGHLIGHT_CHARACTERS) {
+      code.dataset.highlightSkipped = "size";
+      return;
+    }
+    if (!highlighted) return;
+    code.innerHTML = highlighted.value;
+    code.classList.add("hljs");
+    code.dataset.highlighted = "yes";
+    code.dataset.language = highlighted.language;
   }
 
   decorateHeadings() {
@@ -518,13 +598,22 @@ export class PreviewController {
     }
     if (target.classList.contains("wimd-folded")) return;
     const root = document.scrollingElement || document.documentElement;
-    const rect = target.getBoundingClientRect();
+    // Bug fix: source sections use display: contents and therefore have a zero
+    // client rect. Measure their actual rendered contents to avoid repeatedly
+    // applying "0 - safeTop" on every click to the same source line.
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    const rect = range.getBoundingClientRect();
+    if (!Number.isFinite(rect.top) || (rect.width === 0 && rect.height === 0)) return;
     const viewportHeight = root.clientHeight;
     const safeTop = viewportHeight * 0.25;
     const safeBottom = viewportHeight * 0.75;
     if (rect.top >= safeTop && rect.top <= safeBottom) return;
+    const rangeHeight = Math.max(0, root.scrollHeight - root.clientHeight);
+    const targetScrollTop = clamp(root.scrollTop + rect.top - safeTop, 0, rangeHeight);
+    if (Math.abs(targetScrollTop - root.scrollTop) < 1) return;
     this.scrollSyncSuppressed = true;
-    root.scrollTop += rect.top - safeTop;
+    root.scrollTop = targetScrollTop;
     requestAnimationFrame(() => {
       this.scrollSyncSuppressed = false;
     });
@@ -705,7 +794,12 @@ function replaceMermaidWithError(pre, message, source) {
   const container = document.createElement("section");
   container.className = "mermaid-error";
   const heading = document.createElement("strong");
-  heading.textContent = message;
+  const sourceLine = Number(
+    pre.closest(".wimd-source-block")?.dataset.sourceLine,
+  );
+  heading.textContent = Number.isInteger(sourceLine)
+    ? `${message}（源码起始于第 ${sourceLine + 1} 行）`
+    : message;
   const details = document.createElement("details");
   const summary = document.createElement("summary");
   summary.textContent = "查看图表源码";

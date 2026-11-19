@@ -537,6 +537,73 @@ pre > code::-webkit-scrollbar {
   height: 9px;
 }
 
+.hljs-comment,
+.hljs-quote {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--success);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--warning);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-title.function_,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.hljs-built_in,
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-title.class_ {
+  color: color-mix(in srgb, var(--accent) 62%, var(--warning));
+}
+
+.hljs-meta,
+.hljs-tag,
+.hljs-name {
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-secondary));
+}
+
+.hljs-deletion {
+  color: var(--danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 750;
+}
+
 .code-copy-button {
   position: absolute;
   z-index: 2;

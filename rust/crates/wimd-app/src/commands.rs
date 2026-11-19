@@ -37,7 +37,8 @@ use crate::{
     imgbb, pdf,
     process_usage::{ProcessSample, sample_current_process},
     recovery::{self, RecoverySnapshot},
-    restart_session, secrets,
+    restart_session::{self, UpdateRestartWindowSnapshot},
+    secrets,
     updates::{self, UpdateInfo},
 };
 
@@ -168,6 +169,7 @@ pub struct BootstrapPayload {
     pub settings_warning: Option<String>,
     pub shortcuts: Vec<ShortcutDefinition>,
     pub startup_paths: Vec<PathBuf>,
+    pub update_restart_window: Option<UpdateRestartWindowSnapshot>,
     pub version: String,
     pub settings_path: PathBuf,
 }
@@ -190,6 +192,14 @@ pub struct RenameWorkspacePayload {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteWorkspacePayload {
     pub settings: ApplicationSettings,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentPathAvailability {
+    pub path: PathBuf,
+    pub exists: bool,
+    pub is_directory: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -233,9 +243,39 @@ pub fn bootstrap(state: State<'_, AppState>) -> CommandResult<BootstrapPayload> 
         settings_warning: state.settings_warning.clone(),
         shortcuts: SHORTCUTS.to_vec(),
         startup_paths: state.startup_paths.clone(),
+        update_restart_window: state.update_restart_window.clone(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         settings_path: state.settings_store.path().to_path_buf(),
     })
+}
+
+#[tauri::command]
+pub async fn installed_fonts() -> CommandResult<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(crate::fonts::installed_font_families)
+        .await
+        .map_err(|error| format!("字体枚举任务失败：{error}"))?
+}
+
+#[tauri::command]
+pub async fn inspect_recent_paths(
+    paths: Vec<PathBuf>,
+) -> CommandResult<Vec<RecentPathAvailability>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .take(64)
+            .map(|path| {
+                let metadata = std::fs::metadata(&path).ok();
+                RecentPathAvailability {
+                    path,
+                    exists: metadata.is_some(),
+                    is_directory: metadata.is_some_and(|metadata| metadata.is_dir()),
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("最近路径检查任务失败：{error}"))
 }
 
 #[tauri::command]
@@ -291,7 +331,10 @@ pub async fn open_settings_window(
             .resizable(resizable)
             .parent(&parent)
             .map_err(|error| format!("绑定设置窗口父窗口失败：{error}"))?;
-    builder = if let Some((x, y)) = popup_logical_position(&parent, width, height) {
+    let background_test = std::env::var_os("WIMD_QA_BACKGROUND_WINDOW").is_some();
+    builder = if background_test {
+        builder.visible(false).skip_taskbar(true)
+    } else if let Some((x, y)) = popup_logical_position(&parent, width, height) {
         builder.position(x, y)
     } else {
         builder.center()
@@ -410,6 +453,43 @@ pub fn capture_startup_diagnostic(
 #[tauri::command]
 pub fn installer_capture_requested(state: State<'_, AppState>) -> bool {
     restart_session::is_capture_requested(&state.data_directory)
+}
+
+#[tauri::command]
+pub async fn save_update_restart_window(
+    state: State<'_, AppState>,
+    snapshot: UpdateRestartWindowSnapshot,
+) -> CommandResult<bool> {
+    if !restart_session::is_capture_requested(&state.data_directory) {
+        return Ok(false);
+    }
+    let application_data = state.data_directory.clone();
+    let window_id = state.restart_window_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        restart_session::save_window_snapshot(&application_data, &window_id, snapshot)
+    })
+    .await
+    .map_err(|error| format!("保存更新恢复窗口任务失败：{error}"))??;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn finish_update_restart_window(state: State<'_, AppState>) -> CommandResult<bool> {
+    let claim_path = state
+        .update_restart_claim_path
+        .lock()
+        .map_err(|_| "更新恢复认领状态已损坏。".to_owned())?
+        .take();
+    let Some(claim_path) = claim_path else {
+        return Ok(false);
+    };
+    let application_data = state.data_directory.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        restart_session::finish_restore_window(&application_data, &claim_path)
+    })
+    .await
+    .map_err(|error| format!("确认更新恢复窗口任务失败：{error}"))??;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -1386,6 +1466,28 @@ pub async fn open_external(url: String) -> CommandResult<()> {
         .await
         .map_err(|error| format!("打开外部链接任务失败：{error}"))?
         .map_err(|error| format!("打开外部链接失败：{error}"))
+}
+
+#[tauri::command]
+pub fn resolve_local_link(
+    document_path: PathBuf,
+    href: String,
+) -> CommandResult<crate::local_links::LocalLinkTarget> {
+    crate::local_links::resolve_local_link(&document_path, &href)
+}
+
+#[tauri::command]
+pub async fn open_local_link(document_path: PathBuf, href: String) -> CommandResult<PathBuf> {
+    tauri::async_runtime::spawn_blocking(move || -> CommandResult<PathBuf> {
+        let target = crate::local_links::resolve_local_link(&document_path, &href)?;
+        if !target.exists || !target.path.is_file() {
+            return Err("本地链接目标不存在或不是文件。".to_owned());
+        }
+        open::that_detached(&target.path).map_err(|error| format!("打开本地链接失败：{error}"))?;
+        Ok(target.path)
+    })
+    .await
+    .map_err(|error| format!("打开本地链接任务失败：{error}"))?
 }
 
 #[tauri::command]
